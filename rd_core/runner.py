@@ -87,7 +87,7 @@ def _fmt_event(ev: dict) -> str:
         sub = ev.get("subtype", "")
         cost = ev.get("total_cost_usd")
         dur = ev.get("duration_ms")
-        s = f"■ 结束 ({sub})"
+        s = f"■ 结束 ({'出错' if ev.get('is_error') else sub})"
         if dur:
             s += f" 用时 {dur / 1000:.0f}s"
         if cost is not None:
@@ -174,7 +174,7 @@ class Runner:
                 proc.wait()
                 if (d / "STOP").exists():
                     meta["status"] = "stopped"
-                elif proc.returncode == 0 and last_result and last_result.get("subtype") == "success":
+                elif proc.returncode == 0 and last_result and last_result.get("subtype") == "success" and not last_result.get("is_error"):
                     meta["status"] = "done"
                 else:
                     meta["status"] = "failed"
