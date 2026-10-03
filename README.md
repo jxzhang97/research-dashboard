@@ -72,9 +72,17 @@ rd scheduler status <课题目录>
 4. 任务收尾：报告摘要 + PDF、回写文献卡片、更新 wiki、更新想法状态、记日志、git commit。
 5. 每天 arXiv 候选进"文献"页等你审批；批准的被下载、精读、建卡。
 
-## 自动运行的权限
+## 自动运行的权限与登录
 
 `rd run` / `rd tick` 用 `claude -p --permission-mode bypassPermissions` 在课题目录里无人值守运行。护栏在 `AGENTS.md`：只写课题目录和 `data_root`，不改用户亲手写的文件，不删文件，每次运行 git commit。
+
+**命令行版 Claude Code 必须单独登录**（桌面 app 的登录不共享给命令行）。在要跑自动任务的机器上开一个终端：
+
+```bash
+claude auth status
+```
+
+显示 `"loggedIn": false` 就运行 `claude`，在里面输入 `/login` 按提示登录，然后再 `rd run <课题目录> -p "回复 ok"` 验证。launchd 启动的任务运行在登录用户的 GUI 会话里，登录一次即可。
 
 ## 开发
 
