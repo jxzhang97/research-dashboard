@@ -228,7 +228,12 @@ def main(argv=None):
     p = sub.add_parser("doctor", help="检查断链、缺节、状态"); p.add_argument("path"); p.set_defaults(fn=cmd_doctor)
 
     args = ap.parse_args(argv)
-    args.fn(args)
+    try:
+        args.fn(args)
+    except FileNotFoundError as e:
+        sys.exit(f"错误：{e}\n（提示：本机是 {config.hostname()}，课题目录要在当前这台机器上存在；demo 在 studio 的 ~/doc_unsyn/rd_demo，笔记本上的是模板目录下的 demo_project）")
+    except RuntimeError as e:
+        sys.exit(f"错误：{e}")
 
 
 if __name__ == "__main__":
