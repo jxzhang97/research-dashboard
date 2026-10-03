@@ -17,11 +17,10 @@ DEFAULTS: dict = {
         "data_root": "~/doc_unsyn/{name}",
     },
     "models": {
-        # 读文献、推导、跑数值
-        "read": "claude-fable-5-1",
-        # 写报告、写 wiki 正文
-        "write": "claude-opus-5-5",
-        "effort": "high",
+        # 默认一律 Fable 5.1 + max；任务书 frontmatter 的 model / effort 字段或任务页的下拉可以单独指定
+        "read": "claude-fable-5-1",   # 读文献、推导、跑数值
+        "write": "claude-fable-5-1",  # 写报告正文
+        "effort": "max",              # low / medium / high / xhigh / max
     },
     "agent": {
         "backend": "claude",  # 目前自动运行只支持 claude；codex 的交互会话靠 AGENTS.md + skills

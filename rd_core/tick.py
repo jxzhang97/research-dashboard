@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import time
 
-from . import config
+from . import config, fm
 from .project import Project
 from .runner import Runner
 
@@ -81,7 +81,15 @@ def run_pending(project: Project, only: str | None = None, dry_run: bool = False
             results.append({"kind": w["kind"], "id": w["id"], "status": "ready", "prompt": prompt})
             continue
         model = cfg["models"]["write"] if w["kind"] in WRITE_KINDS else cfg["models"]["read"]
-        meta = Runner(project).run(prompt, kind=w["kind"], label=f"{w['kind']}:{w['id']}", model=model)
+        effort = cfg["models"].get("effort")
+        # 该工作项对应文件的 frontmatter 可以单独指定 model / effort（例如任务书里写 model: claude-opus-5-5）
+        try:
+            doc_meta, _ = fm.read(project.root / w["path"])
+            model = doc_meta.get("model") or model
+            effort = doc_meta.get("effort") or effort
+        except (OSError, ValueError):
+            pass
+        meta = Runner(project).run(prompt, kind=w["kind"], label=f"{w['kind']}:{w['id']}", model=model, effort=effort)
         project.record_attempt(w["kind"], w["id"], meta["status"])
         results.append(meta)
     return results

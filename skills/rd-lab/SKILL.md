@@ -26,6 +26,8 @@ status: awaiting_review
 idea: <idea slug>
 machine: studio
 created: 2026-10-02
+# model: claude-opus-5-5   # 可选：用户指定了才写；不写就用 config.toml 的默认（Fable 5.1 + max）
+# effort: max
 ---
 
 # <任务标题>

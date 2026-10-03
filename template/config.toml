@@ -6,9 +6,10 @@ language = "zh"              # zh | en
 data_root = "~/doc_unsyn/{name}"   # 大的中间数据放这里（studio），项目里只留 DATA.md
 
 [models]
+# 默认一律 Fable 5.1 + max。要单独指定：任务书 brief.md 的 frontmatter 写 model: / effort:，或任务页下拉选。
 read = "claude-fable-5-1"    # 读文献、推导、跑数值
-write = "claude-opus-5-5"    # 写报告正文（子 agent）
-effort = "high"
+write = "claude-fable-5-1"   # 写报告正文
+effort = "max"               # low / medium / high / xhigh / max
 
 [agent]
 backend = "claude"

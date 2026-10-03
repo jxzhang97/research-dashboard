@@ -31,7 +31,7 @@
 - **推导、讲解、总结类的内容一律用 `baby-steps-report` skill 写**：LaTeX 编译成 PDF，放在对应 lab 文件夹（`report.pdf`，或多份时按内容命名）。旁边必须有 `report.md`：几十行以内的摘要（frontmatter 里 `pdf:` 指向 PDF，正文列结论），dashboard 只显示摘要。
 - 卡片、wiki、讨论、idea、日志用 markdown，公式用 `$…$` 和 `$$…$$`（网页用 KaTeX 渲染，避免只有 LaTeX 包才有的宏）。
 - 正式论文不用 baby-steps-report，用 `hardworking-paper-writer`。
-- 模型分工（`config.toml` 的 `[models]`）：读文献、推导、跑数值用 `read` 模型；**报告正文的写作交给 `write` 模型的子 agent**（Agent 工具的 model 参数）。无人值守运行时也遵守。
+- 模型（`config.toml` 的 `[models]`）：默认一律 `claude-fable-5-1`、effort `max`。用户可以单独指定：任务书或 idea 的 frontmatter 写 `model:` / `effort:`，自动运行会照用；用户在对话里说"写报告用 opus"之类的，就把它写进任务书 frontmatter，并在写报告时把那部分交给对应模型的子 agent（Agent 工具的 model 参数）。
 
 ## 3. Notation
 

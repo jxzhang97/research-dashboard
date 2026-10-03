@@ -257,14 +257,15 @@
     const q = d.queue;
     main.innerHTML = `<h1>任务</h1>
       <div class="panel"><b>立刻执行</b><textarea id="prompt" placeholder="直接告诉 agent 要做什么（在课题目录里无人值守运行，遵守 AGENTS.md）"></textarea>
-        <div class="form-row"><input id="label" placeholder="标签（可空）"><select id="model"><option value="">读/推导模型（默认）</option><option value="write">写作模型</option></select><button class="primary" id="go">运行</button><button id="tick">处理所有待办</button></div></div>
+        <div class="form-row"><input id="label" placeholder="标签（可空）"><input id="model" list="models" placeholder="模型（空 = ${esc((OVERVIEW && OVERVIEW.models && OVERVIEW.models.read) || "默认")}）"><datalist id="models"><option value="claude-fable-5-1"><option value="claude-opus-5-5"><option value="claude-sonnet-5-5"></datalist>
+          <select id="effort"><option value="">effort（空 = ${esc((OVERVIEW && OVERVIEW.models && OVERVIEW.models.effort) || "默认")}）</option><option>max</option><option>xhigh</option><option>high</option><option>medium</option><option>low</option></select><button class="primary" id="go">运行</button><button id="tick">处理所有待办</button></div></div>
       <div class="panel"><b>状态</b> · ${q.current ? `正在运行 <a href="#/runs/${q.current.id}">${esc(q.current.label)}</a>` : "空闲"}${q.pending.length ? ` · 排队 ${q.pending.map((p) => esc(p.label)).join(", ")}` : ""}
         ${cores ? `<br><span class="small muted">${esc(cores.advice)}</span>` : ""}</div>
       <div class="panel"><ul class="list">${rows || "<li class='muted'>还没有运行记录</li>"}</ul></div>`;
     $("#go").onclick = async () => {
       const prompt = $("#prompt").value.trim(); if (!prompt) return;
-      const sel = $("#model").value; const model = sel === "write" ? (OVERVIEW && OVERVIEW.models && OVERVIEW.models.write) || null : null;
-      const r = await api("/api/runs", { prompt, label: $("#label").value || "manual", model }); location.hash = "#/runs/" + r.id;
+      const model = $("#model").value.trim() || null; const effort = $("#effort").value || null;
+      const r = await api("/api/runs", { prompt, label: $("#label").value || "manual", model, effort }); location.hash = "#/runs/" + r.id;
     };
     $("#tick").onclick = async () => { const r = await api("/api/tick", {}); toast(r.id ? `已加入队列，待办 ${r.pending.length} 项` : "队列里已有待办处理"); pages.runs(); };
   };
