@@ -1,0 +1,14 @@
+.DS_Store
+.dashboard/runs/
+.dashboard/jobs/
+.dashboard/launchd/
+.dashboard/state.json
+.dashboard/agent.lock
+__pycache__/
+*.pyc
+*.aux
+*.log
+*.out
+*.toc
+*.synctex.gz
+*.nosync/

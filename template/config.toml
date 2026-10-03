@@ -1,0 +1,32 @@
+# 课题配置（随 iCloud 同步，两台机器共用）。本机专属的东西在 .dashboard/machines/<host>.toml。
+
+[project]
+name = "{{PROJECT_NAME}}"
+language = "zh"              # zh | en
+data_root = "~/doc_unsyn/{name}"   # 大的中间数据放这里（studio），项目里只留 DATA.md
+
+[models]
+read = "claude-fable-5-1"    # 读文献、推导、跑数值
+write = "claude-opus-5-5"    # 写报告正文（子 agent）
+effort = "high"
+
+[agent]
+backend = "claude"
+max_turns = 0                # 0 = 不限
+timeout_minutes = 240
+
+[arxiv]
+enabled = true
+categories = ["cond-mat.str-el", "cond-mat.supr-con", "cond-mat.quant-gas"]
+keywords = []                # 例如 ["flat band", "quantum geometry", "pair condensation"]
+authors = []                 # 例如 ["Törmä", "Bernevig"]
+max_per_day = 5
+lookback_days = 3
+hour = 9                     # 每天几点扫
+
+[schedule]
+tick_minutes = 60            # 兜底：每小时处理一次待办
+
+[server]
+host = "0.0.0.0"             # 0.0.0.0 才能从笔记本经 Tailscale 访问
+port = 8010

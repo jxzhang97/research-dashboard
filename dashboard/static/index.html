@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>课题 dashboard</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.11/katex.min.css">
+<link rel="stylesheet" href="/static/style.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/markdown-it/14.1.0/markdown-it.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.11/katex.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.11/contrib/auto-render.min.js"></script>
+</head>
+<body>
+<header>
+  <a class="brand" href="#/"><span id="brand-name">课题</span></a>
+  <nav id="nav">
+    <a href="#/" data-key="home">首页</a>
+    <a href="#/refs" data-key="refs">文献<b class="badge" data-badge="inbox"></b></a>
+    <a href="#/wiki" data-key="wiki">Wiki</a>
+    <a href="#/labs" data-key="labs">Lab<b class="badge" data-badge="lab"></b></a>
+    <a href="#/discussion" data-key="discussion">讨论<b class="badge" data-badge="discussion"></b></a>
+    <a href="#/ideas" data-key="ideas">想法</a>
+    <a href="#/runs" data-key="runs">任务<b class="badge" data-badge="runs"></b></a>
+  </nav>
+  <span id="host" class="muted"></span>
+</header>
+<main id="main"><p class="muted">加载中…</p></main>
+<div id="toast"></div>
+<script src="/static/app.js"></script>
+</body>
+</html>

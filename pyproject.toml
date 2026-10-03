@@ -1,0 +1,20 @@
+[project]
+name = "research-dashboard"
+version = "0.1.0"
+description = "本地课题管理 dashboard：references / wiki / labs / discussion / ideas，文件是唯一真相，agent 可被网页触发或定时运行"
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi>=0.110",
+    "uvicorn>=0.27",
+    "pyyaml>=6",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8", "httpx>=0.27"]
+
+[tool.setuptools]
+packages = ["rd_core"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]

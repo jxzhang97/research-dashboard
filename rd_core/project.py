@@ -1,0 +1,452 @@
+"""扫描课题文件夹：卡片、wiki、lab、discussion、ideas、日志、运行记录。
+所有内容都从磁盘实时读取，不建索引；课题规模（几百个文件）下足够快。"""
+
+from __future__ import annotations
+
+import json
+import os
+import re
+import time
+from dataclasses import dataclass, field
+from datetime import datetime
+from pathlib import Path
+
+from . import fm
+
+WIKILINK_RE = re.compile(r"\[\[([^\]|#]+)(?:#[^\]|]*)?(?:\|([^\]]*))?\]\]")
+LOG_ENTRY_RE = re.compile(r"^## (\d{4}-\d{2}-\d{2}(?: \d{2}:\d{2})?)\s*·\s*(.*)$")
+
+LAB_STATUSES = ["draft", "awaiting_review", "approved", "running", "waiting_answer", "done", "blocked", "parked"]
+IDEA_STATUSES = ["seed", "exploring", "lab", "resolved", "parked", "dropped"]
+DISCUSSION_STATUSES = ["open", "answered", "digested", "resolved"]
+INBOX_STATUSES = ["pending", "approved", "rejected", "ingested"]
+
+STATUS_ZH = {
+    "draft": "草稿", "awaiting_review": "待过目", "approved": "已批准", "running": "进行中",
+    "waiting_answer": "等你回答", "done": "完成", "blocked": "受阻", "parked": "搁置",
+    "seed": "萌芽", "exploring": "探索中", "lab": "已立 lab", "resolved": "已解决", "dropped": "否决",
+    "open": "待回答", "answered": "已回答", "digested": "已消化",
+    "pending": "待审批", "rejected": "已拒绝", "ingested": "已入库",
+}
+
+
+def now_str() -> str:
+    return datetime.now().strftime("%Y-%m-%d %H:%M")
+
+
+def today_str() -> str:
+    return datetime.now().strftime("%Y-%m-%d")
+
+
+def slugify(text: str, maxlen: int = 40) -> str:
+    text = text.strip().lower()
+    text = re.sub(r"[^\w一-鿿-]+", "-", text)
+    text = re.sub(r"-{2,}", "-", text).strip("-")
+    return text[:maxlen] or "untitled"
+
+
+def _title_from_body(body: str, fallback: str) -> str:
+    for line in body.splitlines():
+        if line.startswith("# "):
+            return line[2:].strip()
+    return fallback
+
+
+def _mtime(p: Path) -> float:
+    try:
+        return p.stat().st_mtime
+    except OSError:
+        return 0.0
+
+
+@dataclass
+class Doc:
+    kind: str
+    id: str
+    path: str  # 相对项目根
+    title: str
+    meta: dict
+    body: str
+    mtime: float
+    extra: dict = field(default_factory=dict)
+
+    def summary(self) -> dict:
+        d = {
+            "kind": self.kind, "id": self.id, "path": self.path, "title": self.title,
+            "meta": self.meta, "mtime": self.mtime,
+            "updated": datetime.fromtimestamp(self.mtime).strftime("%Y-%m-%d %H:%M") if self.mtime else "",
+        }
+        d.update(self.extra)
+        return d
+
+    def full(self) -> dict:
+        d = self.summary()
+        d["body"] = self.body
+        return d
+
+
+class Project:
+    def __init__(self, root: Path | str):
+        self.root = Path(root).expanduser().resolve()
+        if not (self.root / "config.toml").exists():
+            raise FileNotFoundError(f"{self.root} 不是课题文件夹（没有 config.toml）")
+        self.dash = self.root / ".dashboard"
+        self.dash.mkdir(exist_ok=True)
+
+    # ---------- 通用 ----------
+    def rel(self, p: Path) -> str:
+        return str(p.relative_to(self.root))
+
+    def safe_path(self, rel: str) -> Path:
+        """把相对路径解析成项目内的绝对路径；越界就拒绝。"""
+        p = (self.root / rel).resolve()
+        if self.root != p and self.root not in p.parents:
+            raise PermissionError(f"路径越界: {rel}")
+        return p
+
+    def _read_doc(self, kind: str, path: Path, id_: str | None = None) -> Doc:
+        meta, body = fm.read(path)
+        id_ = id_ or path.stem
+        title = meta.get("title") or _title_from_body(body, id_)
+        return Doc(kind=kind, id=id_, path=self.rel(path), title=str(title), meta=meta, body=body, mtime=_mtime(path))
+
+    def _md_files(self, d: Path, recursive: bool = False) -> list[Path]:
+        if not d.exists():
+            return []
+        it = d.rglob("*.md") if recursive else d.glob("*.md")
+        return sorted(p for p in it if not p.name.startswith(".") and p.name.lower() != "readme.md")
+
+    # ---------- references ----------
+    def cards(self) -> list[Doc]:
+        docs = [self._read_doc("card", p) for p in self._md_files(self.root / "references" / "cards")]
+        docs.sort(key=lambda d: d.mtime, reverse=True)
+        return docs
+
+    def card(self, key: str) -> Doc:
+        return self._read_doc("card", self.safe_path(f"references/cards/{key}.md"))
+
+    def inbox(self) -> list[Doc]:
+        docs = [self._read_doc("inbox", p) for p in self._md_files(self.root / "references" / "inbox")]
+        order = {s: i for i, s in enumerate(INBOX_STATUSES)}
+        docs.sort(key=lambda d: (order.get(d.meta.get("status", "pending"), 9), -d.mtime))
+        return docs
+
+    def set_inbox_status(self, key: str, status: str) -> dict:
+        assert status in INBOX_STATUSES, status
+        p = self.safe_path(f"references/inbox/{key}.md")
+        return fm.update(p, status=status, decided=now_str())
+
+    # ---------- wiki ----------
+    def wiki_pages(self) -> list[Doc]:
+        docs = []
+        for p in self._md_files(self.root / "wiki", recursive=True):
+            slug = self.rel(p)[len("wiki/"):-3]
+            d = self._read_doc("wiki", p, id_=slug)
+            d.extra["links"] = sorted({m.group(1).strip() for m in WIKILINK_RE.finditer(d.body)})
+            docs.append(d)
+        docs.sort(key=lambda d: d.id)
+        return docs
+
+    def wiki(self, slug: str) -> Doc:
+        d = self._read_doc("wiki", self.safe_path(f"wiki/{slug}.md"), id_=slug)
+        d.extra["links"] = sorted({m.group(1).strip() for m in WIKILINK_RE.finditer(d.body)})
+        d.extra["backlinks"] = [
+            {"id": o.id, "title": o.title}
+            for o in self.wiki_pages()
+            if o.id != slug and (slug in o.extra["links"] or d.title in o.extra["links"])
+        ]
+        return d
+
+    def resolve_link(self, target: str) -> dict | None:
+        """[[target]] 依次在 wiki、卡片、lab、idea、discussion 里找。"""
+        t = target.strip()
+        for d in self.wiki_pages():
+            if d.id == t or d.title == t or d.id.split("/")[-1] == t:
+                return {"kind": "wiki", "id": d.id}
+        for d in self.cards():
+            if d.id == t or d.title == t:
+                return {"kind": "card", "id": d.id}
+        for d in self.labs():
+            if d.id == t or d.title == t:
+                return {"kind": "lab", "id": d.id}
+        for d in self.ideas():
+            if d.id == t or d.title == t:
+                return {"kind": "idea", "id": d.id}
+        for d in self.discussions():
+            if d.id == t or d.title == t:
+                return {"kind": "discussion", "id": d.id}
+        return None
+
+    def link_table(self) -> dict[str, dict]:
+        """一次性给前端所有可解析的链接目标。"""
+        table: dict[str, dict] = {}
+        for kind, docs in (
+            ("discussion", self.discussions()), ("idea", self.ideas()), ("lab", self.labs()),
+            ("card", self.cards()), ("wiki", self.wiki_pages()),
+        ):
+            for d in docs:
+                for key in {d.id, d.title, d.id.split("/")[-1]}:
+                    table[key] = {"kind": kind, "id": d.id}
+        return table
+
+    # ---------- labs ----------
+    def labs(self) -> list[Doc]:
+        docs = []
+        labs_dir = self.root / "labs"
+        if labs_dir.exists():
+            for d in sorted(labs_dir.iterdir()):
+                if d.is_dir() and (d / "brief.md").exists() and not d.name.startswith("."):
+                    docs.append(self._lab_doc(d))
+        docs.sort(key=lambda d: d.id, reverse=True)
+        return docs
+
+    def _lab_doc(self, d: Path) -> Doc:
+        doc = self._read_doc("lab", d / "brief.md", id_=d.name)
+        doc.meta.setdefault("status", "draft")
+        doc.extra["has_report"] = (d / "report.md").exists()
+        doc.extra["has_data"] = (d / "DATA.md").exists()
+        pdfs = sorted(p.name for p in d.glob("*.pdf"))
+        doc.extra["pdfs"] = pdfs
+        return doc
+
+    def lab(self, lab_id: str) -> Doc:
+        d = self.safe_path(f"labs/{lab_id}")
+        doc = self._lab_doc(d)
+        for name in ("report.md", "DATA.md"):
+            p = d / name
+            if p.exists():
+                m, b = fm.read(p)
+                doc.extra[name.replace(".md", "").lower()] = {"meta": m, "body": b}
+        files = []
+        for p in sorted(d.rglob("*")):
+            if p.is_file() and not p.name.startswith(".") and "__pycache__" not in p.parts:
+                files.append({"path": self.rel(p), "name": str(p.relative_to(d)), "size": p.stat().st_size})
+        doc.extra["files"] = files[:500]
+        return doc
+
+    def next_lab_id(self, title: str) -> str:
+        n = 0
+        for d in self.labs():
+            m = re.match(r"^(\d+)", d.id)
+            if m:
+                n = max(n, int(m.group(1)))
+        return f"{n + 1:02d}-{slugify(title)}"
+
+    def set_lab_status(self, lab_id: str, status: str) -> dict:
+        assert status in LAB_STATUSES, status
+        return fm.update(self.safe_path(f"labs/{lab_id}/brief.md"), status=status)
+
+    # ---------- discussion ----------
+    def discussions(self) -> list[Doc]:
+        docs = [self._read_doc("discussion", p) for p in self._md_files(self.root / "discussion")]
+        for d in docs:
+            d.meta.setdefault("status", "open")
+            d.meta.setdefault("asked_by", "agent")
+        order = {s: i for i, s in enumerate(DISCUSSION_STATUSES)}
+        docs.sort(key=lambda d: (order.get(d.meta["status"], 9), -d.mtime))
+        return docs
+
+    def discussion(self, did: str) -> Doc:
+        d = self._read_doc("discussion", self.safe_path(f"discussion/{did}.md"))
+        d.meta.setdefault("status", "open")
+        d.meta.setdefault("asked_by", "agent")
+        return d
+
+    def answer_discussion(self, did: str, text: str) -> dict:
+        p = self.safe_path(f"discussion/{did}.md")
+        meta, body = fm.read(p)
+        stamp = now_str()
+        if "## 你的回答" not in body:
+            body = body.rstrip("\n") + "\n\n## 你的回答\n"
+        body = body.rstrip("\n") + f"\n\n### 回答 · {stamp}\n\n{text.strip()}\n"
+        meta["status"] = "answered"
+        meta["answered"] = stamp
+        fm.write(p, meta, body)
+        self.append_log("用户", f"回答了讨论「{meta.get('title', did)}」", f"discussion/{did}.md")
+        return meta
+
+    def new_discussion(self, title: str, text: str, asked_by: str = "user") -> str:
+        did = f"{today_str()}-{slugify(title)}"
+        p = self.root / "discussion" / f"{did}.md"
+        i = 2
+        while p.exists():
+            p = self.root / "discussion" / f"{did}-{i}.md"
+            i += 1
+        meta = {"title": title, "status": "open", "asked_by": asked_by, "created": now_str()}
+        body = f"# {title}\n\n## 问题\n\n{text.strip()}\n"
+        fm.write(p, meta, body)
+        self.append_log("用户" if asked_by == "user" else "agent", f"新建讨论「{title}」", self.rel(p))
+        return p.stem
+
+    # ---------- ideas ----------
+    def ideas(self) -> list[Doc]:
+        docs = []
+        for p in self._md_files(self.root / "ideas"):
+            d = self._read_doc("idea", p)
+            d.meta.setdefault("status", "seed")
+            docs.append(d)
+        for p in self._md_files(self.root / "ideas" / "inbox"):
+            d = self._read_doc("idea", p, id_=f"inbox/{p.stem}")
+            d.meta.setdefault("status", "inbox")
+            docs.append(d)
+        return docs
+
+    def idea(self, slug: str) -> Doc:
+        p = self.safe_path(f"ideas/{slug}.md")
+        d = self._read_doc("idea", p, id_=slug)
+        d.meta.setdefault("status", "inbox" if slug.startswith("inbox/") else "seed")
+        return d
+
+    def idea_tree(self) -> list[dict]:
+        docs = {d.id: d.summary() for d in self.ideas()}
+        for d in docs.values():
+            d["children"] = []
+        roots = []
+        for d in docs.values():
+            parent = d["meta"].get("parent")
+            if parent and parent in docs and parent != d["id"]:
+                docs[parent]["children"].append(d)
+            else:
+                roots.append(d)
+        def sort(nodes):
+            nodes.sort(key=lambda n: (n["id"].startswith("inbox/"), n["meta"].get("order", 999), n["id"]))
+            for n in nodes:
+                sort(n["children"])
+        sort(roots)
+        return roots
+
+    def capture_idea(self, text: str, title: str | None = None) -> str:
+        title = (title or text.strip().splitlines()[0]).strip()[:60]
+        stem = f"{today_str()}-{slugify(title)}"
+        p = self.root / "ideas" / "inbox" / f"{stem}.md"
+        i = 2
+        while p.exists():
+            p = self.root / "ideas" / "inbox" / f"{stem}-{i}.md"
+            i += 1
+        meta = {"title": title, "status": "inbox", "created": now_str(), "source": "dashboard"}
+        fm.write(p, meta, f"# {title}\n\n{text.strip()}\n")
+        self.append_log("用户", f"速记想法「{title}」", self.rel(p))
+        return f"inbox/{p.stem}"
+
+    def request_promote(self, slug: str, note: str = "") -> dict:
+        p = self.safe_path(f"ideas/{slug}.md")
+        return fm.update(p, promote_requested=now_str(), promote_note=note)
+
+    # ---------- log ----------
+    def append_log(self, who: str, what: str, link: str | None = None) -> None:
+        p = self.root / "log.md"
+        line = f"\n## {now_str()} · {who} · {what}\n"
+        if link:
+            line += f"\n[{link}]({link})\n"
+        with p.open("a", encoding="utf-8") as f:
+            f.write(line)
+
+    def log_entries(self, n: int = 30) -> list[dict]:
+        p = self.root / "log.md"
+        if not p.exists():
+            return []
+        entries: list[dict] = []
+        cur: dict | None = None
+        for line in p.read_text(encoding="utf-8").splitlines():
+            m = LOG_ENTRY_RE.match(line)
+            if m:
+                parts = [x.strip() for x in m.group(2).split("·", 1)]
+                who, what = (parts + [""])[:2] if len(parts) == 2 else ("", parts[0])
+                cur = {"time": m.group(1), "who": who, "what": what, "body": ""}
+                entries.append(cur)
+            elif cur is not None:
+                cur["body"] += line + "\n"
+        entries.reverse()
+        return entries[:n]
+
+    # ---------- 已读状态 / 红点 ----------
+    def _state_path(self) -> Path:
+        return self.dash / "state.json"
+
+    def state(self) -> dict:
+        p = self._state_path()
+        if p.exists():
+            try:
+                return json.loads(p.read_text(encoding="utf-8"))
+            except json.JSONDecodeError:
+                pass
+        return {"seen": {}}
+
+    def mark_seen(self, kind: str, id_: str) -> None:
+        s = self.state()
+        s.setdefault("seen", {})[f"{kind}:{id_}"] = time.time()
+        self._state_path().write_text(json.dumps(s, ensure_ascii=False, indent=1), encoding="utf-8")
+
+    def is_unread(self, kind: str, id_: str, mtime: float) -> bool:
+        return self.state().get("seen", {}).get(f"{kind}:{id_}", 0) < mtime
+
+    def attention(self) -> dict:
+        """首页"需要你处理"与导航红点的数据源。"""
+        items = []
+        for d in self.discussions():
+            st = d.meta["status"]
+            if st == "open" and d.meta.get("asked_by") == "agent":
+                items.append({"kind": "discussion", "id": d.id, "title": d.title, "why": "agent 向你提问，等你回答", "time": d.mtime})
+            elif st in ("digested", "resolved") and self.is_unread("discussion", d.id, d.mtime):
+                items.append({"kind": "discussion", "id": d.id, "title": d.title, "why": "agent 消化了你的回答", "time": d.mtime})
+        for d in self.inbox():
+            if d.meta.get("status", "pending") == "pending":
+                items.append({"kind": "inbox", "id": d.id, "title": d.title, "why": "arXiv 候选，等你审批", "time": d.mtime})
+        for d in self.labs():
+            st = d.meta.get("status")
+            if st == "awaiting_review":
+                items.append({"kind": "lab", "id": d.id, "title": d.title, "why": "任务书等你过目", "time": d.mtime})
+            elif st == "waiting_answer":
+                items.append({"kind": "lab", "id": d.id, "title": d.title, "why": "任务卡在一个问题上，见讨论", "time": d.mtime})
+            elif st in ("done", "blocked") and self.is_unread("lab", d.id, d.mtime):
+                items.append({"kind": "lab", "id": d.id, "title": d.title, "why": "任务" + ("完成" if st == "done" else "受阻") + "，未查看", "time": d.mtime})
+        items.sort(key=lambda x: -x["time"])
+        counts: dict[str, int] = {}
+        for it in items:
+            counts[it["kind"]] = counts.get(it["kind"], 0) + 1
+        return {"items": items, "counts": counts, "total": len(items)}
+
+    # ---------- 运行记录 ----------
+    def runs(self, n: int = 50) -> list[dict]:
+        rd = self.dash / "runs"
+        if not rd.exists():
+            return []
+        out = []
+        for d in sorted(rd.iterdir(), reverse=True)[:n]:
+            m = d / "meta.json"
+            if m.exists():
+                try:
+                    out.append(json.loads(m.read_text(encoding="utf-8")))
+                except json.JSONDecodeError:
+                    continue
+        return out
+
+    def run(self, run_id: str) -> dict | None:
+        m = self.dash / "runs" / run_id / "meta.json"
+        if not m.exists():
+            return None
+        meta = json.loads(m.read_text(encoding="utf-8"))
+        log = self.dash / "runs" / run_id / "log.txt"
+        meta["log"] = log.read_text(encoding="utf-8", errors="replace") if log.exists() else ""
+        return meta
+
+    # ---------- 待处理工作项（tick 用） ----------
+    def pending_work(self) -> list[dict]:
+        work = []
+        for d in self.discussions():
+            if d.meta["status"] == "answered":
+                work.append({"kind": "digest_answer", "id": d.id, "path": d.path, "title": d.title})
+            elif d.meta["status"] == "open" and d.meta.get("asked_by") == "user":
+                work.append({"kind": "answer_user_question", "id": d.id, "path": d.path, "title": d.title})
+        for d in self.inbox():
+            if d.meta.get("status") == "approved":
+                work.append({"kind": "ingest_reference", "id": d.id, "path": d.path, "title": d.title})
+        for d in self.labs():
+            if d.meta.get("status") == "approved":
+                work.append({"kind": "run_lab", "id": d.id, "path": d.path, "title": d.title})
+        for d in self.ideas():
+            if d.meta.get("promote_requested") and not d.meta.get("promoted_lab"):
+                work.append({"kind": "promote_idea", "id": d.id, "path": d.path, "title": d.title})
+            elif d.id.startswith("inbox/") and not d.meta.get("triaged"):
+                work.append({"kind": "triage_idea", "id": d.id, "path": d.path, "title": d.title})
+        return work
