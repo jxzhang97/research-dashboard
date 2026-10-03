@@ -138,7 +138,7 @@
       <div class="panel"><h2 style="margin-top:0">卡片 (${d.cards.length})</h2><ul class="list">${cards || "<li class='muted'>还没有卡片</li>"}</ul></div>`;
     main.querySelectorAll("#inbox button").forEach((b) => b.onclick = async () => {
       const li = b.closest("li"); b.disabled = true;
-      await api(`/api/inbox/${encodeURIComponent(li.dataset.key)}/${b.dataset.act}`);
+      await api(`/api/inbox/${encodeURIComponent(li.dataset.key)}/${b.dataset.act}`, {});
       toast(b.dataset.act === "approved" ? "已通过，agent 将下载并精读" : "已拒绝"); li.remove(); refreshOverview();
     });
   };
@@ -162,7 +162,7 @@
       ${m.status === "pending" ? `<p><button class="primary" id="ok">通过，下载并精读</button> <button id="no">拒绝</button></p>` : ""}
       <div class="panel" id="body"></div>`;
     $("#body").appendChild(render(d.body, dirOf(d.path)));
-    const act = (s) => async () => { await api(`/api/inbox/${encodeURIComponent(key)}/${s}`); toast("已记录"); location.hash = "#/refs"; };
+    const act = (s) => async () => { await api(`/api/inbox/${encodeURIComponent(key)}/${s}`, {}); toast("已记录"); location.hash = "#/refs"; };
     if ($("#ok")) { $("#ok").onclick = act("approved"); $("#no").onclick = act("rejected"); }
   };
 
@@ -201,9 +201,9 @@
     $("#brief").appendChild(render(d.body, dirOf(d.path)));
     if (d.report) $("#report").appendChild(render(d.report.body, dirOf(d.path)));
     if (d.data) $("#data").appendChild(render(d.data.body, dirOf(d.path)));
-    if ($("#approve")) $("#approve").onclick = async () => { await api(`/api/labs/${encodeURIComponent(id)}/approve`); toast("已批准，agent 开始执行"); pages.lab(id); refreshOverview(); };
-    if ($("#park")) $("#park").onclick = async () => { await api(`/api/labs/${encodeURIComponent(id)}/status/parked`); pages.lab(id); };
-    if ($("#unpark")) $("#unpark").onclick = async () => { await api(`/api/labs/${encodeURIComponent(id)}/status/awaiting_review`); pages.lab(id); };
+    if ($("#approve")) $("#approve").onclick = async () => { await api(`/api/labs/${encodeURIComponent(id)}/approve`, {}); toast("已批准，agent 开始执行"); pages.lab(id); refreshOverview(); };
+    if ($("#park")) $("#park").onclick = async () => { await api(`/api/labs/${encodeURIComponent(id)}/status/parked`, {}); pages.lab(id); };
+    if ($("#unpark")) $("#unpark").onclick = async () => { await api(`/api/labs/${encodeURIComponent(id)}/status/awaiting_review`, {}); pages.lab(id); };
     api("/api/seen", { kind: "lab", id }).then(refreshOverview);
   };
 
@@ -232,7 +232,7 @@
         <div class="form-row"><button class="primary" id="send">提交回答</button>${m.status !== "resolved" ? `<button id="resolve">标记已解决</button>` : ""}</div></div>`;
     $("#body").appendChild(render(d.body, dirOf(d.path)));
     $("#send").onclick = async () => { const t = $("#ans").value.trim(); if (!t) return; await api(`/api/discussion/${encodeURIComponent(id)}/answer`, { text: t }); toast("已提交，agent 开始处理"); pages.thread(id); refreshOverview(); };
-    if ($("#resolve")) $("#resolve").onclick = async () => { await api(`/api/discussion/${encodeURIComponent(id)}/resolve`); pages.thread(id); refreshOverview(); };
+    if ($("#resolve")) $("#resolve").onclick = async () => { await api(`/api/discussion/${encodeURIComponent(id)}/resolve`, {}); pages.thread(id); refreshOverview(); };
     api("/api/seen", { kind: "discussion", id }).then(refreshOverview);
   };
 
