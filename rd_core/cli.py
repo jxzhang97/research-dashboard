@@ -10,7 +10,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-from . import TEMPLATE_ROOT, config
+from . import TEMPLATE_ROOT, config, registry
 
 SKILL_HOMES = [Path("~/.claude/skills").expanduser(), Path("~/.codex/skills").expanduser(), Path("~/.agents/skills").expanduser()]
 REQUIRED_SKILLS = ["baby-steps-report"]
@@ -75,13 +75,15 @@ def cmd_init(args):
         text = src.read_text(encoding="utf-8") if src.suffix in (".md", ".toml", ".txt", "") or src.name.startswith(".") else None
         if text is not None:
             text = text.replace("{{PROJECT_NAME}}", name).replace("{{DATE}}", _today())
-            if src.name == "config.toml" and args.port:
-                text = text.replace("port = 8010", f"port = {int(args.port)}")
+            if src.name == "config.toml":
+                port = int(args.port) if args.port else registry.free_port(exclude=dst)
+                text = text.replace("port = 8010", f"port = {port}")
             out.write_text(text, encoding="utf-8")
         else:
             shutil.copy2(src, out)
     _sync_rules(dst)
     config.write_machine(dst, claude_bin=config.find_claude_bin() or "")
+    registry.register(dst, name, int(config.load(dst)["server"]["port"]))
     if not (dst / ".git").exists():
         subprocess.run(["git", "init", "-q"], cwd=dst)
         subprocess.run(["git", "add", "-A"], cwd=dst)
@@ -120,6 +122,10 @@ def cmd_serve(args):
     cfg = config.load(proj.root)
     host = args.host or cfg["server"]["host"]
     port = args.port or int(cfg["server"]["port"])
+    taken = registry.port_taken(port, exclude=proj.root)
+    if taken:
+        sys.exit(f"端口 {port} 已被「{taken}」占用；用 --port 指定别的端口，或 rd projects 看本机课题")
+    registry.register(proj.root, cfg["project"]["name"], port)
     print(f"dashboard: http://localhost:{port}  （课题 {cfg['project']['name']}）")
     uvicorn.run(create_app(proj), host=host, port=port, log_level="warning")
 
@@ -162,25 +168,38 @@ def cmd_arxiv(args):
 # ---------- cores / jobs ----------
 def cmd_free_cores(args):
     from . import cores
-    st = cores.status(Path(args.path).expanduser().resolve())
+    proj = Path(args.path).expanduser().resolve() if args.path else None
+    st = cores.status(proj)
     if args.json:
         print(json.dumps(st, ensure_ascii=False, indent=1))
     else:
         print(st["advice"])
         for j in st["jobs"]:
-            print(f"  - {j['label']}: {j['cores']} 核 (pid {j.get('pid')})")
+            print(f"  - [{j.get('project', '')}] {j['label']}: {j['cores']} 核 (pid {j.get('pid')})")
 
 
 def cmd_jobs(args):
     from . import cores
-    proj = Path(args.path).expanduser().resolve()
+    proj = Path(args.path).expanduser().resolve() if args.path else None
     if args.action == "claim":
         jid = cores.claim(proj, int(args.cores), args.label or "job", pid=args.pid)
         print(jid)
     elif args.action == "release":
-        print("released" if cores.release(proj, args.id) else "not found")
+        print("released" if cores.release(args.id) else "not found")
     else:
-        print(json.dumps(cores.list_jobs(proj), ensure_ascii=False, indent=1))
+        print(json.dumps(cores.list_jobs(), ensure_ascii=False, indent=1))
+
+
+def cmd_projects(args):
+    rows = registry.list_projects()
+    if not rows:
+        print("本机还没有登记的课题（rd init / rd serve / rd scheduler install 会登记）")
+        return
+    ms = registry.machine_settings()
+    print(f"本机 {config.hostname()}：同时最多 {ms['max_agents']} 个 agent，留 {ms['reserve_cores']} 核（~/.rd/machine.toml）")
+    for r in rows:
+        state = "在跑" if r["listening"] else ("目录不存在" if not r["exists"] else "未启动")
+        print(f"  {r['name']:<24} :{r['port']}  {state:<6} {r['path']}")
 
 
 # ---------- scheduler ----------
@@ -231,8 +250,9 @@ def main(argv=None):
     p = sub.add_parser("run", help="立刻让 agent 干一件事"); p.add_argument("path"); p.add_argument("--prompt", "-p"); p.add_argument("--label"); p.add_argument("--model"); p.add_argument("--effort"); p.set_defaults(fn=cmd_run)
     p = sub.add_parser("tick", help="处理所有待办（回答/审批/升级）"); p.add_argument("path"); p.add_argument("--only"); p.add_argument("--dry-run", action="store_true"); p.add_argument("--force", action="store_true", help="忽略失败退避，立刻重试"); p.set_defaults(fn=cmd_tick)
     p = sub.add_parser("arxiv-scan", help="扫 arXiv 新文章"); p.add_argument("path"); p.add_argument("--dry-run", action="store_true"); p.add_argument("--no-agent", action="store_true"); p.set_defaults(fn=cmd_arxiv)
-    p = sub.add_parser("free-cores", help="现在还能用几个核"); p.add_argument("path", nargs="?", default="."); p.add_argument("--json", action="store_true"); p.set_defaults(fn=cmd_free_cores)
-    p = sub.add_parser("jobs", help="作业登记"); p.add_argument("action", choices=["claim", "release", "list"]); p.add_argument("path", nargs="?", default="."); p.add_argument("--cores", default=1); p.add_argument("--label"); p.add_argument("--pid", type=int); p.add_argument("--id"); p.set_defaults(fn=cmd_jobs)
+    p = sub.add_parser("free-cores", help="现在还能用几个核（本机所有课题合计）"); p.add_argument("path", nargs="?"); p.add_argument("--json", action="store_true"); p.set_defaults(fn=cmd_free_cores)
+    p = sub.add_parser("jobs", help="数值作业登记（机器级）"); p.add_argument("action", choices=["claim", "release", "list"]); p.add_argument("path", nargs="?"); p.add_argument("--cores", default=1); p.add_argument("--label"); p.add_argument("--pid", type=int); p.add_argument("--id"); p.set_defaults(fn=cmd_jobs)
+    p = sub.add_parser("projects", help="本机登记的课题、端口和运行状态"); p.set_defaults(fn=cmd_projects)
     p = sub.add_parser("scheduler", help="launchd 定时任务"); p.add_argument("action", choices=["install", "uninstall", "status"]); p.add_argument("path"); p.set_defaults(fn=cmd_scheduler)
     p = sub.add_parser("doctor", help="检查断链、缺节、状态"); p.add_argument("path"); p.set_defaults(fn=cmd_doctor)
 

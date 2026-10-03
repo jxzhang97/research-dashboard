@@ -7,8 +7,15 @@ import pytest
 ROOT = Path(__file__).resolve().parent.parent
 
 
+@pytest.fixture(autouse=True)
+def rd_home(tmp_path: Path, monkeypatch):
+    """机器级注册表指到临时目录，测试不碰真正的 ~/.rd。"""
+    monkeypatch.setenv("RD_HOME", str(tmp_path / "rd_home"))
+    return tmp_path / "rd_home"
+
+
 @pytest.fixture
-def project_dir(tmp_path: Path) -> Path:
+def project_dir(tmp_path: Path, rd_home: Path) -> Path:
     d = tmp_path / "demo"
     subprocess.check_call([sys.executable, "-m", "rd_core.cli", "init", str(d), "--name", "demo"], cwd=ROOT)
     # 一张卡片、两页 wiki、一个 lab、一个讨论、两个想法

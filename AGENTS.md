@@ -51,7 +51,8 @@
 ## 5. 计算
 
 - 任务书的 `machine` 字段指定在哪跑，没写就是 studio。只在用户明确说时用笔记本或集群。
-- **并行不设固定预算，按当时空闲决定**：跑数值前先执行 `rd free-cores <课题目录>`，它会报告性能核数、当前负载、已登记作业，以及"现在最多再用几个核"。按它说的来，并显式设线程数（`OMP_NUM_THREADS`、`MKL_NUM_THREADS`、`OPENBLAS_NUM_THREADS`、Julia `-t`、Mathematica `$ProcessorCount` 相关设置），然后 `rd jobs claim <课题目录> --cores N --label "<lab id>"` 登记，跑完 `rd jobs release <课题目录> --id <jid>`。
+- **并行不设固定预算，按当时空闲决定**：跑数值前先执行 `rd free-cores <课题目录>`，它会报告性能核数、当前负载、**本机所有课题**已登记的作业，以及"现在最多再用几个核"。按它说的来，并显式设线程数（`OMP_NUM_THREADS`、`MKL_NUM_THREADS`、`OPENBLAS_NUM_THREADS`、Julia `-t`、Mathematica `$ProcessorCount` 相关设置），然后 `rd jobs claim <课题目录> --cores N --label "<lab id>"` 登记，跑完 `rd jobs release --id <jid>`。登记表是机器级的（`~/.rd/jobs.json`），别的课题的数值也在里面，所以不同课题不会互相抢核。
+- 同一台机器上可能同时有好几个课题的 dashboard 和 agent。规矩：每个课题自己的 agent 串行；全机同时最多 `~/.rd/machine.toml` 里 `max_agents` 个 agent（默认 2），超出的排队；不要跨课题写文件。
 - 中间数据和大文件放 `config.toml` 的 `data_root`（studio 上 `~/doc_unsyn/<课题名>/<lab id>/`），项目里只留图、汇总结果和 `DATA.md`（机器、路径、内容、日期、怎么重新生成）。
 - 代码能复用的放 `src/`，一次性的留在 lab 文件夹。
 

@@ -14,7 +14,7 @@ import time
 from datetime import datetime
 from pathlib import Path
 
-from . import config
+from . import config, registry
 from .project import Project
 
 HEADLESS_RULES = """
@@ -58,6 +58,35 @@ def build_command(project: Project, prompt: str, model: str | None, effort: str 
     if max_turns > 0:
         cmd += ["--max-turns", str(max_turns)]
     return cmd
+
+
+# 日常小任务（arXiv 说明、整理想法、消化回答、建卡、起草任务书）比 lab 长任务多一个槽位，
+# 这样别的课题在跑几小时的数值时，这些每日例行的事照样当场做。
+ROUTINE_KINDS = {"arxiv_reason", "triage_idea", "digest_answer", "answer_user_question", "ingest_reference", "promote_idea"}
+
+
+def acquire_slot(log=None, kind: str = "manual"):
+    """机器级并发槽位：本机所有课题加起来同时最多 max_agents 个重任务 agent（日常任务多一个）。返回持有锁的文件对象。"""
+    n = max(1, int(registry.machine_settings().get("max_agents", 2)))
+    if kind in ROUTINE_KINDS:
+        n += 1
+    slot_dir = registry.home() / "slots"
+    slot_dir.mkdir(exist_ok=True)
+    warned = False
+    while True:
+        for i in range(n):
+            f = (slot_dir / f"{i}.lock").open("w")
+            try:
+                fcntl.flock(f, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                return f
+            except BlockingIOError:
+                f.close()
+        if not warned and log:
+            log(f"⏳ 等待本机 agent 槽位（所有课题同时最多 {n} 个此类任务，改 ~/.rd/machine.toml 的 max_agents）…")
+            warned = True
+        time.sleep(5)
+    # 注意：槽位按"重任务 max_agents 个 + 日常任务 1 个"划分，但锁文件是同一组 0..n-1，
+    # 所以日常任务可以用第 n 个槽位，重任务永远用不到它。
 
 
 def _fmt_event(ev: dict) -> str:
@@ -124,6 +153,7 @@ class Runner:
         with lock_path.open("w") as lock:
             self._log(d, "⏳ 等待 agent 锁（同一课题同时只跑一个）…")
             fcntl.flock(lock, fcntl.LOCK_EX)
+            slot = acquire_slot(lambda s: self._log(d, s), kind=kind)
             meta["status"] = "running"
             meta["started"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             cmd = build_command(self.project, prompt, model, effort, self.cfg)
@@ -190,6 +220,8 @@ class Runner:
                 meta["ended"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                 meta["pid"] = None
                 self._save(d, meta)
+                fcntl.flock(slot, fcntl.LOCK_UN)
+                slot.close()
                 fcntl.flock(lock, fcntl.LOCK_UN)
         self.project.append_log("agent", f"运行 {meta['label']} → {meta['status']}", f".dashboard/runs/{run_id}/log.txt")
         return meta

@@ -80,6 +80,17 @@ rd scheduler status <课题目录>
 4. 任务收尾：报告摘要 + PDF、回写文献卡片、更新 wiki、更新想法状态、记日志、git commit。
 5. 每天 arXiv 候选进"文献"页等你审批；批准的被下载、精读、建卡。
 
+## 多个课题同时跑
+
+每个课题一个文件夹、一个 dashboard、一套 launchd 任务，互不干扰；机器级的东西统一在 `~/.rd/`（每台机器一份，不进 iCloud）：
+
+- `projects.json`：本机课题登记表，`rd init` / `rd serve` / `rd scheduler install` 自动维护，端口自动错开（8010、8011…），课题名不许重复。`rd projects` 查看。
+- `machine.toml`：`max_agents`（全机同时最多几个 agent，默认 2，超出排队）、`reserve_cores`（跑数值时留给系统的核）。
+- `jobs.json`：所有课题共用的数值作业登记，`rd free-cores` 看的是全机的占用。
+- arXiv 扫描按课题名错开分钟，不会同时打 arXiv。
+
+dashboard 右上角可以在本机的课题之间切换。
+
 ## 自动运行的权限与登录
 
 `rd run` / `rd tick` 用 `claude -p --permission-mode bypassPermissions` 在课题目录里无人值守运行。护栏在 `AGENTS.md`：只写课题目录和 `data_root`，不改用户亲手写的文件，不删文件，每次运行 git commit。

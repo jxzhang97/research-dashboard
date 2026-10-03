@@ -367,6 +367,11 @@ def create_app(project: Project) -> FastAPI:
     def cores_status():
         return cores.status(project.root)
 
+    @app.get("/api/projects")
+    def projects_list():
+        from . import registry
+        return registry.list_projects()
+
     @app.get("/api/prompts")
     def prompts():
         return PROMPTS

@@ -57,7 +57,7 @@ ssh studio "~/doc_unsyn/research-dashboard/rd scheduler install ~/$REL && ~/doc_
 
 **在 studio 上**：直接 `rd scheduler install .`。
 
-端口：`rd scheduler install` 会检查 8010 是否已被另一个课题的 dashboard 占用；冲突就改 `config.toml` 的 `server.port`（8011、8012…）再装。装好后告诉用户地址：`http://100.120.253.99:<端口>`（笔记本经 Tailscale 访问）。
+端口：`rd scheduler install` 会自动避开本机其他课题占用的端口（冲突就换下一个并写回 `config.toml`），输出的最后一行是实际地址。把它换成 Tailscale 地址告诉用户：`http://100.120.253.99:<端口>`。`ssh studio "~/doc_unsyn/research-dashboard/rd projects"` 能看本机所有课题和端口。
 
 验证：`ssh studio "curl -s localhost:<端口>/api/overview | head -c 200"` 有 JSON 即可。
 

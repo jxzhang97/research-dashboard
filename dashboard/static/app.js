@@ -80,6 +80,16 @@
     const running = (OVERVIEW.queue.current ? 1 : 0) + OVERVIEW.queue.pending.length;
     const counts = { ...a.counts, runs: running };
     document.querySelectorAll(".badge").forEach((b) => { const n = counts[b.dataset.badge] || 0; b.textContent = n; b.classList.toggle("on", n > 0); });
+    // 本机其他课题的 dashboard：同一主机、不同端口
+    try {
+      const others = (await api("/api/projects")).filter((p) => p.name !== OVERVIEW.project.name && p.exists);
+      const sel = $("#projects");
+      if (others.length) {
+        sel.innerHTML = `<option value="">切换课题…</option>` + others.map((p) => `<option value="${p.port}">${esc(p.name)}${p.listening ? "" : "（未启动）"}</option>`).join("");
+        sel.style.display = "";
+        sel.onchange = () => { if (sel.value) location.href = `${location.protocol}//${location.hostname}:${sel.value}/`; };
+      } else { sel.style.display = "none"; }
+    } catch (e) { /* 注册表不可用就不显示 */ }
   }
 
   // ---------- 页面 ----------
