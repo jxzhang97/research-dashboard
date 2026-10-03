@@ -128,11 +128,11 @@ def cmd_run(args):
 def cmd_tick(args):
     from .tick import run_pending
     proj = _project(args.path)
-    res = run_pending(proj, only=args.only, dry_run=args.dry_run)
+    res = run_pending(proj, only=args.only, dry_run=args.dry_run, force=args.force)
     if not res:
         print("没有待处理项")
     for r in res:
-        print(json.dumps({k: v for k, v in r.items() if k in ("kind", "id", "status", "prompt")}, ensure_ascii=False))
+        print(json.dumps({k: v for k, v in r.items() if k in ("kind", "id", "status", "prompt", "last_status", "retry_in_s")}, ensure_ascii=False))
 
 
 def cmd_arxiv(args):
@@ -220,7 +220,7 @@ def main(argv=None):
     p = sub.add_parser("update", help="刷新课题里的 AGENTS.md"); p.add_argument("path"); p.set_defaults(fn=cmd_update)
     p = sub.add_parser("serve", help="启动 dashboard"); p.add_argument("path"); p.add_argument("--host"); p.add_argument("--port", type=int); p.set_defaults(fn=cmd_serve)
     p = sub.add_parser("run", help="立刻让 agent 干一件事"); p.add_argument("path"); p.add_argument("--prompt", "-p"); p.add_argument("--label"); p.add_argument("--model"); p.add_argument("--effort"); p.set_defaults(fn=cmd_run)
-    p = sub.add_parser("tick", help="处理所有待办（回答/审批/升级）"); p.add_argument("path"); p.add_argument("--only"); p.add_argument("--dry-run", action="store_true"); p.set_defaults(fn=cmd_tick)
+    p = sub.add_parser("tick", help="处理所有待办（回答/审批/升级）"); p.add_argument("path"); p.add_argument("--only"); p.add_argument("--dry-run", action="store_true"); p.add_argument("--force", action="store_true", help="忽略失败退避，立刻重试"); p.set_defaults(fn=cmd_tick)
     p = sub.add_parser("arxiv-scan", help="扫 arXiv 新文章"); p.add_argument("path"); p.add_argument("--dry-run", action="store_true"); p.add_argument("--no-agent", action="store_true"); p.set_defaults(fn=cmd_arxiv)
     p = sub.add_parser("free-cores", help="现在还能用几个核"); p.add_argument("path", nargs="?", default="."); p.add_argument("--json", action="store_true"); p.set_defaults(fn=cmd_free_cores)
     p = sub.add_parser("jobs", help="作业登记"); p.add_argument("action", choices=["claim", "release", "list"]); p.add_argument("path", nargs="?", default="."); p.add_argument("--cores", default=1); p.add_argument("--label"); p.add_argument("--pid", type=int); p.add_argument("--id"); p.set_defaults(fn=cmd_jobs)

@@ -35,7 +35,8 @@ def test_write_endpoints(project_dir: Path):
     r = c.post("/api/labs/01-first-task/approve")
     assert r.json()["status"] == "approved"
     pending = c.get("/api/pending").json()
-    assert {w["kind"] for w in pending} >= {"digest_answer", "run_lab", "triage_idea", "answer_user_question"}
+    assert {w["kind"] for w in pending["ready"]} >= {"digest_answer", "run_lab", "triage_idea", "answer_user_question"}
+    assert pending["deferred"] == []
     assert c.get("/api/file", params={"path": "../x"}).status_code in (403, 404)
     assert c.get("/api/file", params={"path": "PROJECT.md"}).status_code == 200
     assert c.get("/api/raw", params={"path": "wiki/notation.md"}).json()["meta"]["title"] == "notation"

@@ -25,7 +25,9 @@ lookback_days = 3
 hour = 9                     # 每天几点扫
 
 [schedule]
-tick_minutes = 60            # 兜底：每小时处理一次待办
+watch_seconds = 15           # dashboard 开着时每 15 秒扫一次待办（网页上的动作本身是立刻触发）
+tick_minutes = 60            # dashboard 没开时 launchd 的兜底间隔
+retry_minutes = 30           # 某项失败后多久才重试
 
 [server]
 host = "0.0.0.0"             # 0.0.0.0 才能从笔记本经 Tailscale 访问

@@ -1,7 +1,10 @@
 """把"待处理工作项"变成一次次 agent 运行。
-dashboard 上的用户动作（回答、审批、升级）之后立刻调用一次；launchd 每小时再兜底调用一次。"""
+触发时机：dashboard 上的用户动作之后立刻；dashboard 的文件监视每 watch_seconds 发现新待办时立刻；
+launchd 每 tick_minutes 兜底一次（dashboard 没开时）。失败的项在 retry_minutes 内不重试。"""
 
 from __future__ import annotations
+
+import time
 
 from . import config
 from .project import Project
@@ -46,19 +49,39 @@ PROMPTS = {
 WRITE_KINDS = set()  # 目前所有工作项都用 read 模型启动；写报告由 skill 内部交给 write 模型的子 agent
 
 
-def run_pending(project: Project, only: str | None = None, dry_run: bool = False) -> list[dict]:
+def actionable(project: Project, cfg: dict | None = None, only: str | None = None) -> tuple[list[dict], list[dict]]:
+    """返回 (现在可以做的, 因为刚失败而暂缓的)。"""
+    cfg = cfg or config.load(project.root)
+    retry = int(cfg["schedule"].get("retry_minutes", 30)) * 60
     work = project.pending_work()
     if only:
         work = [w for w in work if w["kind"] == only]
-    results = []
-    cfg = config.load(project.root)
+    ready, deferred = [], []
     for w in work:
+        info = project.attempt_info(w["kind"], w["id"])
+        if info and info.get("status") != "done" and time.time() - info["t"] < retry:
+            w = {**w, "last_status": info["status"], "retry_in_s": int(retry - (time.time() - info["t"]))}
+            deferred.append(w)
+        else:
+            ready.append(w)
+    return ready, deferred
+
+
+def run_pending(project: Project, only: str | None = None, dry_run: bool = False, force: bool = False) -> list[dict]:
+    cfg = config.load(project.root)
+    ready, deferred = actionable(project, cfg, only)
+    if force:
+        ready, deferred = ready + deferred, []
+    results = []
+    for w in deferred:
+        results.append({"kind": w["kind"], "id": w["id"], "status": "deferred", "last_status": w["last_status"], "retry_in_s": w["retry_in_s"]})
+    for w in ready:
         prompt = PROMPTS[w["kind"]].format(**w)
         if dry_run:
-            results.append({"kind": w["kind"], "id": w["id"], "prompt": prompt})
+            results.append({"kind": w["kind"], "id": w["id"], "status": "ready", "prompt": prompt})
             continue
         model = cfg["models"]["write"] if w["kind"] in WRITE_KINDS else cfg["models"]["read"]
-        runner = Runner(project)
-        meta = runner.run(prompt, kind=w["kind"], label=f"{w['kind']}:{w['id']}", model=model)
+        meta = Runner(project).run(prompt, kind=w["kind"], label=f"{w['kind']}:{w['id']}", model=model)
+        project.record_attempt(w["kind"], w["id"], meta["status"])
         results.append(meta)
     return results

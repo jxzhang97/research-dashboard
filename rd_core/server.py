@@ -74,10 +74,34 @@ class RunQueue:
                 with self._lock:
                     self.current = None
 
+    def idle(self) -> bool:
+        with self._lock:
+            return self.current is None and not self.pending
+
     def snapshot(self) -> dict:
         with self._lock:
             return {"current": self.current and {k: self.current[k] for k in ("id", "kind", "label")},
                     "pending": [{k: p[k] for k in ("id", "kind", "label")} for p in self.pending]}
+
+
+def start_watcher(project: Project, rq: RunQueue) -> None:
+    """文件监视：用户不经网页、直接在编辑器里写了 ideas/inbox 或改了状态，也在 watch_seconds 内开始处理。"""
+    from .tick import actionable
+
+    def loop():
+        while True:
+            try:
+                interval = int(config.load(project.root)["schedule"].get("watch_seconds", 15))
+            except Exception:  # noqa: BLE001
+                interval = 15
+            time.sleep(max(5, interval))
+            try:
+                if rq.idle() and actionable(project)[0]:
+                    rq.submit_tick()
+            except Exception:  # noqa: BLE001
+                pass
+
+    threading.Thread(target=loop, daemon=True).start()
 
 
 class AnswerIn(BaseModel):
@@ -113,6 +137,7 @@ class SeenIn(BaseModel):
 def create_app(project: Project) -> FastAPI:
     app = FastAPI(title="research-dashboard")
     rq = RunQueue(project)
+    start_watcher(project, rq)
 
     @app.get("/", response_class=HTMLResponse)
     def index():
@@ -328,11 +353,15 @@ def create_app(project: Project) -> FastAPI:
 
     @app.post("/api/tick")
     def tick():
-        return {"id": rq.submit_tick(), "pending": project.pending_work()}
+        from .tick import actionable
+        ready, deferred = actionable(project)
+        return {"id": rq.submit_tick(), "pending": ready, "deferred": deferred}
 
     @app.get("/api/pending")
     def pending():
-        return project.pending_work()
+        from .tick import actionable
+        ready, deferred = actionable(project)
+        return {"ready": ready, "deferred": deferred}
 
     @app.get("/api/cores")
     def cores_status():

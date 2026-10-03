@@ -68,6 +68,19 @@ def test_answer_capture_pending(project_dir: Path):
     assert not pr.is_unread("discussion", "2026-10-02-which-limit", d.mtime)
 
 
+def test_backoff_after_failure(project_dir: Path):
+    from rd_core.tick import actionable
+    pr = Project(project_dir)
+    pr.set_lab_status("01-first-task", "approved")
+    ready, deferred = actionable(pr)
+    assert [w["kind"] for w in ready] == ["run_lab"] and deferred == []
+    pr.record_attempt("run_lab", "01-first-task", "failed")
+    ready, deferred = actionable(pr)
+    assert ready == [] and deferred[0]["last_status"] == "failed"
+    pr.record_attempt("run_lab", "01-first-task", "done")
+    assert actionable(pr)[0][0]["kind"] == "run_lab"
+
+
 def test_safe_path(project_dir: Path):
     pr = Project(project_dir)
     try:

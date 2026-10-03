@@ -372,10 +372,22 @@ class Project:
                 pass
         return {"seen": {}}
 
+    def _save_state(self, s: dict) -> None:
+        self._state_path().write_text(json.dumps(s, ensure_ascii=False, indent=1), encoding="utf-8")
+
     def mark_seen(self, kind: str, id_: str) -> None:
         s = self.state()
         s.setdefault("seen", {})[f"{kind}:{id_}"] = time.time()
-        self._state_path().write_text(json.dumps(s, ensure_ascii=False, indent=1), encoding="utf-8")
+        self._save_state(s)
+
+    # 工作项的最近一次尝试：失败后一段时间内不重试，避免登录失效之类的问题每 15 秒撞一次
+    def record_attempt(self, kind: str, id_: str, status: str) -> None:
+        s = self.state()
+        s.setdefault("attempts", {})[f"{kind}:{id_}"] = {"t": time.time(), "status": status}
+        self._save_state(s)
+
+    def attempt_info(self, kind: str, id_: str) -> dict | None:
+        return self.state().get("attempts", {}).get(f"{kind}:{id_}")
 
     def is_unread(self, kind: str, id_: str, mtime: float) -> bool:
         return self.state().get("seen", {}).get(f"{kind}:{id_}", 0) < mtime

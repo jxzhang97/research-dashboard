@@ -38,7 +38,9 @@ DEFAULTS: dict = {
         "hour": 9,
     },
     "schedule": {
-        "tick_minutes": 60,
+        "watch_seconds": 15,   # dashboard 开着时，多久扫一次待办（用户动作本身是立刻触发的）
+        "tick_minutes": 60,    # dashboard 没开时 launchd 的兜底间隔
+        "retry_minutes": 30,   # 某项失败后多久才重试
     },
     "server": {
         "host": "0.0.0.0",
