@@ -26,21 +26,23 @@
 
   // ---------- markdown ----------
   const md = window.markdownit({ html: false, linkify: true, breaks: false });
+  // markdown-it 会把 \u0000 换成 U+FFFD，所以占位符用纯字母数字
   function protectMath(src) {
     const store = [];
-    const keep = (m) => { store.push(m); return `\u0000${store.length - 1}\u0000`; };
+    const keep = (m) => { store.push(m); return `MATHPH${store.length - 1}ENDPH`; };
     src = src.replace(/\$\$[\s\S]+?\$\$/g, keep).replace(/\\\[[\s\S]+?\\\]/g, keep).replace(/\\\([\s\S]+?\\\)/g, keep)
       .replace(/(^|[^\\$])\$(?!\s)([^$\n]+?)(?<!\s)\$(?!\d)/g, (m, pre, body) => pre + keep("$" + body + "$"));
     return { src, store };
   }
   function restoreMath(html, store) {
-    return html.replace(/\u0000(\d+)\u0000/g, (_, i) => store[+i].replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c])));
+    return html.replace(/MATHPH(\d+)ENDPH/g, (_, i) => store[+i].replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c])));
   }
+  // [[目标|标签]] → 普通 markdown 链接，用 title 做标记，渲染后再换成 class
   function wikilinks(src) {
     return src.replace(/\[\[([^\]|#]+)(?:#[^\]|]*)?(?:\|([^\]]*))?\]\]/g, (_, target, label) => {
       const t = target.trim(); const r = LINKS[t];
       const href = r ? routeFor(r.kind, r.id) : "#/wiki/" + encodeURIComponent(t);
-      return `<a class="wikilink ${r ? "" : "missing"}" href="${href}">${esc(label || t)}</a>`;
+      return `[${(label || t).replace(/[\[\]]/g, "")}](${href} "${r ? "wikilink" : "wikilink-missing"}")`;
     });
   }
   function routeFor(kind, id) {
@@ -51,6 +53,7 @@
     let html = md.render(wikilinks(s1));
     html = restoreMath(html, store);
     const div = document.createElement("div"); div.className = "md"; div.innerHTML = html;
+    div.querySelectorAll('a[title^="wikilink"]').forEach((a) => { a.className = a.title === "wikilink" ? "wikilink" : "wikilink missing"; a.removeAttribute("title"); });
     div.querySelectorAll("img, a").forEach((el) => {
       const attr = el.tagName === "IMG" ? "src" : "href"; const v = el.getAttribute(attr) || "";
       if (!v || /^(https?:|#|mailto:|\/)/.test(v)) return;
