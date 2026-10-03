@@ -62,7 +62,7 @@ def build_command(project: Project, prompt: str, model: str | None, effort: str 
 
 # 日常小任务（arXiv 说明、整理想法、消化回答、建卡、起草任务书）比 lab 长任务多一个槽位，
 # 这样别的课题在跑几小时的数值时，这些每日例行的事照样当场做。
-ROUTINE_KINDS = {"arxiv_reason", "triage_idea", "digest_answer", "answer_user_question", "ingest_reference", "promote_idea"}
+ROUTINE_KINDS = {"arxiv_reason", "triage_idea", "digest_answer", "digest_answers", "answer_user_question", "ingest_reference", "promote_idea"}
 
 
 def acquire_slot(log=None, kind: str = "manual"):

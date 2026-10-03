@@ -65,6 +65,7 @@ created: 2026-10-02
 ## C. 收尾清单（必须逐项做完才改 done）
 
 - [ ] `report.md`：frontmatter `pdf:`、`status: done`、`conclusions:` 列表；正文 = 结论 + 每条结论的证据 + 没做完的事。
+- [ ] **图**：关键图（结果图至少一张，加一张说明问题设定的示意图）导出到 `fig/`（PNG/SVG），在 `report.md` 里 `![图注](fig/xxx.png)` 内嵌；PDF 里的图不能只存在于 PDF。
 - [ ] `DATA.md`（有大数据时）：机器、绝对路径（这一处允许绝对路径）、内容、日期、重新生成命令。
 - [ ] 回写卡片：本 lab 用到的每张卡片「与本课题的联系」追加一条。
 - [ ] 更新 wiki：按 rd-wiki ingest。
@@ -90,12 +91,17 @@ updated: 2026-10-02
 ## 结论
 1. …（证据：报告 §x / 图 y）
 
+## 图
+![问题设定示意：两副本 Creutz 梯子与配对通道](fig/setup.svg)
+
+![ED 谱随 L 的变化，nmax=3；零能态在 L≥10 出现](fig/spectrum.png)
+
 ## 没做完或没定的
 - …
 
 ## 文件
 - [report.pdf](report.pdf)
-- 图：…
+- 图脚本：`fig/plot_spectrum.py`
 ```
 
 DATA.md 模板：

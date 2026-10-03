@@ -49,11 +49,41 @@ PROMPTS = {
 WRITE_KINDS = set()  # 目前所有工作项都用 read 模型启动；写报告由 skill 内部交给 write 模型的子 agent
 
 
+DIGEST_PROMPT = (
+    "用户回答了以下 {n} 个讨论（按时间）：\n{items}\n\n"
+    "这些回答可能互相关联——用户对一个问题的裁决常常也决定了另一个问题怎么选。所以请**先通读全部回答**，找出它们之间的关联与矛盾，"
+    "再按 rd-discussion skill 逐个消化：在每个文件末尾写「## 结论与后续」（引用别的回答时注明来自哪个讨论），"
+    "把受影响的 wiki、卡片、idea、lab 任务书同步更新；状态为 waiting_answer 且正在等这些回答的 lab，改回 approved 并按 rd-lab 继续执行。"
+    "每个讨论完成后把 status 改为 digested（问题彻底解决则 resolved）。两个回答互相矛盾、你定不了的，新开一个讨论问用户，不要猜。"
+)
+
+
+def answered_threads(project: Project) -> list[dict]:
+    return [w for w in project.pending_work() if w["kind"] == "digest_answer"]
+
+
+def run_digest(project: Project, dry_run: bool = False) -> dict | None:
+    """把所有已回答的讨论放进**一次**运行统一消化。没有就返回 None。"""
+    threads = answered_threads(project)
+    if not threads:
+        return None
+    items = "\n".join(f"- {w['path']}（「{w['title']}」）" for w in threads)
+    prompt = DIGEST_PROMPT.format(n=len(threads), items=items)
+    if dry_run:
+        return {"kind": "digest_answers", "threads": [w["id"] for w in threads], "prompt": prompt}
+    cfg = config.load(project.root)
+    meta = Runner(project).run(prompt, kind="digest_answers", label=f"digest:{len(threads)}条回答",
+                               model=cfg["models"]["read"], effort=cfg["models"].get("effort"))
+    for w in threads:
+        project.record_attempt(w["kind"], w["id"], meta["status"])
+    return meta
+
+
 def actionable(project: Project, cfg: dict | None = None, only: str | None = None) -> tuple[list[dict], list[dict]]:
-    """返回 (现在可以做的, 因为刚失败而暂缓的)。"""
+    """返回 (现在可以做的, 因为刚失败而暂缓的)。回答的消化不在这里，它走 run_digest 的两小时节奏。"""
     cfg = cfg or config.load(project.root)
     retry = int(cfg["schedule"].get("retry_minutes", 30)) * 60
-    work = project.pending_work()
+    work = [w for w in project.pending_work() if w["kind"] != "digest_answer"]
     if only:
         work = [w for w in work if w["kind"] == only]
     ready, deferred = [], []

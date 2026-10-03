@@ -30,6 +30,12 @@
 - 全项目默认中文；`config.toml` 的 `project.language = "en"` 时改用英文。文献卡片里的术语可以中英并列。
 - **推导、讲解、总结类的内容一律用 `baby-steps-report` skill 写**：LaTeX 编译成 PDF，放在对应 lab 文件夹（`report.pdf`，或多份时按内容命名）。旁边必须有 `report.md`：几十行以内的摘要（frontmatter 里 `pdf:` 指向 PDF，正文列结论），dashboard 只显示摘要。
 - 卡片、wiki、讨论、idea、日志用 markdown，公式用 `$…$` 和 `$$…$$`（网页用 KaTeX 渲染，避免只有 LaTeX 包才有的宏）。
+- **图要放到网页看得见的地方，而且要多画示意图。** 规矩：
+  - 每个 lab 的图放 `labs/NN-slug/fig/`，格式 PNG 或 SVG（PDF 报告里的图**同时导出** PNG/SVG）。`report.md` 必须用 `![一句话说明](fig/xxx.png)` 内嵌关键图，alt 文字就是网页上的图注；dashboard 的 lab 页还会把 `fig/` 里所有图列成画廊。
+  - wiki 概念页尽量配一张示意图（`wiki/fig/<slug>-*.svg|png`）：格子与轨道、能带与平带、相图、推导的逻辑链、算符作用的示意。文字能说清但图更快的，就画。
+  - 文献卡片可以放一张自己画的示意图来表达它的核心结果（不要截原文的图）。
+  - 画法：数据图用 matplotlib（`savefig(..., dpi=160, bbox_inches="tight")`）；示意图用 matplotlib 画几何或直接手写 SVG；Mathematica 的图 `Export` 成 PNG。每张图有标题或 alt 图注，坐标轴有标签和单位。
+  - 图的原始数据和脚本留在 lab 文件夹，图能重画。
 - 正式论文不用 baby-steps-report，用 `hardworking-paper-writer`。
 - 模型（`config.toml` 的 `[models]`）：默认一律 `claude-fable-5-1`、effort `max`。用户可以单独指定：任务书或 idea 的 frontmatter 写 `model:` / `effort:`，自动运行会照用；用户在对话里说"写报告用 opus"之类的，就把它写进任务书 frontmatter，并在写报告时把那部分交给对应模型的子 agent（Agent 工具的 model 参数）。
 
@@ -76,6 +82,7 @@
 - 格式按 `rd-discussion` skill：背景、问题、我看到的选项（每个选项意味着接下来怎么做）、我的倾向、它卡住了什么。一个文件一个问题。
 - 交互会话里可以当面问（AskUserQuestion），但得到的裁决也要落盘到 `discussion/`，否则下一次运行不知道。
 - 无人值守运行（dashboard 或定时触发）时没有人回答：写 discussion，把当前任务状态改 `waiting_answer`，记 log，结束运行。用户回答后系统会再次调用。
+- 用户的回答**不是当场消化**的：系统每 `digest_minutes`（默认两小时）把这段时间内所有已回答的讨论放进一次运行统一消化，因为用户对几个相关问题的裁决要放在一起看。消化时先通读全部回答再动手；引用别的讨论的裁决要注明。
 
 ## 8. 文献卡片
 

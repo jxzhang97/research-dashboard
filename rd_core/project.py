@@ -218,10 +218,14 @@ class Project:
                 m, b = fm.read(p)
                 doc.extra[name.replace(".md", "").lower()] = {"meta": m, "body": b}
         files = []
+        images = []
         for p in sorted(d.rglob("*")):
             if p.is_file() and not p.name.startswith(".") and "__pycache__" not in p.parts:
                 files.append({"path": self.rel(p), "name": str(p.relative_to(d)), "size": p.stat().st_size})
+                if p.suffix.lower() in (".png", ".svg", ".jpg", ".jpeg", ".gif", ".webp"):
+                    images.append({"path": self.rel(p), "name": str(p.relative_to(d))})
         doc.extra["files"] = files[:500]
+        doc.extra["images"] = images[:200]  # lab 页的图画廊：不管 report.md 有没有嵌，fig/ 里的图都能看到
         return doc
 
     def next_lab_id(self, title: str) -> str:

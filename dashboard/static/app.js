@@ -60,6 +60,14 @@
       el.setAttribute(attr, "/api/file?path=" + encodeURIComponent((baseDir ? baseDir + "/" : "") + v.replace(/^\.\//, "")));
       if (el.tagName === "A") el.target = "_blank";
     });
+    // 图：alt 文字当图注，点开看原图
+    div.querySelectorAll("img").forEach((img) => {
+      if (img.closest("a")) return;
+      const fig = document.createElement("figure"); fig.className = "fig";
+      const a = document.createElement("a"); a.href = img.src; a.target = "_blank";
+      img.replaceWith(fig); a.appendChild(img); fig.appendChild(a);
+      if (img.alt) { const cap = document.createElement("figcaption"); cap.textContent = img.alt; fig.appendChild(cap); }
+    });
     if (window.renderMathInElement) {
       renderMathInElement(div, { delimiters: [{ left: "$$", right: "$$", display: true }, { left: "\\[", right: "\\]", display: true }, { left: "\\(", right: "\\)", display: false }, { left: "$", right: "$", display: false }], throwOnError: false });
     }
@@ -114,7 +122,8 @@
         <div class="col">
           <div class="panel ${a.total ? "attn" : ""}"><h2 style="margin-top:0">需要你处理 ${a.total ? `<span class="chip unread">${a.total}</span>` : ""}</h2>
             ${a.total ? `<ul class="list">${items}</ul>` : `<p class="muted">暂时没有。</p>`}</div>
-          <div class="panel"><h2 style="margin-top:0">agent</h2><p>${cur}${q.pending.length ? `，排队 ${q.pending.length}` : ""} · <a href="#/runs">任务页</a></p></div>
+          <div class="panel"><h2 style="margin-top:0">agent</h2><p>${cur}${q.pending.length ? `，排队 ${q.pending.length}` : ""} · <a href="#/runs">任务页</a></p>
+            ${o.digest && o.digest.answered.length ? `<p class="small"><a href="#/discussion">${o.digest.answered.length} 条回答</a>等待统一消化，预计 ${esc(o.digest.next_digest_str)}</p>` : ""}</div>
         </div>
         <div class="col"><div class="panel"><h2 style="margin-top:0">最近动态</h2><ul class="list small">${log || "<li class='muted'>还没有记录</li>"}</ul></div></div>
       </div>
@@ -195,6 +204,7 @@
       <p>${st === "awaiting_review" ? `<button class="primary" id="approve">批准，开始执行</button> ` : ""}
          ${["running", "approved"].includes(st) ? "" : `<button id="park">搁置</button> `}${st === "parked" ? `<button id="unpark">恢复为待过目</button>` : ""} ${pdfs}</p>
       ${d.report ? `<h2>报告摘要</h2><div class="panel" id="report"></div>` : ""}
+      ${(d.images || []).length ? `<h2>图 (${d.images.length})</h2><div class="gallery">${d.images.map((im) => `<figure class="fig"><a href="/api/file?path=${encodeURIComponent(im.path)}" target="_blank"><img src="/api/file?path=${encodeURIComponent(im.path)}" alt="${esc(im.name)}" loading="lazy"></a><figcaption>${esc(im.name)}</figcaption></figure>`).join("")}</div>` : `<p class="muted small">这个 lab 还没有图（agent 应把图放在 fig/ 并嵌进 report.md）。</p>`}
       <h2>任务书</h2><div class="panel" id="brief"></div>
       ${d.data ? `<h2>数据去向 DATA.md</h2><div class="panel" id="data"></div>` : ""}
       <details><summary>文件 (${(d.files || []).length})</summary><ul class="list small">${files}</ul></details>`;
@@ -209,14 +219,17 @@
 
   pages.discussion = async (id) => {
     if (id) return pages.thread(id);
-    const list = await api("/api/discussion");
+    const [list, dg] = await Promise.all([api("/api/discussion"), api("/api/digest").catch(() => null)]);
     const grp = (s) => list.filter((x) => x.meta.status === s);
+    const digestBar = dg && dg.answered.length ? `<div class="panel attn"><b>${dg.answered.length} 条回答等待统一消化</b> · 为了把互相关联的回答放在一起考虑，agent 每 ${dg.digest_minutes} 分钟消化一次，下次约 ${esc(dg.next_digest_str)}。
+        <button id="digest-now" style="margin-left:8px">现在就消化</button></div>` : "";
     const row = (x) => `<li><span class="t"><a href="#/discussion/${esc(x.id)}"><b>${esc(x.title)}</b></a> <span class="small muted">${x.meta.asked_by === "user" ? "你问 agent" : "agent 问你"}${x.meta.lab ? " · " + esc(x.meta.lab) : ""}</span></span>${chip(x.meta.status)}<span class="small muted">${esc(x.updated)}</span></li>`;
     const sec = (title, arr) => arr.length ? `<h2>${title} (${arr.length})</h2><div class="panel"><ul class="list">${arr.map(row).join("")}</ul></div>` : "";
-    main.innerHTML = `<h1>讨论</h1>
+    main.innerHTML = `<h1>讨论</h1>${digestBar}
       <div class="panel"><b>向 agent 提问</b><div class="form-row"><input id="qt" placeholder="标题"></div><textarea id="qb" placeholder="问题内容，可以写公式 $…$"></textarea><div class="form-row"><button class="primary" id="ask">提交</button><span class="muted small">提交后 agent 会去读相关材料并回答</span></div></div>
-      ${sec("等你回答", grp("open").filter((x) => x.meta.asked_by === "agent"))}${sec("等 agent 回答", grp("open").filter((x) => x.meta.asked_by === "user"))}${sec("你已回答，agent 还没消化", grp("answered"))}${sec("agent 已消化", grp("digested"))}${sec("已解决", grp("resolved"))}
+      ${sec("等你回答", grp("open").filter((x) => x.meta.asked_by === "agent"))}${sec("等 agent 回答", grp("open").filter((x) => x.meta.asked_by === "user"))}${sec("你已回答，等待统一消化", grp("answered"))}${sec("agent 已消化", grp("digested"))}${sec("已解决", grp("resolved"))}
       ${list.length ? "" : "<p class='muted'>还没有讨论。agent 在遇到需要你裁决的问题时会在这里提问。</p>"}`;
+    if ($("#digest-now")) $("#digest-now").onclick = async () => { const r = await api("/api/digest", {}); toast(r.id ? "已开始统一消化" : "消化已在队列里"); pages.discussion(); };
     $("#ask").onclick = async () => {
       const title = $("#qt").value.trim(), text = $("#qb").value.trim(); if (!title || !text) return toast("标题和内容都要填");
       const r = await api("/api/discussion", { title, text }); location.hash = "#/discussion/" + r.id;
@@ -228,10 +241,10 @@
     main.innerHTML = `<p><a href="#/discussion">← 讨论</a></p><h1>${esc(d.title)}</h1>
       <div class="meta">${chip(m.status)}<span>${m.asked_by === "user" ? "你问 agent" : "agent 问你"}</span>${m.lab ? `<a href="#/labs/${esc(m.lab)}">相关任务 ${esc(m.lab)}</a>` : ""}${m.idea ? `<a href="#/ideas/${esc(m.idea)}">相关想法</a>` : ""}<span>创建：${esc(m.created || "")}</span></div>
       <div class="panel" id="body"></div>
-      <div class="panel"><b>${m.asked_by === "agent" ? "你的回答" : "补充"}</b><textarea id="ans" placeholder="写下你的裁决或想法。提交后 agent 会立刻处理。"></textarea>
+      <div class="panel"><b>${m.asked_by === "agent" ? "你的回答" : "补充"}</b><textarea id="ans" placeholder="写下你的裁决或想法。回答不会当场处理：agent 每两小时把这段时间的所有回答放在一起统一消化（讨论列表页可以手动“现在就消化”）。"></textarea>
         <div class="form-row"><button class="primary" id="send">提交回答</button>${m.status !== "resolved" ? `<button id="resolve">标记已解决</button>` : ""}</div></div>`;
     $("#body").appendChild(render(d.body, dirOf(d.path)));
-    $("#send").onclick = async () => { const t = $("#ans").value.trim(); if (!t) return; await api(`/api/discussion/${encodeURIComponent(id)}/answer`, { text: t }); toast("已提交，agent 开始处理"); pages.thread(id); refreshOverview(); };
+    $("#send").onclick = async () => { const t = $("#ans").value.trim(); if (!t) return; await api(`/api/discussion/${encodeURIComponent(id)}/answer`, { text: t }); const dg = await api("/api/digest").catch(() => null); toast(dg && dg.next_digest_str ? `已提交，将在 ${dg.next_digest_str} 左右与其他回答一起消化` : "已提交"); pages.thread(id); refreshOverview(); };
     if ($("#resolve")) $("#resolve").onclick = async () => { await api(`/api/discussion/${encodeURIComponent(id)}/resolve`, {}); pages.thread(id); refreshOverview(); };
     api("/api/seen", { kind: "discussion", id }).then(refreshOverview);
   };

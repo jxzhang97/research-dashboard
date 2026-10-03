@@ -150,6 +150,22 @@ def cmd_tick(args):
         print(json.dumps({k: v for k, v in r.items() if k in ("kind", "id", "status", "prompt", "last_status", "retry_in_s")}, ensure_ascii=False))
 
 
+def cmd_digest(args):
+    from .tick import run_digest
+    proj = _project(args.path)
+    # server 在跑时它自己的定时器会消化；launchd 兜底只在 server 不在时动手，避免两边同时跑
+    if not args.force and not args.dry_run:
+        cfg = config.load(proj.root)
+        if registry.port_listening(int(cfg["server"]["port"])):
+            print("dashboard 在运行，由它的定时器统一消化；--force 可强制现在跑")
+            return
+    res = run_digest(proj, dry_run=args.dry_run)
+    if res is None:
+        print("没有待消化的回答")
+    else:
+        print(json.dumps({k: v for k, v in res.items() if k in ("kind", "threads", "id", "status", "prompt")}, ensure_ascii=False))
+
+
 def cmd_arxiv(args):
     from .arxiv import scan
     proj = _project(args.path)
@@ -249,6 +265,7 @@ def main(argv=None):
     p = sub.add_parser("serve", help="启动 dashboard"); p.add_argument("path"); p.add_argument("--host"); p.add_argument("--port", type=int); p.set_defaults(fn=cmd_serve)
     p = sub.add_parser("run", help="立刻让 agent 干一件事"); p.add_argument("path"); p.add_argument("--prompt", "-p"); p.add_argument("--label"); p.add_argument("--model"); p.add_argument("--effort"); p.set_defaults(fn=cmd_run)
     p = sub.add_parser("tick", help="处理所有待办（回答/审批/升级）"); p.add_argument("path"); p.add_argument("--only"); p.add_argument("--dry-run", action="store_true"); p.add_argument("--force", action="store_true", help="忽略失败退避，立刻重试"); p.set_defaults(fn=cmd_tick)
+    p = sub.add_parser("digest", help="统一消化所有已回答的讨论（默认每两小时由 dashboard 自动做）"); p.add_argument("path"); p.add_argument("--dry-run", action="store_true"); p.add_argument("--force", action="store_true"); p.set_defaults(fn=cmd_digest)
     p = sub.add_parser("arxiv-scan", help="扫 arXiv 新文章"); p.add_argument("path"); p.add_argument("--dry-run", action="store_true"); p.add_argument("--no-agent", action="store_true"); p.set_defaults(fn=cmd_arxiv)
     p = sub.add_parser("free-cores", help="现在还能用几个核（本机所有课题合计）"); p.add_argument("path", nargs="?"); p.add_argument("--json", action="store_true"); p.set_defaults(fn=cmd_free_cores)
     p = sub.add_parser("jobs", help="数值作业登记（机器级）"); p.add_argument("action", choices=["claim", "release", "list"]); p.add_argument("path", nargs="?"); p.add_argument("--cores", default=1); p.add_argument("--label"); p.add_argument("--pid", type=int); p.add_argument("--id"); p.set_defaults(fn=cmd_jobs)

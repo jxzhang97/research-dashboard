@@ -51,6 +51,12 @@ class RunQueue:
                 return None
         return self.submit("", kind="tick", label="tick")
 
+    def submit_digest(self) -> str | None:
+        with self._lock:
+            if any(p["kind"] == "digest" for p in self.pending) or (self.current and self.current["kind"] == "digest"):
+                return None
+        return self.submit("", kind="digest", label="digest")
+
     def _worker(self):
         while True:
             item = self.q.get()
@@ -63,6 +69,12 @@ class RunQueue:
                     run_pending(self.project)
                     d = self.project.dash / "runs" / item["id"]
                     (d / "meta.json").write_text(json.dumps({"id": item["id"], "kind": "tick", "label": "tick", "status": "done"}, ensure_ascii=False), encoding="utf-8")
+                elif item["kind"] == "digest":
+                    from .tick import run_digest
+                    meta = run_digest(self.project)
+                    d = self.project.dash / "runs" / item["id"]
+                    (d / "meta.json").write_text(json.dumps({"id": item["id"], "kind": "digest", "label": "digest", "status": "done",
+                                                             "result": "没有待消化的回答" if meta is None else f"→ {meta['id']}"}, ensure_ascii=False), encoding="utf-8")
                 else:
                     Runner(self.project).run(item["prompt"], kind=item["kind"], label=item["label"], model=item["model"],
                                              effort=item["effort"], run_id=item["id"])
@@ -104,6 +116,48 @@ def start_watcher(project: Project, rq: RunQueue) -> None:
     threading.Thread(target=loop, daemon=True).start()
 
 
+def digest_status(project: Project) -> dict:
+    from .tick import answered_threads
+    s = project.state()
+    nxt = s.get("next_digest") or 0
+    cfg = config.load(project.root)
+    return {
+        "answered": [{"id": w["id"], "title": w["title"]} for w in answered_threads(project)],
+        "next_digest": nxt, "next_digest_str": time.strftime("%H:%M", time.localtime(nxt)) if nxt else "",
+        "digest_minutes": int(cfg["schedule"].get("digest_minutes", 120)),
+    }
+
+
+def schedule_next_digest(project: Project, minutes: int) -> float:
+    s = project.state()
+    s["next_digest"] = time.time() + minutes * 60
+    project._save_state(s)
+    return s["next_digest"]
+
+
+def start_digest_timer(project: Project, rq: RunQueue) -> None:
+    """回答的统一消化：每 digest_minutes 看一次，有已回答的讨论就把它们放进一次运行。"""
+    from .tick import answered_threads
+
+    def loop():
+        cfg = config.load(project.root)
+        minutes = int(cfg["schedule"].get("digest_minutes", 120))
+        if not project.state().get("next_digest"):
+            schedule_next_digest(project, minutes)
+        while True:
+            time.sleep(30)
+            try:
+                minutes = int(config.load(project.root)["schedule"].get("digest_minutes", 120))
+                if time.time() >= project.state().get("next_digest", 0):
+                    if answered_threads(project):
+                        rq.submit_digest()
+                    schedule_next_digest(project, minutes)
+            except Exception:  # noqa: BLE001
+                pass
+
+    threading.Thread(target=loop, daemon=True).start()
+
+
 class AnswerIn(BaseModel):
     text: str
 
@@ -138,6 +192,7 @@ def create_app(project: Project) -> FastAPI:
     app = FastAPI(title="research-dashboard")
     rq = RunQueue(project)
     start_watcher(project, rq)
+    start_digest_timer(project, rq)
 
     @app.get("/", response_class=HTMLResponse)
     def index():
@@ -152,7 +207,7 @@ def create_app(project: Project) -> FastAPI:
         pm = project.root / "PROJECT.md"
         return {
             "project": cfg["project"], "models": cfg["models"], "attention": project.attention(), "log": project.log_entries(20),
-            "queue": rq.snapshot(), "runs": project.runs(8), "host": config.hostname(),
+            "queue": rq.snapshot(), "runs": project.runs(8), "host": config.hostname(), "digest": digest_status(project),
             "project_md": pm.read_text(encoding="utf-8") if pm.exists() else "",
             "counts": {
                 "cards": len(project.cards()), "wiki": len(project.wiki_pages()), "labs": len(project.labs()),
@@ -256,8 +311,20 @@ def create_app(project: Project) -> FastAPI:
         if not body.text.strip():
             raise HTTPException(400, "空回答")
         meta = project.answer_discussion(did, body.text)
-        rq.submit_tick()
+        # 回答不当场消化：等 digest 定时统一处理，互相关联的回答一起看
         return meta
+
+    @app.get("/api/digest")
+    def digest_get():
+        return digest_status(project)
+
+    @app.post("/api/digest")
+    def digest_now():
+        rid = rq.submit_digest()
+        cfg = config.load(project.root)
+        schedule_next_digest(project, int(cfg["schedule"].get("digest_minutes", 120)))
+        project.append_log("用户", "要求现在就统一消化已回答的讨论")
+        return {"id": rid, **digest_status(project)}
 
     @app.post("/api/discussion/{did}/resolve")
     def resolve(did: str):

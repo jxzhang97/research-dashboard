@@ -29,6 +29,7 @@ description: 课题 wiki 的维护（research-dashboard 课题目录内使用）
 - 每页 300–1200 字，一页只讲一个概念或一个结论。
 - 记号严格用 `wiki/notation.md`；引入新记号必须先在 notation.md 登记。
 - 公式用 `$…$`、`$$…$$`（KaTeX 可渲染）。
+- **尽量配一张示意图**：放 `wiki/fig/<slug>-*.svg|png`，在「定义与公式」之前用 `![一句话图注](fig/xxx.svg)` 嵌入。格子、能带、相图、逻辑链、算符作用，这些画出来比写出来快。手写 SVG 或 matplotlib 都行，脚本放 `wiki/fig/src/`。
 
 ## 页面模板
 
@@ -43,6 +44,8 @@ sources: [card:2104.14257, lab:03-metric-bounds]
 # <概念中文名>
 
 一段话定义：它是什么，在本课题里为什么重要。
+
+![示意图的一句话图注](fig/<slug>-schematic.svg)
 
 ## 定义与公式
 （课题记号）

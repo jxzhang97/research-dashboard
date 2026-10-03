@@ -68,6 +68,21 @@ def test_answer_capture_pending(project_dir: Path):
     assert not pr.is_unread("discussion", "2026-10-02-which-limit", d.mtime)
 
 
+def test_answers_are_digested_in_one_batch(project_dir: Path):
+    """回答不进即时待办；run_digest 把所有已回答的讨论放进同一个提示词。"""
+    from rd_core.tick import actionable, run_digest
+    pr = Project(project_dir)
+    pr.answer_discussion("2026-10-02-which-limit", "选 A")
+    pr.new_discussion("第二个问题", "B 还是 C？", asked_by="agent")
+    did2 = [d.id for d in pr.discussions() if d.title == "第二个问题"][0]
+    pr.answer_discussion(did2, "选 C，和上一个问题一致")
+    ready, _ = actionable(pr)
+    assert all(w["kind"] != "digest_answer" for w in ready)
+    plan = run_digest(pr, dry_run=True)
+    assert plan["kind"] == "digest_answers" and set(plan["threads"]) == {"2026-10-02-which-limit", did2}
+    assert "先通读全部回答" in plan["prompt"] and "which-limit" in plan["prompt"]
+
+
 def test_backoff_after_failure(project_dir: Path):
     from rd_core.tick import actionable
     pr = Project(project_dir)
