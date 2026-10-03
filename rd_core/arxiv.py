@@ -92,6 +92,8 @@ def scan(project: Project, dry_run: bool = False) -> dict:
     cfg = config.load(project.root)["arxiv"]
     if not cfg.get("enabled", True):
         return {"skipped": "arxiv.enabled = false"}
+    if not cfg["keywords"] and not cfg["authors"]:
+        return {"skipped": "config.toml 的 [arxiv] keywords 和 authors 都为空；先填关键词，否则每天只能随机抓"}
     seen = load_seen(project)
     cutoff = (datetime.now(timezone.utc) - timedelta(days=int(cfg["lookback_days"]))).strftime("%Y-%m-%d")
     entries = []
@@ -105,7 +107,7 @@ def scan(project: Project, dry_run: bool = False) -> dict:
     ranked = []
     for e in fresh:
         s, hits = score(e, cfg["keywords"], cfg["authors"])
-        if s > 0 or not cfg["keywords"]:
+        if s > 0:
             ranked.append((s, hits, e))
     ranked.sort(key=lambda x: -x[0])
     limit = int(cfg["max_per_day"]) * 2  # 多给 agent 一倍，由它挑
