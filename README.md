@@ -20,6 +20,14 @@ git clone https://github.com/jxzhang97/research-dashboard ~/doc_unsyn/research-d
 
 ## 新建课题
 
+最省事的方式：在课题文件夹里开一个 Claude Code（或 Codex）窗口，说
+
+> 这是一个新课题，文件夹就是当前目录，课题名 XXX，我的初始 idea 写在了 YYYY.md 里。请用 research-dashboard 模板初始化成课题目录，并完成任务。
+
+`rd-init` skill 会接手：初始化目录、从 idea 整理 PROJECT.md 和 arXiv 关键词、把 idea 挂进想法树、在 studio 上装 dashboard 和定时任务、起草第一个任务书并执行。
+
+手动方式：
+
 ```bash
 rd init ~/Documents/Project/<课题名> --name <课题名>
 ```

@@ -74,7 +74,10 @@ def cmd_init(args):
             continue
         text = src.read_text(encoding="utf-8") if src.suffix in (".md", ".toml", ".txt", "") or src.name.startswith(".") else None
         if text is not None:
-            out.write_text(text.replace("{{PROJECT_NAME}}", name).replace("{{DATE}}", _today()), encoding="utf-8")
+            text = text.replace("{{PROJECT_NAME}}", name).replace("{{DATE}}", _today())
+            if src.name == "config.toml" and args.port:
+                text = text.replace("port = 8010", f"port = {int(args.port)}")
+            out.write_text(text, encoding="utf-8")
         else:
             shutil.copy2(src, out)
     _sync_rules(dst)
@@ -88,7 +91,13 @@ def cmd_init(args):
 
 def _sync_rules(dst: Path):
     shutil.copy2(TEMPLATE_ROOT / "AGENTS.md", dst / "AGENTS.md")
-    (dst / "CLAUDE.md").write_text("@AGENTS.md\n", encoding="utf-8")
+    claude_md = dst / "CLAUDE.md"
+    if not claude_md.exists():
+        claude_md.write_text("@AGENTS.md\n", encoding="utf-8")
+    elif "@AGENTS.md" not in claude_md.read_text(encoding="utf-8"):
+        # 用户自己的 CLAUDE.md 保留，只补一行引用
+        with claude_md.open("a", encoding="utf-8") as f:
+            f.write("\n@AGENTS.md\n")
 
 
 def cmd_update(args):
@@ -216,7 +225,7 @@ def main(argv=None):
     sub = ap.add_subparsers(dest="cmd", required=True)
 
     sub.add_parser("install", help="本机安装：venv、依赖、skills 软链接").set_defaults(fn=cmd_install)
-    p = sub.add_parser("init", help="新建课题目录"); p.add_argument("path"); p.add_argument("--name"); p.set_defaults(fn=cmd_init)
+    p = sub.add_parser("init", help="新建课题目录（已有文件一律保留）"); p.add_argument("path"); p.add_argument("--name"); p.add_argument("--port", type=int, help="dashboard 端口，默认 8010"); p.set_defaults(fn=cmd_init)
     p = sub.add_parser("update", help="刷新课题里的 AGENTS.md"); p.add_argument("path"); p.set_defaults(fn=cmd_update)
     p = sub.add_parser("serve", help="启动 dashboard"); p.add_argument("path"); p.add_argument("--host"); p.add_argument("--port", type=int); p.set_defaults(fn=cmd_serve)
     p = sub.add_parser("run", help="立刻让 agent 干一件事"); p.add_argument("path"); p.add_argument("--prompt", "-p"); p.add_argument("--label"); p.add_argument("--model"); p.add_argument("--effort"); p.set_defaults(fn=cmd_run)
