@@ -103,3 +103,34 @@ def test_safe_path(project_dir: Path):
         assert False, "应当拒绝越界路径"
     except PermissionError:
         pass
+
+
+def test_lab_answer_pdfs_and_gallery(project_dir: Path):
+    """report.md 首屏的「当前回答」进列表；PDF 在子目录也能找到；fig/ 与 report/figs/ 的同名图只显示一次，图注取 alt。"""
+    lab = project_dir / "labs" / "01-first-task"
+    (lab / "report.md").write_text(
+        "---\ntitle: 短标题\nstatus: running\nnotes: notes.md\n---\n# 短标题\n\n## 问题\n\n能不能算？\n\n## 当前回答\n\n能，$L\\le 8$ 时见 [[quantum-metric]]。\n\n## 为什么信\n\n![看哪里 → 看到峰 → 说明有 gap](fig/main.png)\n", encoding="utf-8")
+    (lab / "notes.md").write_text("# notes\n\n## 第一节\n\n推导。\n", encoding="utf-8")
+    (lab / "fig").mkdir(); (lab / "fig" / "main.png").write_bytes(b"png")
+    (lab / "report").mkdir(); (lab / "report" / "figs").mkdir()
+    (lab / "report" / "figs" / "main.png").write_bytes(b"png")
+    (lab / "report" / "report_CN.pdf").write_bytes(b"%PDF")
+    pr = Project(project_dir)
+    s = pr.labs()[0].summary()
+    assert s["answer"].startswith("能，") and "quantum-metric" in s["answer"]
+    assert s["question"] == "能不能算？" and s["short"] == "短标题" and s["notes"] == "notes.md"
+    assert s["pdfs"] == ["report/report_CN.pdf"]
+    full = pr.lab("01-first-task").full()
+    imgs = full["images"]
+    assert [i["name"] for i in imgs] == ["fig/main.png"]
+    assert imgs[0]["caption"].startswith("看哪里")
+
+
+def test_idea_answer_and_status_doc(project_dir: Path):
+    (project_dir / "ideas" / "metric-bound.md").write_text(
+        "---\ntitle: 度规 bound\nparent: root-idea\nkind: route\nstatus: lab\nlabs: [01-first-task]\n---\n# 度规 bound\n\n## 原话\n\n……\n\n<!-- agent -->\n## 当前回答\n\n未回答，等 lab 01。\n\n## 历史\n\n- 建立。\n", encoding="utf-8")
+    pr = Project(project_dir)
+    node = pr.idea_tree()[0]["children"][0]
+    assert node["answer"] == "未回答，等 lab 01。" and node["meta"]["kind"] == "route"
+    st = pr.status_doc()
+    assert st and st["path"] == "STATUS.md" and "研究问题" in st["body"]

@@ -43,3 +43,21 @@ def test_write_endpoints(project_dir: Path):
     assert c.get("/api/file", params={"path": "../x"}).status_code in (403, 404)
     assert c.get("/api/file", params={"path": "PROJECT.md"}).status_code == 200
     assert c.get("/api/raw", params={"path": "wiki/notation.md"}).json()["meta"]["title"] == "notation"
+
+
+def test_status_in_overview_and_raw_siblings(project_dir: Path):
+    c = client(project_dir)
+    o = c.get("/api/overview").json()
+    assert o["status"]["path"] == "STATUS.md" and "课题状态" in o["status"]["body"]
+    r = c.get("/api/raw", params={"path": "wiki/notation.md"}).json()
+    assert "index.md" in r["siblings"] and r["updated"]
+    assert c.get("/api/raw", params={"path": "config.toml"}).status_code == 404  # 只开放 md/txt/csv
+
+
+def test_update_adds_status_md(project_dir: Path):
+    import subprocess, sys
+    from tests.conftest import ROOT
+    (project_dir / "STATUS.md").unlink()
+    subprocess.check_call([sys.executable, "-m", "rd_core.cli", "update", str(project_dir)], cwd=ROOT)
+    assert (project_dir / "STATUS.md").exists()
+    assert "@AGENTS.md" in (project_dir / "CLAUDE.md").read_text()

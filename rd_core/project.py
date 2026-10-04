@@ -52,6 +52,32 @@ def _title_from_body(body: str, fallback: str) -> str:
     return fallback
 
 
+def section_text(body: str, heading: str, max_chars: int = 400) -> str:
+    """取 markdown 正文里 `## <heading>` 小节的第一段纯文本（去掉图、链接标记），给列表和首页做预览。"""
+    m = re.search(rf"^##\s*{re.escape(heading)}[^\n]*\n(.*?)(?=^##\s|\Z)", body or "", re.S | re.M)
+    if not m:
+        return ""
+    sec = m.group(1).strip()
+    paras = [x.strip() for x in re.split(r"\n\s*\n", sec) if x.strip() and not x.strip().startswith("![")]
+    if not paras:
+        return ""
+    t = paras[0]
+    t = re.sub(r"!\[[^\]]*\]\([^)]*\)", "", t)
+    t = re.sub(r"\[\[([^\]|]+)(?:\|([^\]]*))?\]\]", lambda m: m.group(2) or m.group(1), t)
+    t = re.sub(r"\[([^\]]+)\]\([^)]*\)", r"\1", t)
+    t = re.sub(r"^\s*(?:[-*]|\d+\.)\s+", "", t, flags=re.M)
+    t = " ".join(t.split())
+    return t[: max_chars - 1] + "…" if len(t) > max_chars else t
+
+
+def figure_captions(body: str) -> dict[str, str]:
+    """markdown 里 `![图注](path)` 的 path(basename) → 图注。"""
+    out = {}
+    for alt, path in re.findall(r"!\[([^\]]*)\]\(([^)\s]+)", body or ""):
+        out.setdefault(Path(path).name, alt.strip())
+    return out
+
+
 def _mtime(p: Path) -> float:
     try:
         return p.stat().st_mtime
@@ -205,8 +231,19 @@ class Project:
         doc.meta.setdefault("status", "draft")
         doc.extra["has_report"] = (d / "report.md").exists()
         doc.extra["has_data"] = (d / "DATA.md").exists()
-        pdfs = sorted(p.name for p in d.glob("*.pdf"))
-        doc.extra["pdfs"] = pdfs
+        doc.extra["has_notes"] = (d / "notes.md").exists()
+        # PDF 可能在 lab 根目录，也可能在 report/ 之类的子目录
+        pdfs = sorted(str(p.relative_to(d)) for p in d.rglob("*.pdf")
+                      if not any(part.startswith(".") or part in ("results", "writing-test") for part in p.relative_to(d).parts))
+        doc.extra["pdfs"] = pdfs[:20]
+        doc.extra["question"] = doc.extra["answer"] = ""
+        doc.extra["notes"] = ""
+        if doc.extra["has_report"]:
+            rm, rb = fm.read(d / "report.md")
+            doc.extra["question"] = section_text(rb, "问题")
+            doc.extra["answer"] = section_text(rb, "当前回答")
+            doc.extra["notes"] = str(rm.get("notes") or ("notes.md" if doc.extra["has_notes"] else ""))
+            doc.extra["short"] = str(rm.get("title") or "")
         return doc
 
     def lab(self, lab_id: str) -> Doc:
@@ -219,13 +256,28 @@ class Project:
                 doc.extra[name.replace(".md", "").lower()] = {"meta": m, "body": b}
         files = []
         images = []
-        for p in sorted(d.rglob("*")):
-            if p.is_file() and not p.name.startswith(".") and "__pycache__" not in p.parts:
-                files.append({"path": self.rel(p), "name": str(p.relative_to(d)), "size": p.stat().st_size})
-                if p.suffix.lower() in (".png", ".svg", ".jpg", ".jpeg", ".gif", ".webp"):
-                    images.append({"path": self.rel(p), "name": str(p.relative_to(d))})
+        captions = {}
+        for name in ("report.md", "notes.md"):
+            if (d / name).exists():
+                for k, v in figure_captions(fm.read(d / name)[1]).items():
+                    captions.setdefault(k, v)
+        seen_names: set[str] = set()
+        img_ext = (".png", ".svg", ".jpg", ".jpeg", ".gif", ".webp")
+        # 先收 fig/（权威图源），再收别处；同名文件（report/figs/ 里的导出副本）只显示一次
+        ordered = sorted(d.rglob("*"), key=lambda p: (0 if p.relative_to(d).parts[:1] in (("fig",), ("figs",)) else 1, str(p)))
+        for p in ordered:
+            if not p.is_file() or p.name.startswith(".") or "__pycache__" in p.parts:
+                continue
+            rel_in = str(p.relative_to(d))
+            files.append({"path": self.rel(p), "name": rel_in, "size": p.stat().st_size})
+            if p.suffix.lower() in img_ext and "writing-test" not in p.parts:
+                if p.name in seen_names:
+                    continue
+                seen_names.add(p.name)
+                images.append({"path": self.rel(p), "name": rel_in, "caption": captions.get(p.name, "")})
+        files.sort(key=lambda f: f["name"])
         doc.extra["files"] = files[:500]
-        doc.extra["images"] = images[:200]  # lab 页的图画廊：不管 report.md 有没有嵌，fig/ 里的图都能看到
+        doc.extra["images"] = images[:200]  # lab 页的图画廊：fig/ 里的图都能看到，图注来自 report.md / notes.md 的 alt 文字
         return doc
 
     def next_lab_id(self, title: str) -> str:
@@ -288,6 +340,8 @@ class Project:
         for p in self._md_files(self.root / "ideas"):
             d = self._read_doc("idea", p)
             d.meta.setdefault("status", "seed")
+            d.meta.setdefault("kind", "question")
+            d.extra["answer"] = section_text(d.body, "当前回答", 240)
             docs.append(d)
         for p in self._md_files(self.root / "ideas" / "inbox"):
             d = self._read_doc("idea", p, id_=f"inbox/{p.stem}")
@@ -421,6 +475,14 @@ class Project:
         for it in items:
             counts[it["kind"]] = counts.get(it["kind"], 0) + 1
         return {"items": items, "counts": counts, "total": len(items)}
+
+    # ---------- 课题状态页 ----------
+    def status_doc(self) -> dict | None:
+        p = self.root / "STATUS.md"
+        if not p.exists():
+            return None
+        meta, body = fm.read(p)
+        return {"path": "STATUS.md", "meta": meta, "body": body, "updated": datetime.fromtimestamp(_mtime(p)).strftime("%Y-%m-%d %H:%M")}
 
     # ---------- 运行记录 ----------
     def runs(self, n: int = 50) -> list[dict]:

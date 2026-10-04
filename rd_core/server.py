@@ -209,6 +209,7 @@ def create_app(project: Project) -> FastAPI:
             "project": cfg["project"], "models": cfg["models"], "attention": project.attention(), "log": project.log_entries(20),
             "queue": rq.snapshot(), "runs": project.runs(8), "host": config.hostname(), "digest": digest_status(project),
             "project_md": pm.read_text(encoding="utf-8") if pm.exists() else "",
+            "status": project.status_doc(),
             "counts": {
                 "cards": len(project.cards()), "wiki": len(project.wiki_pages()), "labs": len(project.labs()),
                 "discussion": len(project.discussions()), "ideas": len([i for i in project.ideas() if not i.id.startswith("inbox/")]),
@@ -457,14 +458,18 @@ def create_app(project: Project) -> FastAPI:
 
     @app.get("/api/raw")
     def raw(path: str):
+        """项目内任意 markdown（notes.md、handoff.md、STATUS.md …）的 frontmatter 与正文，给前端的通用文档页用。"""
         try:
             p = project.safe_path(path)
         except PermissionError:
             raise HTTPException(403)
-        if not p.is_file():
+        if not p.is_file() or p.suffix.lower() not in (".md", ".txt", ".csv"):
             raise HTTPException(404)
         from . import fm
         meta, body = fm.read(p)
-        return {"path": path, "meta": meta, "body": body}
+        # 同目录下的其他 md，给文档页做"同一文件夹"导航
+        siblings = sorted(x.name for x in p.parent.glob("*.md") if x.name != p.name and not x.name.startswith("."))
+        return {"path": path, "meta": meta, "body": body, "siblings": siblings[:50],
+                "updated": __import__("datetime").datetime.fromtimestamp(p.stat().st_mtime).strftime("%Y-%m-%d %H:%M")}
 
     return app

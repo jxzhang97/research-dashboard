@@ -10,9 +10,11 @@
     resolved: "已解决", dropped: "否决", open: "待回答", answered: "已回答", digested: "已消化",
     pending: "待审批", rejected: "已拒绝", ingested: "已入库", inbox: "未整理", queued: "排队", failed: "失败", stopped: "已停止",
   };
+  const KIND_ZH = { route: "路线", method: "方法" };
   const zh = (s) => STATUS_ZH[s] || s || "";
   const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
   const chip = (s, extra = "") => `<span class="chip ${esc(s)} ${extra}">${esc(zh(s))}</span>`;
+  const kindChip = (k) => KIND_ZH[k] ? `<span class="chip kind">${KIND_ZH[k]}</span>` : "";
 
   // ---------- 网络 ----------
   async function api(path, opts) {
@@ -48,16 +50,46 @@
   function routeFor(kind, id) {
     return { wiki: "#/wiki/", card: "#/refs/", lab: "#/labs/", idea: "#/ideas/", discussion: "#/discussion/", inbox: "#/inbox/" }[kind] + id;
   }
+  const docRoute = (path, frag) => "#/doc/" + path.split("/").map(encodeURIComponent).join("/") + (frag ? "?h=" + encodeURIComponent(frag) : "");
+  const slugId = (text) => text.trim().toLowerCase().replace(/[\s]+/g, "-").replace(/[^\p{L}\p{N}\-_]/gu, "").slice(0, 80) || "sec";
+  function joinPath(baseDir, v) {
+    const parts = (baseDir ? baseDir.split("/") : []);
+    for (const seg of v.split("/")) {
+      if (seg === "." || seg === "") continue;
+      if (seg === "..") parts.pop(); else parts.push(seg);
+    }
+    return parts.join("/");
+  }
   function render(src, baseDir = "") {
     const { src: s1, store } = protectMath(src || "");
     let html = md.render(wikilinks(s1));
     html = restoreMath(html, store);
     const div = document.createElement("div"); div.className = "md"; div.innerHTML = html;
     div.querySelectorAll('a[title^="wikilink"]').forEach((a) => { a.className = a.title === "wikilink" ? "wikilink" : "wikilink missing"; a.removeAttribute("title"); });
+    // 标题锚点（目录和 notes.md#节 链接用）
+    const used = {};
+    div.querySelectorAll("h1, h2, h3, h4").forEach((h) => {
+      let id = slugId(h.textContent); if (used[id]) id = `${id}-${++used[id]}`; else used[id] = 1;
+      h.id = id;
+    });
     div.querySelectorAll("img, a").forEach((el) => {
       const attr = el.tagName === "IMG" ? "src" : "href"; const v = el.getAttribute(attr) || "";
-      if (!v || /^(https?:|#|mailto:|\/)/.test(v)) return;
-      el.setAttribute(attr, "/api/file?path=" + encodeURIComponent((baseDir ? baseDir + "/" : "") + v.replace(/^\.\//, "")));
+      if (!v || /^(https?:|mailto:|\/)/.test(v)) return;
+      if (v.startsWith("#")) {
+        // 页内锚点：hash 路由下 href="#x" 会被当成路由，改成滚动
+        if (el.tagName === "A" && !v.startsWith("#/")) {
+          const target = decodeURIComponent(v.slice(1));
+          el.addEventListener("click", (e) => { e.preventDefault(); const t = div.querySelector(`[id="${CSS.escape(target)}"]`) || div.querySelector(`[id="${CSS.escape(slugId(target))}"]`); if (t) t.scrollIntoView({ behavior: "smooth", block: "start" }); });
+        }
+        return;
+      }
+      const [pathPart, frag] = v.split("#");
+      const full = joinPath(baseDir, pathPart.replace(/^\.\//, ""));
+      if (el.tagName === "A" && /\.md$/i.test(pathPart)) {
+        el.setAttribute("href", docRoute(full, frag)); // 项目内 markdown 站内打开
+        return;
+      }
+      el.setAttribute(attr, "/api/file?path=" + encodeURIComponent(full));
       if (el.tagName === "A") el.target = "_blank";
     });
     // 图：alt 文字当图注，点开看原图
@@ -73,7 +105,22 @@
     }
     return div;
   }
+  // 长文的目录：h2/h3 超过 3 个才显示
+  function tocFor(div, min = 4) {
+    const hs = [...div.querySelectorAll("h2, h3")];
+    if (hs.length < min) return null;
+    const nav = document.createElement("nav"); nav.className = "toc";
+    nav.innerHTML = `<b>目录</b>` + hs.map((h) => `<a class="${h.tagName.toLowerCase()}" data-id="${esc(h.id)}">${esc(h.textContent)}</a>`).join("");
+    nav.querySelectorAll("a").forEach((a) => a.onclick = (e) => { e.preventDefault(); const t = div.querySelector(`[id="${CSS.escape(a.dataset.id)}"]`); if (t) t.scrollIntoView({ behavior: "smooth", block: "start" }); });
+    return nav;
+  }
+  function scrollToFrag(div, frag) {
+    if (!frag) return;
+    const t = div.querySelector(`[id="${CSS.escape(frag)}"]`) || div.querySelector(`[id="${CSS.escape(slugId(frag))}"]`);
+    if (t) setTimeout(() => t.scrollIntoView({ block: "start" }), 50);
+  }
   const dirOf = (p) => p.includes("/") ? p.slice(0, p.lastIndexOf("/")) : "";
+  const clip = (s, n = 160) => { s = String(s || ""); return s.length > n ? s.slice(0, n - 1) + "…" : s; };
 
   // ---------- 总览 / 红点 ----------
   async function refreshOverview() {
@@ -106,29 +153,36 @@
   pages.home = async () => {
     await refreshOverview();
     const o = OVERVIEW; const a = o.attention;
+    let cores = null; try { cores = await api("/api/cores"); } catch (e) { /* 可选 */ }
     const items = a.items.map((it) => `<li><a href="${routeFor(it.kind, it.id)}"><b>${esc(it.title)}</b></a><span class="t muted">${esc(it.why)}</span></li>`).join("");
-    const log = o.log.map((e) => `<li><span class="muted small">${esc(e.time)}</span><span class="t">${esc(e.who)} · ${esc(e.what)}</span></li>`).join("");
-    const q = o.queue; const cur = q.current ? `正在运行：<a href="#/runs/${q.current.id}">${esc(q.current.label)}</a>` : "没有正在运行的任务";
+    const log = o.log.map((e) => `<li><span class="muted small">${esc(e.time)}</span><span class="t">${esc(e.who)} · ${esc(clip(e.what, 220))}</span></li>`).join("");
+    const q = o.queue; const cur = q.current ? `agent 正在运行：<a href="#/runs/${q.current.id}">${esc(q.current.label)}</a>` : "agent 空闲";
+    const jobs = (cores && cores.jobs || []).filter((j) => !o.project.name || j.project === o.project.name);
+    const jobsHtml = jobs.length ? `后台数值：${jobs.map((j) => `<span class="chip running">${esc(j.label)} · ${j.cores} 核</span>`).join(" ")}` : "没有登记中的后台数值";
     main.innerHTML = `
-      <h1>${esc(o.project.name)}</h1>
-      <div class="stats">
-        <a class="stat" href="#/refs"><b>${o.counts.cards}</b><span>文献卡片</span></a>
-        <a class="stat" href="#/wiki"><b>${o.counts.wiki}</b><span>wiki 页</span></a>
-        <a class="stat" href="#/labs"><b>${o.counts.labs}</b><span>lab</span></a>
-        <a class="stat" href="#/discussion"><b>${o.counts.discussion}</b><span>讨论</span></a>
-        <a class="stat" href="#/ideas"><b>${o.counts.ideas}</b><span>想法</span></a>
-      </div>
       <div class="row">
-        <div class="col">
-          <div class="panel ${a.total ? "attn" : ""}"><h2 style="margin-top:0">需要你处理 ${a.total ? `<span class="chip unread">${a.total}</span>` : ""}</h2>
-            ${a.total ? `<ul class="list">${items}</ul>` : `<p class="muted">暂时没有。</p>`}</div>
-          <div class="panel"><h2 style="margin-top:0">agent</h2><p>${cur}${q.pending.length ? `，排队 ${q.pending.length}` : ""} · <a href="#/runs">任务页</a></p>
-            ${o.digest && o.digest.answered.length ? `<p class="small"><a href="#/discussion">${o.digest.answered.length} 条回答</a>等待统一消化，预计 ${esc(o.digest.next_digest_str)}</p>` : ""}</div>
+        <div class="col" style="flex:2">
+          ${o.status ? `<div class="panel status" id="status"></div>` : `<div class="panel"><p class="muted">还没有 <code>STATUS.md</code>（课题状态页）。agent 在下次收尾时会建立它；也可以 <code>rd update</code> 补一个空模板。</p></div>`}
         </div>
-        <div class="col"><div class="panel"><h2 style="margin-top:0">最近动态</h2><ul class="list small">${log || "<li class='muted'>还没有记录</li>"}</ul></div></div>
+        <div class="col">
+          <div class="panel ${a.total ? "attn" : ""}"><h2 style="margin-top:0">需要你处理${a.total ? ` (${a.total})` : ""}</h2><ul class="list">${items || "<li class='muted'>没有待处理的事</li>"}</ul></div>
+          <div class="panel"><h2 style="margin-top:0">agent 与数值</h2><p>${cur}${q.pending.length ? `，排队 ${q.pending.length}` : ""} · <a href="#/runs">任务页</a></p>
+            <p class="small">${jobsHtml}</p>
+            ${o.digest && o.digest.answered.length ? `<p class="small"><a href="#/discussion">${o.digest.answered.length} 条回答</a>等待统一消化，预计 ${esc(o.digest.next_digest_str)}</p>` : ""}</div>
+          <div class="stats small">
+            <a class="stat" href="#/refs"><b>${o.counts.cards}</b><span>文献卡片</span></a>
+            <a class="stat" href="#/wiki"><b>${o.counts.wiki}</b><span>wiki 页</span></a>
+            <a class="stat" href="#/labs"><b>${o.counts.labs}</b><span>lab</span></a>
+            <a class="stat" href="#/ideas"><b>${o.counts.ideas}</b><span>问题</span></a>
+          </div>
+        </div>
       </div>
-      <details class="panel"><summary>课题总纲 PROJECT.md</summary><div id="pm"></div></details>`;
-    $("#pm").appendChild(render(o.project_md));
+      <details class="panel"><summary>最近动态（${o.log.length} 条）</summary><ul class="list small">${log}</ul></details>`;
+    if (o.status) {
+      const box = $("#status");
+      box.innerHTML = `<div class="meta"><span>课题状态 · 更新 ${esc(o.status.updated)}</span><a href="${docRoute("STATUS.md")}">全文</a></div>`;
+      box.appendChild(render(o.status.body, ""));
+    }
   };
 
   pages.refs = async (key) => {
@@ -161,7 +215,8 @@
         ${m.file ? `<a href="/api/file?path=${encodeURIComponent(m.file)}" target="_blank">PDF</a>` : ""}
         <span>阅读深度：${esc({ abstract: "只读摘要", skim: "略读", full: "精读" }[m.read_depth] || "未填")}</span><span>来源：${esc(m.source || "")}</span><span>更新：${esc(d.updated)}</span></div>
       <div class="panel" id="body"></div>`;
-    $("#body").appendChild(render(d.body, dirOf(d.path)));
+    const body = render(d.body, dirOf(d.path)); $("#body").appendChild(body);
+    const toc = tocFor(body, 5); if (toc) $("#body").prepend(toc);
   };
 
   pages.inbox = async (key) => {
@@ -178,43 +233,73 @@
   pages.wiki = async (slug) => {
     const list = await api("/api/wiki");
     const side = list.map((p) => `<a href="#/wiki/${esc(p.id)}" class="${p.id === slug ? "cur" : ""}">${esc(p.title)}</a>`).join("");
-    let content = `<p class="muted">左侧选择一页。wiki 是当前理解的汇编，由 agent 维护并随进展重写；[[双括号]] 互相链接。</p>`;
+    let content = `<p class="muted">左侧选择一页。wiki 是当前理解的汇编，由 agent 维护并随进展重写；[[双括号]] 互相链接。课题到哪了看<a href="#/">首页</a>。</p>`;
     main.innerHTML = `<h1>Wiki</h1><div class="two"><div class="side panel">${side || "<span class='muted'>还没有页面</span>"}</div><div id="content">${content}</div></div>`;
     if (slug) {
       const d = await api(`/api/wiki/${slug}`);
       const back = (d.backlinks || []).map((b) => `<a href="#/wiki/${esc(b.id)}">${esc(b.title)}</a>`).join(" · ");
-      const c = $("#content"); c.innerHTML = `<h2 style="margin-top:0">${esc(d.title)}</h2><div class="meta"><span>更新：${esc(d.updated)}</span>${(d.meta.tags || []).map((t) => `<span class="chip">${esc(t)}</span>`).join("")}</div><div class="panel" id="body"></div>${back ? `<p class="small muted">反向链接：${back}</p>` : ""}`;
-      $("#body").appendChild(render(d.body, dirOf(d.path)));
+      const c = $("#content"); c.innerHTML = `<h2 style="margin-top:0">${esc(d.title)}</h2><div class="meta"><span>更新：${esc(d.updated)}</span>${(d.meta.tags || []).map((t) => `<span class="chip">${esc(t)}</span>`).join("")}</div><div id="toc-top"></div><div class="panel" id="body"></div>${back ? `<p class="small muted">反向链接：${back}</p>` : ""}`;
+      const body = render(d.body, dirOf(d.path)); $("#body").appendChild(body);
+      const toc = tocFor(body, 5); if (toc) $("#toc-top").appendChild(toc);
     }
   };
 
   pages.labs = async (id) => {
     if (id) return pages.lab(id);
     const list = await api("/api/labs");
-    const rows = list.map((x) => `<li><span class="t"><a href="#/labs/${esc(x.id)}"><b>${esc(x.title)}</b></a> <span class="small muted">${esc(x.id)}</span></span>${chip(x.meta.status)}${x.meta.machine ? `<span class="chip">${esc(x.meta.machine)}</span>` : ""}<span class="small muted">${esc(x.updated)}</span></li>`).join("");
-    main.innerHTML = `<h1>Lab</h1><p class="muted small">每个任务一个文件夹：任务书 brief.md、报告 report.md（+PDF）、数据去向 DATA.md。想法页里可以把 idea 升级成 lab。</p><div class="panel"><ul class="list">${rows || "<li class='muted'>还没有任务</li>"}</ul></div>`;
+    const rows = list.map((x) => `<li class="lab-row"><span class="t"><a href="#/labs/${esc(x.id)}"><b>${esc(x.short || x.title)}</b></a> <span class="small muted">${esc(x.id)}</span>
+        ${x.answer ? `<div class="answer">${esc(x.answer)}</div>` : x.question ? `<div class="answer muted">问题：${esc(x.question)}</div>` : ""}</span>${chip(x.meta.status)}${x.meta.machine ? `<span class="chip">${esc(x.meta.machine)}</span>` : ""}<span class="small muted">${esc(x.updated)}</span></li>`).join("");
+    main.innerHTML = `<h1>Lab</h1><p class="muted small">每个任务一个文件夹：任务书 brief.md、摘要 report.md（首屏：问题 / 当前回答 / 为什么信 / 边界）、推导与分析 notes.md、数据去向 DATA.md。想法页里可以把问题升级成 lab。</p><div class="panel"><ul class="list">${rows || "<li class='muted'>还没有任务</li>"}</ul></div>`;
   };
 
   pages.lab = async (id) => {
     const d = await api(`/api/labs/${encodeURIComponent(id)}`); const m = d.meta; const st = m.status;
-    const pdfs = (d.pdfs || []).map((p) => `<a class="btn" href="/api/file?path=${encodeURIComponent(d.path.replace("brief.md", p))}" target="_blank">📄 ${esc(p)}</a>`).join(" ");
-    const files = (d.files || []).map((f) => `<li><a href="/api/file?path=${encodeURIComponent(f.path)}" target="_blank">${esc(f.name)}</a> <span class="muted small">${(f.size / 1024).toFixed(1)} KB</span></li>`).join("");
-    main.innerHTML = `<p><a href="#/labs">← Lab</a></p><h1>${esc(d.title)}</h1>
-      <div class="meta">${chip(st)}<span>${esc(id)}</span>${m.idea ? `<a href="#/ideas/${esc(m.idea)}">来自想法：${esc(m.idea)}</a>` : ""}${m.machine ? `<span>机器：${esc(m.machine)}</span>` : ""}<span>更新：${esc(d.updated)}</span></div>
+    const labDir = dirOf(d.path);
+    const pdfs = (d.pdfs || []).map((p) => `<a class="btn" href="/api/file?path=${encodeURIComponent(labDir + "/" + p)}" target="_blank">📄 ${esc(p)}</a>`).join(" ");
+    const notesBtn = d.notes && /\.md$/i.test(d.notes) ? `<a class="btn primary" href="${docRoute(joinPath(labDir, d.notes))}">📖 推导与分析 ${esc(d.notes)}</a>` : "";
+    const handoff = (d.files || []).some((f) => f.name === "handoff.md") ? `<a class="btn" href="${docRoute(labDir + "/handoff.md")}">交接单</a>` : "";
+    const files = (d.files || []).map((f) => /\.md$/i.test(f.name) ? `<li><a href="${docRoute(f.path)}">${esc(f.name)}</a> <span class="muted small">${(f.size / 1024).toFixed(1)} KB</span></li>` : `<li><a href="/api/file?path=${encodeURIComponent(f.path)}" target="_blank">${esc(f.name)}</a> <span class="muted small">${(f.size / 1024).toFixed(1)} KB</span></li>`).join("");
+    const short = d.short && d.short !== d.title ? d.short : d.title;
+    main.innerHTML = `<p><a href="#/labs">← Lab</a></p><h1>${esc(short)}</h1>${short !== d.title ? `<p class="subtitle muted">${esc(d.title)}</p>` : ""}
+      <div class="meta">${chip(st)}<span>${esc(id)}</span>${m.idea ? `<a href="#/ideas/${esc(m.idea)}">来自问题：${esc(m.idea)}</a>` : ""}${(m.discussions || []).map((x) => `<a href="#/discussion/${esc(x)}">讨论 ${esc(x)}</a>`).join("")}${m.machine ? `<span>机器：${esc(m.machine)}</span>` : ""}<span>更新：${esc(d.updated)}</span></div>
       <p>${st === "awaiting_review" ? `<button class="primary" id="approve">批准，开始执行</button> ` : ""}
-         ${["running", "approved"].includes(st) ? "" : `<button id="park">搁置</button> `}${st === "parked" ? `<button id="unpark">恢复为待过目</button>` : ""} ${pdfs}</p>
-      ${d.report ? `<h2>报告摘要</h2><div class="panel" id="report"></div>` : ""}
-      ${(d.images || []).length ? `<h2>图 (${d.images.length})</h2><div class="gallery">${d.images.map((im) => `<figure class="fig"><a href="/api/file?path=${encodeURIComponent(im.path)}" target="_blank"><img src="/api/file?path=${encodeURIComponent(im.path)}" alt="${esc(im.name)}" loading="lazy"></a><figcaption>${esc(im.name)}</figcaption></figure>`).join("")}</div>` : `<p class="muted small">这个 lab 还没有图（agent 应把图放在 fig/ 并嵌进 report.md）。</p>`}
-      <h2>任务书</h2><div class="panel" id="brief"></div>
-      ${d.data ? `<h2>数据去向 DATA.md</h2><div class="panel" id="data"></div>` : ""}
-      <details><summary>文件 (${(d.files || []).length})</summary><ul class="list small">${files}</ul></details>`;
-    $("#brief").appendChild(render(d.body, dirOf(d.path)));
-    if (d.report) $("#report").appendChild(render(d.report.body, dirOf(d.path)));
-    if (d.data) $("#data").appendChild(render(d.data.body, dirOf(d.path)));
+         ${["running", "approved"].includes(st) ? "" : `<button id="park">搁置</button> `}${st === "parked" ? `<button id="unpark">恢复为待过目</button>` : ""} ${notesBtn} ${pdfs} ${handoff}</p>
+      ${d.report ? `<div class="panel" id="report"></div>` : `<div class="panel muted">还没有报告摘要（report.md）。</div>`}
+      ${(d.images || []).length ? `<details class="panel" ${d.report ? "" : "open"}><summary>全部图 (${d.images.length})</summary><div class="gallery">${d.images.map((im) => `<figure class="fig"><a href="/api/file?path=${encodeURIComponent(im.path)}" target="_blank"><img src="/api/file?path=${encodeURIComponent(im.path)}" alt="${esc(im.caption || im.name)}" loading="lazy"></a><figcaption>${esc(im.caption || im.name)}</figcaption></figure>`).join("")}</div></details>` : `<p class="muted small">这个 lab 还没有图（agent 应把图放在 fig/ 并嵌进 report.md）。</p>`}
+      <details class="panel"><summary>任务书 brief.md</summary><div id="brief"></div></details>
+      ${d.data ? `<details class="panel"><summary>数据去向 DATA.md</summary><div id="data"></div></details>` : ""}
+      <details class="panel"><summary>文件 (${(d.files || []).length})</summary><ul class="list small">${files}</ul></details>`;
+    $("#brief").appendChild(render(d.body, labDir));
+    if (d.report) $("#report").appendChild(render(d.report.body, labDir));
+    if (d.data) $("#data").appendChild(render(d.data.body, labDir));
     if ($("#approve")) $("#approve").onclick = async () => { await api(`/api/labs/${encodeURIComponent(id)}/approve`, {}); toast("已批准，agent 开始执行"); pages.lab(id); refreshOverview(); };
     if ($("#park")) $("#park").onclick = async () => { await api(`/api/labs/${encodeURIComponent(id)}/status/parked`, {}); pages.lab(id); };
     if ($("#unpark")) $("#unpark").onclick = async () => { await api(`/api/labs/${encodeURIComponent(id)}/status/awaiting_review`, {}); pages.lab(id); };
     api("/api/seen", { kind: "lab", id }).then(refreshOverview);
+  };
+
+  // 通用文档页：项目内任意 markdown（notes.md、handoff.md、STATUS.md、writing-test/…）
+  pages.doc = async (path, frag) => {
+    let d;
+    try { d = await api(`/api/raw?path=${encodeURIComponent(path)}`); }
+    catch (e) { main.innerHTML = `<p class="muted">找不到 ${esc(path)}</p>`; return; }
+    const parts = path.split("/");
+    const crumbs = [`<a href="#/">课题</a>`];
+    if (parts[0] === "labs" && parts[1]) crumbs.push(`<a href="#/labs">Lab</a>`, `<a href="#/labs/${esc(parts[1])}">${esc(parts[1])}</a>`);
+    else if (parts[0] === "wiki") crumbs.push(`<a href="#/wiki">Wiki</a>`);
+    else if (parts[0] === "ideas") crumbs.push(`<a href="#/ideas">问题</a>`);
+    else if (parts[0] === "discussion") crumbs.push(`<a href="#/discussion">讨论</a>`);
+    for (let i = (parts[0] === "labs" ? 2 : 1); i < parts.length - 1; i++) crumbs.push(`<span>${esc(parts[i])}</span>`);
+    crumbs.push(`<span>${esc(parts[parts.length - 1])}</span>`);
+    const title = d.meta.title || (d.body.match(/^#\s+(.+)$/m) || [])[1] || parts[parts.length - 1];
+    const sib = (d.siblings || []).map((s) => `<a href="${docRoute(dirOf(path) ? dirOf(path) + "/" + s : s)}">${esc(s)}</a>`).join("");
+    main.innerHTML = `<p class="crumbs small">${crumbs.join(" / ")}</p><h1>${esc(title)}</h1>
+      <div class="meta"><span>更新：${esc(d.updated || "")}</span>${d.meta.status ? chip(d.meta.status) : ""}<a href="/api/file?path=${encodeURIComponent(path)}" target="_blank">原文件</a></div>
+      <div class="two"><div class="side panel" id="toc-side">${sib ? `<div class="small muted" style="margin-top:10px">同文件夹</div>${sib}` : ""}</div><div class="panel" id="body"></div></div>`;
+    const body = render(d.body, dirOf(path)); $("#body").appendChild(body);
+    const toc = tocFor(body, 3); if (toc) $("#toc-side").prepend(toc);
+    if (!toc && !sib) { $("#toc-side").remove(); $("#body").parentElement.style.gridTemplateColumns = "1fr"; }
+    scrollToFrag(body, frag);
   };
 
   pages.discussion = async (id) => {
@@ -239,7 +324,7 @@
   pages.thread = async (id) => {
     const d = await api(`/api/discussion/${encodeURIComponent(id)}`); const m = d.meta;
     main.innerHTML = `<p><a href="#/discussion">← 讨论</a></p><h1>${esc(d.title)}</h1>
-      <div class="meta">${chip(m.status)}<span>${m.asked_by === "user" ? "你问 agent" : "agent 问你"}</span>${m.lab ? `<a href="#/labs/${esc(m.lab)}">相关任务 ${esc(m.lab)}</a>` : ""}${m.idea ? `<a href="#/ideas/${esc(m.idea)}">相关想法</a>` : ""}<span>创建：${esc(m.created || "")}</span></div>
+      <div class="meta">${chip(m.status)}<span>${m.asked_by === "user" ? "你问 agent" : "agent 问你"}</span>${m.lab ? `<a href="#/labs/${esc(m.lab)}">相关任务 ${esc(m.lab)}</a>` : ""}${m.idea ? `<a href="#/ideas/${esc(m.idea)}">相关问题</a>` : ""}<span>创建：${esc(m.created || "")}</span></div>
       <div class="panel" id="body"></div>
       <div class="panel"><b>${m.asked_by === "agent" ? "你的回答" : "补充"}</b><textarea id="ans" placeholder="写下你的裁决或想法。回答不会当场处理：agent 每两小时把这段时间的所有回答放在一起统一消化（讨论列表页可以手动“现在就消化”）。"></textarea>
         <div class="form-row"><button class="primary" id="send">提交回答</button>${m.status !== "resolved" ? `<button id="resolve">标记已解决</button>` : ""}</div></div>`;
@@ -252,20 +337,22 @@
   pages.ideas = async (slug) => {
     if (slug) return pages.idea(slug);
     const d = await api("/api/ideas");
-    const node = (n) => `<li><a href="#/ideas/${esc(n.id)}">${esc(n.title)}</a> ${chip(n.meta.status)}${n.meta.promoted_lab ? ` <a class="small" href="#/labs/${esc(n.meta.promoted_lab)}">→ lab</a>` : ""}${n.children.length ? `<ul>${n.children.map(node).join("")}</ul>` : ""}</li>`;
+    const node = (n) => `<li><div class="node"><a href="#/ideas/${esc(n.id)}"><b>${esc(n.title)}</b></a> ${kindChip(n.meta.kind)}${chip(n.meta.status)}${(n.meta.labs || []).map((l) => ` <a class="small" href="#/labs/${esc(l)}">lab ${esc(l.slice(0, 2))}</a>`).join("")}
+        ${n.answer ? `<div class="answer">${esc(n.answer)}</div>` : ""}</div>${n.children.length ? `<ul>${n.children.map(node).join("")}</ul>` : ""}</li>`;
     const tree = d.tree.filter((n) => !n.id.startsWith("inbox/"));
     const inbox = d.tree.filter((n) => n.id.startsWith("inbox/"));
-    main.innerHTML = `<h1>想法</h1>
+    main.innerHTML = `<h1>问题树</h1>
+      <p class="muted small">每个节点是一个研究问题（或为回答它选的路线、方法），下面一行是它的当前回答。原话一字不改地保存在节点里；agent 只整理结构和回答。</p>
       <div class="panel"><b>速记一个想法</b><textarea id="cap" placeholder="模糊的也行，原话会被原样保存；agent 会整理挂到树上，不会改你的话。"></textarea><div class="form-row"><button class="primary" id="save">记下</button></div></div>
       ${inbox.length ? `<div class="panel"><b>未整理 (${inbox.length})</b><ul class="list small">${inbox.map((n) => `<li><a href="#/ideas/${esc(n.id)}">${esc(n.title)}</a><span class="muted small">${esc(n.updated)}</span></li>`).join("")}</ul></div>` : ""}
-      <div class="panel tree"><ul>${tree.map(node).join("") || "<li class='muted'>还没有想法树</li>"}</ul></div>`;
+      <div class="panel tree"><ul>${tree.map(node).join("") || "<li class='muted'>还没有问题树</li>"}</ul></div>`;
     $("#save").onclick = async () => { const t = $("#cap").value.trim(); if (!t) return; await api("/api/ideas", { text: t }); toast("已记下"); pages.ideas(); };
   };
 
   pages.idea = async (slug) => {
     const d = await api(`/api/ideas/${slug}`); const m = d.meta;
-    main.innerHTML = `<p><a href="#/ideas">← 想法</a></p><h1>${esc(d.title)}</h1>
-      <div class="meta">${chip(m.status)}${m.parent ? `<a href="#/ideas/${esc(m.parent)}">上级：${esc(m.parent)}</a>` : ""}${(m.labs || []).map((l) => `<a href="#/labs/${esc(l)}">lab ${esc(l)}</a>`).join("")}<span>创建：${esc(m.created || "")}</span></div>
+    main.innerHTML = `<p><a href="#/ideas">← 问题树</a></p><h1>${esc(d.title)}</h1>
+      <div class="meta">${kindChip(m.kind)}${chip(m.status)}${m.parent ? `<a href="#/ideas/${esc(m.parent)}">上级：${esc(m.parent)}</a>` : ""}${(m.labs || []).map((l) => `<a href="#/labs/${esc(l)}">lab ${esc(l)}</a>`).join("")}${(m.related || []).map((r) => `<a href="#/ideas/${esc(r)}">相关：${esc(r)}</a>`).join("")}<span>创建：${esc(m.created || "")}</span></div>
       <div class="panel" id="body"></div>
       ${m.promoted_lab ? `<p>已升级为 <a href="#/labs/${esc(m.promoted_lab)}">${esc(m.promoted_lab)}</a></p>` : m.promote_requested ? `<p class="muted">已请求升级（${esc(m.promote_requested)}），agent 正在起草任务书。</p>` :
         `<div class="panel"><b>升级为 lab 任务</b><div class="form-row"><input id="note" placeholder="给任务书的补充说明（可空）；写「不用过目」则直接执行"></div><div class="form-row"><button class="primary" id="promote">让 agent 起草任务书</button></div></div>`}`;
@@ -313,7 +400,19 @@
   // ---------- 路由 ----------
   async function route() {
     if (window._es) { window._es.close(); window._es = null; }
-    const parts = location.hash.replace(/^#\/?/, "").split("/");
+    const hash = location.hash.replace(/^#\/?/, "");
+    if (hash.startsWith("doc/")) {
+      // 通用文档页：#/doc/<项目内路径>?h=<节锚点>
+      const [p, qs] = hash.slice(4).split("?");
+      const path = p.split("/").map((x) => { try { return decodeURIComponent(x); } catch (e) { return x; } }).join("/");
+      const frag = qs ? new URLSearchParams(qs).get("h") : null;
+      const top = { labs: "labs", wiki: "wiki", ideas: "ideas", discussion: "discussion", references: "refs" }[path.split("/")[0]] || "home";
+      document.querySelectorAll("nav a").forEach((a) => a.classList.toggle("active", a.dataset.key === top));
+      try { await pages.doc(path, frag); } catch (e) { main.innerHTML = `<p class="muted">出错了：${esc(e.message)}</p>`; }
+      window.scrollTo(0, 0);
+      return;
+    }
+    const parts = hash.split("/");
     const key = parts[0] || "home"; const rest = parts.slice(1).join("/");
     document.querySelectorAll("nav a").forEach((a) => a.classList.toggle("active", a.dataset.key === key || (key === "inbox" && a.dataset.key === "refs")));
     const fn = pages[key] || pages.home;
