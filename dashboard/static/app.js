@@ -285,7 +285,8 @@
   };
 
   // 通用文档页：项目内任意 markdown（notes.md、handoff.md、STATUS.md、writing-test/…）
-  pages.doc = async (path, frag) => {
+  // base：相对链接按哪个目录解析（草稿、试写等"为别的位置写的" markdown 用 ?base=<目录> 或 frontmatter base: 指定）
+  pages.doc = async (path, frag, base) => {
     let d;
     try { d = await api(`/api/raw?path=${encodeURIComponent(path)}`); }
     catch (e) { main.innerHTML = `<p class="muted">找不到 ${esc(path)}</p>`; return; }
@@ -302,7 +303,8 @@
     main.innerHTML = `<p class="crumbs small">${crumbs.join(" / ")}</p><h1>${esc(title)}</h1>
       <div class="meta"><span>更新：${esc(d.updated || "")}</span>${d.meta.status ? chip(d.meta.status) : ""}<a href="/api/file?path=${encodeURIComponent(path)}" target="_blank">原文件</a></div>
       <div class="two"><div class="side panel" id="toc-side">${sib ? `<div class="small muted" style="margin-top:10px">同文件夹</div>${sib}` : ""}</div><div class="panel" id="body"></div></div>`;
-    const body = render(d.body, dirOf(path)); $("#body").appendChild(body);
+    const baseDir = base || d.meta.base || dirOf(path);
+    const body = render(d.body, baseDir); $("#body").appendChild(body);
     const toc = tocFor(body, 3); if (toc) $("#toc-side").prepend(toc);
     if (!toc && !sib) { $("#toc-side").remove(); $("#body").parentElement.style.gridTemplateColumns = "1fr"; }
     scrollToFrag(body, frag);
@@ -412,10 +414,10 @@
       // 通用文档页：#/doc/<项目内路径>?h=<节锚点>
       const [p, qs] = hash.slice(4).split("?");
       const path = p.split("/").map((x) => { try { return decodeURIComponent(x); } catch (e) { return x; } }).join("/");
-      const frag = qs ? new URLSearchParams(qs).get("h") : null;
+      const params = new URLSearchParams(qs || ""); const frag = params.get("h"); const base = params.get("base");
       const top = { labs: "labs", wiki: "wiki", ideas: "ideas", discussion: "discussion", references: "refs" }[path.split("/")[0]] || "home";
       document.querySelectorAll("nav a").forEach((a) => a.classList.toggle("active", a.dataset.key === top));
-      try { await pages.doc(path, frag); } catch (e) { main.innerHTML = `<p class="muted">出错了：${esc(e.message)}</p>`; }
+      try { await pages.doc(path, frag, base); } catch (e) { main.innerHTML = `<p class="muted">出错了：${esc(e.message)}</p>`; }
       window.scrollTo(0, 0);
       return;
     }
