@@ -120,6 +120,11 @@
     if (t) setTimeout(() => t.scrollIntoView({ block: "start" }), 50);
   }
   const dirOf = (p) => p.includes("/") ? p.slice(0, p.lastIndexOf("/")) : "";
+  // 列表/树里的一行预览（当前回答）：渲染 markdown 与公式；用 data-md 延迟渲染
+  const answerHtml = (text, cls = "answer") => text ? `<div class="${cls}" data-md="${esc(text)}"></div>` : "";
+  function renderAnswers(root = main) {
+    root.querySelectorAll("[data-md]").forEach((el) => { el.replaceChildren(render(el.dataset.md)); el.removeAttribute("data-md"); });
+  }
   const clip = (s, n = 160) => { s = String(s || ""); return s.length > n ? s.slice(0, n - 1) + "…" : s; };
 
   // ---------- 总览 / 红点 ----------
@@ -248,8 +253,9 @@
     if (id) return pages.lab(id);
     const list = await api("/api/labs");
     const rows = list.map((x) => `<li class="lab-row"><span class="t"><a href="#/labs/${esc(x.id)}"><b>${esc(x.short || x.title)}</b></a> <span class="small muted">${esc(x.id)}</span>
-        ${x.answer ? `<div class="answer">${esc(x.answer)}</div>` : x.question ? `<div class="answer muted">问题：${esc(x.question)}</div>` : ""}</span>${chip(x.meta.status)}${x.meta.machine ? `<span class="chip">${esc(x.meta.machine)}</span>` : ""}<span class="small muted">${esc(x.updated)}</span></li>`).join("");
+        ${x.answer ? answerHtml(x.answer) : x.question ? answerHtml("问题：" + x.question, "answer muted") : ""}</span>${chip(x.meta.status)}${x.meta.machine ? `<span class="chip">${esc(x.meta.machine)}</span>` : ""}<span class="small muted">${esc(x.updated)}</span></li>`).join("");
     main.innerHTML = `<h1>Lab</h1><p class="muted small">每个任务一个文件夹：任务书 brief.md、摘要 report.md（首屏：问题 / 当前回答 / 为什么信 / 边界）、推导与分析 notes.md、数据去向 DATA.md。想法页里可以把问题升级成 lab。</p><div class="panel"><ul class="list">${rows || "<li class='muted'>还没有任务</li>"}</ul></div>`;
+    renderAnswers();
   };
 
   pages.lab = async (id) => {
@@ -338,7 +344,7 @@
     if (slug) return pages.idea(slug);
     const d = await api("/api/ideas");
     const node = (n) => `<li><div class="node"><a href="#/ideas/${esc(n.id)}"><b>${esc(n.title)}</b></a> ${kindChip(n.meta.kind)}${chip(n.meta.status)}${(n.meta.labs || []).map((l) => ` <a class="small" href="#/labs/${esc(l)}">lab ${esc(l.slice(0, 2))}</a>`).join("")}
-        ${n.answer ? `<div class="answer">${esc(n.answer)}</div>` : ""}</div>${n.children.length ? `<ul>${n.children.map(node).join("")}</ul>` : ""}</li>`;
+        ${answerHtml(n.answer)}</div>${n.children.length ? `<ul>${n.children.map(node).join("")}</ul>` : ""}</li>`;
     const tree = d.tree.filter((n) => !n.id.startsWith("inbox/"));
     const inbox = d.tree.filter((n) => n.id.startsWith("inbox/"));
     main.innerHTML = `<h1>问题树</h1>
@@ -346,6 +352,7 @@
       <div class="panel"><b>速记一个想法</b><textarea id="cap" placeholder="模糊的也行，原话会被原样保存；agent 会整理挂到树上，不会改你的话。"></textarea><div class="form-row"><button class="primary" id="save">记下</button></div></div>
       ${inbox.length ? `<div class="panel"><b>未整理 (${inbox.length})</b><ul class="list small">${inbox.map((n) => `<li><a href="#/ideas/${esc(n.id)}">${esc(n.title)}</a><span class="muted small">${esc(n.updated)}</span></li>`).join("")}</ul></div>` : ""}
       <div class="panel tree"><ul>${tree.map(node).join("") || "<li class='muted'>还没有问题树</li>"}</ul></div>`;
+    renderAnswers();
     $("#save").onclick = async () => { const t = $("#cap").value.trim(); if (!t) return; await api("/api/ideas", { text: t }); toast("已记下"); pages.ideas(); };
   };
 

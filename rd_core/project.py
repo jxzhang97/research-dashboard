@@ -464,12 +464,13 @@ class Project:
                 items.append({"kind": "inbox", "id": d.id, "title": d.title, "why": "arXiv 候选，等你审批", "time": d.mtime})
         for d in self.labs():
             st = d.meta.get("status")
+            title = d.extra.get("short") or d.title  # 首页用 report.md 的短标题
             if st == "awaiting_review":
-                items.append({"kind": "lab", "id": d.id, "title": d.title, "why": "任务书等你过目", "time": d.mtime})
+                items.append({"kind": "lab", "id": d.id, "title": title, "why": "任务书等你过目", "time": d.mtime})
             elif st == "waiting_answer":
-                items.append({"kind": "lab", "id": d.id, "title": d.title, "why": "任务卡在一个问题上，见讨论", "time": d.mtime})
+                items.append({"kind": "lab", "id": d.id, "title": title, "why": "任务卡在一个问题上，见讨论", "time": d.mtime})
             elif st in ("done", "blocked") and self.is_unread("lab", d.id, d.mtime):
-                items.append({"kind": "lab", "id": d.id, "title": d.title, "why": "任务" + ("完成" if st == "done" else "受阻") + "，未查看", "time": d.mtime})
+                items.append({"kind": "lab", "id": d.id, "title": title, "why": "任务" + ("完成" if st == "done" else "受阻") + "，未查看", "time": d.mtime})
         items.sort(key=lambda x: -x["time"])
         counts: dict[str, int] = {}
         for it in items:
