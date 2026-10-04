@@ -31,6 +31,7 @@ description: 用 research-dashboard 模板把当前文件夹初始化成一个�
 4. 把 idea 文件**原样复制**一份到 `ideas/inbox/<日期>-<slug>.md`（加 frontmatter `title`、`source: <原文件路径>`），再按 rd-idea 整理成根节点 `ideas/<slug>.md`，原话一字不改。
 5. 把 idea 里提到的文献按 rd-reference 建卡；没有全文的先 `read_depth: abstract`。
 6. `wiki/notation.md` 里登记 idea / notes 已经在用的记号。
+6b. `STATUS.md`：按 rd-wiki 的模板写第一版——研究问题（与想法树一致）、每个问题"未回答"、正在进行（第一个任务）、等你决定（空）。
 7. `log.md` 记一条；`git add -A && git commit -m "课题初始化"`。
 
 做完向用户用五六行汇报：PROJECT.md 的要点、arXiv 关键词、建了哪些卡片。**不需要等用户确认再往下走**，但要说清楚哪些是你替他定的。
@@ -63,7 +64,7 @@ ssh studio "~/doc_unsyn/research-dashboard/rd scheduler install ~/$REL && ~/doc_
 
 ## 第 5 步：执行任务
 
-按 rd-lab 第 B、C 节做：`status: running`，三方对照，推导报告用 baby-steps-report（它自带的 gap-check 阶段在交互窗口里可以当面问用户；得到的裁决同时写进 `discussion/`），数值先 `rd free-cores`，收尾清单一项不漏，`status: done`，git commit。
+按 rd-lab 第 B、C 节做：`status: running`，三方对照，推导和讲解写 `notes.md`（rd-notes；它的分歧检查阶段在交互窗口里可以当面问用户，得到的裁决同时写进 `discussion/`），薄层按 rd-lab C3 的写作步，数值先 `rd free-cores`，收尾清单一项不漏，`status: done`，git commit。
 
 交互窗口里跑长任务时，每完成一个大步骤就把 `report.md` 的草稿更新一次，这样 dashboard 上随时能看到进展。
 
@@ -72,3 +73,4 @@ ssh studio "~/doc_unsyn/research-dashboard/rd scheduler install ~/$REL && ~/doc_
 - 不要在 ssh 会话里直接 `rd run`：ssh 看不到钥匙串会报未登录。要在 studio 上派任务走 `curl -X POST localhost:<端口>/api/runs`，或者让用户在网页上点。
 - 两台机器不要同时让 agent 写同一课题。你在笔记本窗口里干活时，studio 上的 dashboard 只读不写（它的文件监视会在 15 秒内发现待办并执行，所以你起草的任务书如果直接写成 `approved`，studio 会立刻接手执行；交互窗口里自己要做的任务，先保持 `running` 并在 log 里写明"笔记本交互会话执行中"）。
 - 绝对路径只允许出现在 `DATA.md`。
+- 不要替用户发明研究方向：问题树里只放 idea 文件里有的问题和它们的直接拆分。

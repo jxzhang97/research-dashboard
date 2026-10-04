@@ -13,7 +13,7 @@ from pathlib import Path
 from . import TEMPLATE_ROOT, config, registry
 
 SKILL_HOMES = [Path("~/.claude/skills").expanduser(), Path("~/.codex/skills").expanduser(), Path("~/.agents/skills").expanduser()]
-REQUIRED_SKILLS = ["baby-steps-report"]
+OPTIONAL_SKILLS = ["baby-steps-report"]  # 只在用户明确要双语 LaTeX 报告时用；日常推导走 rd-notes
 
 
 def _project(path: str):
@@ -47,10 +47,10 @@ def cmd_install(args):
                 continue
             dst.symlink_to(sk)
             print(f"  链接 {dst} → {sk}")
-    # 依赖的外部 skill
-    for name in REQUIRED_SKILLS:
+    # 可选的外部 skill
+    for name in OPTIONAL_SKILLS:
         ok = any((h / name / "SKILL.md").exists() for h in SKILL_HOMES)
-        print(f"  依赖 skill {name}: {'已安装' if ok else '缺失！请 git clone 后软链接到 ~/.claude/skills/'}")
+        print(f"  可选 skill {name}: {'已安装' if ok else '未安装（只在用户要双语 LaTeX 报告时需要）'}")
     cb = config.find_claude_bin()
     print(f"  claude: {cb or '未找到（自动运行需要）'}")
     print("完成。接下来: rd init <课题目录> --name <课题名>")
@@ -93,6 +93,11 @@ def cmd_init(args):
 
 def _sync_rules(dst: Path):
     shutil.copy2(TEMPLATE_ROOT / "AGENTS.md", dst / "AGENTS.md")
+    # 模板新增的顶层文件（如 STATUS.md）补进旧课题；已有的不动
+    for name in ("STATUS.md",):
+        src, out = TEMPLATE_ROOT / "template" / name, dst / name
+        if src.exists() and not out.exists():
+            out.write_text(src.read_text(encoding="utf-8").replace("{{DATE}}", _today()).replace("{{PROJECT_NAME}}", dst.name), encoding="utf-8")
     claude_md = dst / "CLAUDE.md"
     if not claude_md.exists():
         claude_md.write_text("@AGENTS.md\n", encoding="utf-8")
@@ -106,7 +111,7 @@ def cmd_update(args):
     dst = Path(args.path).expanduser().resolve()
     _sync_rules(dst)
     config.write_machine(dst, claude_bin=config.find_claude_bin() or "")
-    print(f"已刷新 {dst}/AGENTS.md、CLAUDE.md 和本机配置")
+    print(f"已刷新 {dst}/AGENTS.md、CLAUDE.md 和本机配置（缺的 STATUS.md 已补）")
 
 
 def _today():

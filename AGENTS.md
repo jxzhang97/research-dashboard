@@ -5,50 +5,76 @@
 ## 0. 开始任何工作前先读
 
 1. `PROJECT.md`：课题动机、目标、假设、必须通过的验证、核心文献。
-2. `wiki/index.md` 和 `wiki/notation.md`：当前理解和记号。
-3. `log.md` 最近 20 条：别人（包括上一次的你）刚做了什么。
-4. 与当前任务相关的 `labs/`、`ideas/`、`discussion/` 文件。
+2. `STATUS.md`：课题现在到哪了（问题、当前回答、在跑什么、等用户决定什么）。
+3. `wiki/index.md` 和 `wiki/notation.md`：概念页目录和记号。
+4. `log.md` 最近 20 条：别人（包括上一次的你）刚做了什么。
+5. 与当前任务相关的 `labs/`、`ideas/`、`discussion/` 文件。
 
 ## 1. 目录与职责
 
 | 目录 | 放什么 | 谁写 |
 |---|---|---|
 | `PROJECT.md` | 课题总纲 | 用户 |
+| `STATUS.md` | 课题状态：研究问题树、每个问题的当前回答、进行中、等用户决定；每次收尾**重写**，不追加 | agent |
 | `references/raw/` | 原始 PDF，只增不改 | agent 下载 / 用户放入 |
 | `references/cards/` | 每篇文献一张卡片 `<arxiv id 或 slug>.md` | agent |
 | `references/inbox/` | arXiv 扫描候选，等用户审批 | 脚本 + agent |
-| `wiki/` | 当前理解的汇编，`[[双括号]]` 互链，随进展重写 | agent |
-| `labs/NN-slug/` | 一个任务：`brief.md` 任务书、`report.md` 摘要、`report.pdf`、`DATA.md`、代码、图 | agent 起草，用户过目 |
+| `wiki/` | 概念页：对一个概念"我们现在怎么理解"，`[[双括号]]` 互链，随进展重写 | agent |
+| `labs/NN-slug/` | 一个任务：`brief.md` 任务书、`report.md` 摘要、`notes.md` 推导与讲解、`DATA.md`、代码、`fig/` | agent 起草，用户过目 |
 | `src/` | 从 lab 沉淀出的可复用代码 | agent |
 | `discussion/` | 需要用户裁决的问题，以及用户向 agent 提的问题 | 双方 |
-| `ideas/` | 想法树；`ideas/inbox/` 是用户的原始速记 | 用户写原话，agent 整理 |
+| `ideas/` | 问题树；`ideas/inbox/` 是用户的原始速记 | 用户写原话，agent 整理 |
 | `log.md` | 时间线，只追加 | 双方 |
 | `.dashboard/` | 运行记录、作业登记、本机配置，不是内容 | 程序 |
 
-## 2. 语言与写作
+## 2. 写给谁、写在哪、写多少
 
-- 全项目默认中文；`config.toml` 的 `project.language = "en"` 时改用英文。文献卡片里的术语可以中英并列。
-- **推导、讲解、总结类的内容一律用 `baby-steps-report` skill 写**：LaTeX 编译成 PDF，放在对应 lab 文件夹（`report.pdf`，或多份时按内容命名）。旁边必须有 `report.md`：几十行以内的摘要（frontmatter 里 `pdf:` 指向 PDF，正文列结论），dashboard 只显示摘要。
-- 卡片、wiki、讨论、idea、日志用 markdown，公式用 `$…$` 和 `$$…$$`（网页用 KaTeX 渲染，避免只有 LaTeX 包才有的宏）。
-- **图要放到网页看得见的地方，而且要多画示意图。** 规矩：
-  - 每个 lab 的图放 `labs/NN-slug/fig/`，格式 PNG 或 SVG（PDF 报告里的图**同时导出** PNG/SVG）。`report.md` 必须用 `![一句话说明](fig/xxx.png)` 内嵌关键图，alt 文字就是网页上的图注；dashboard 的 lab 页还会把 `fig/` 里所有图列成画廊。
-  - wiki 概念页尽量配一张示意图（`wiki/fig/<slug>-*.svg|png`）：格子与轨道、能带与平带、相图、推导的逻辑链、算符作用的示意。文字能说清但图更快的，就画。
-  - 文献卡片可以放一张自己画的示意图来表达它的核心结果（不要截原文的图）。
-  - 画法：数据图用 matplotlib（`savefig(..., dpi=160, bbox_inches="tight")`）；示意图用 matplotlib 画几何或直接手写 SVG；Mathematica 的图 `Export` 成 PNG。每张图有标题或 alt 图注，坐标轴有标签和单位。
-  - 图的原始数据和脚本留在 lab 文件夹，图能重画。
-- 正式论文不用 baby-steps-report，用 `hardworking-paper-writer`。
-- 模型（`config.toml` 的 `[models]`）：默认一律 `claude-fable-5-1`、effort `xhigh`（extra high）；用户特别要求时才用 `max`。用户可以单独指定：任务书或 idea 的 frontmatter 写 `model:` / `effort:`，自动运行会照用；用户在对话里说"写报告用 opus"之类的，就把它写进任务书 frontmatter，并在写报告时把那部分交给对应模型的子 agent（Agent 工具的 model 参数）。
+**读者**：面向读者的页面（`STATUS.md`、`report.md`、wiki 页、idea 节点）假定读者是刚进组的研究生：懂二次量子化、知道 DMRG 大概是什么，**不认识本课题的任何记号，也没看过任何一次运行**。写之前先想这个人。
+
+**两层内容，两种写法：**
+
+- **厚层**（`notes.md`、代码、数据、验证脚本）：由做推导或跑数值的那个 agent 在同一上下文里写，按 `rd-notes` skill（问题链、无跳步、落盘验证），可以长，可以密。
+- **薄层**（`report.md` 首屏、wiki 页首屏、idea 节点的「当前回答」、`STATUS.md`）：**单独一步、新开上下文**，由 `config.toml` 的 `write` 模型子 agent 根据交接单和材料写，主 agent 只核对科学限定（有限尺寸的峰不能写成相变、某模型的结果不能写成普遍规律、混态、近似、尺寸范围不能丢），核对意见逐句给，不整体重写。交接单（`labs/NN-slug/handoff.md`）写清：这次回答了什么、改变了什么认识、哪些话不能说过头、材料在哪。
+
+**薄层首屏固定四段**，顺序不变：
+
+1. **问题**：这页要回答什么，一两句。
+2. **当前回答**：一到三句能直接理解的判断，带适用范围（模型、参数、尺寸、方法）。
+3. **为什么信**：一张主图加一句"看哪里、看到什么、说明什么"，或一条链接到 notes 对应小节。
+4. **边界**：会改变判断的未完成检查、已知的局限。
+
+首屏之后才是细节。数字在薄层里每个论断最多出现一个代表值，其余放表格或 notes 并链接。lab 标题不超过二十个字，长的写进副标题或 `report.md` 的「问题」。
+
+**每样东西只写一次。** 一个事实只有一个权威位置，别处用一句话加链接：
+
+| 事实 | 权威位置 | 别处怎么提 |
+|---|---|---|
+| 数字、表格、收敛检查 | lab 的 `notes.md` / `results/` | 一个代表值 + 链接 |
+| 推导 | lab 的 `notes.md`；可复用的通用推导可移到 wiki 页的详细节 | 结论一句 + 链接到小节 |
+| 对一个概念的当前理解 | wiki 页 | 链接 |
+| 一个问题的当前回答 | idea 节点「当前回答」 | `STATUS.md` 引用一句 |
+| 决定及理由 | discussion | 链接 |
+| 发生了什么 | `log.md` | 不复制 |
+
+收尾时**改写**受影响页面的当前回答，不要往每个页面追加一段同样的进度。卡片「与本课题的联系」每个 lab 最多两三句，不抄数字。
+
+**语言与格式**：全项目默认中文；`config.toml` 的 `project.language = "en"` 时改用英文。卡片里的术语可以中英并列。推导和讲解写 markdown（`rd-notes`），公式用 `$…$` 和 `$$…$$`（网页用 KaTeX 渲染，不用自定义宏，编号用 `\tag{}`）。PDF 和英文版都**按需**生成（用户要分享、打印或明确要求时），不是完成任务的条件。正式论文用 `hardworking-paper-writer`，不用 rd-notes。
+
+**图**：每个 lab 的图放 `labs/NN-slug/fig/`，PNG 或 SVG，`report.md` 和 `notes.md` 用 `![图注](fig/xxx.png)` 内嵌，图注写"看哪里 → 看到什么 → 说明什么"，网页上 alt 文字就是图注。图分四种角色：问题设定、主结果、机制解释、可靠性检查；首屏只放主结果和设定。wiki 概念页尽量配一张示意图（`wiki/fig/<slug>-*.svg|png`）。数据图用 matplotlib（`savefig(..., dpi=160, bbox_inches="tight")`），示意图手画 SVG 或 matplotlib；每张图坐标轴有标签和单位；原始数据和脚本留在 lab 文件夹。
+
+**模型**（`config.toml` 的 `[models]`）：`read` 跑研究，默认 `claude-fable-5-1`、effort `xhigh`；`write` 写薄层，可以是另一个模型，由主 agent 用 Agent 工具的 model 参数调用。用户可以在任务书或 idea 的 frontmatter 写 `model:` / `effort:` 单独指定；用户在对话里说"写报告用 opus"之类的，写进任务书 frontmatter。
 
 ## 3. Notation
 
 - `wiki/notation.md` 是全课题记号的唯一来源。写任何公式前先对照它；文献用了不同记号，卡片里给出对应表，正文仍用课题记号。
-- 用户改了 `notation.md` 后，受影响的 wiki、卡片要同步改；已编译的旧 PDF 不重编，只在对应 `report.md` 顶部标一行"记号已于 <日期> 更新，PDF 用的是旧记号：…"。
+- 用户改了 `notation.md` 后，受影响的 wiki、卡片、notes 要同步改；已导出的旧 PDF 不重编，只在对应 `report.md` 顶部标一行"记号已于 <日期> 更新，PDF 用的是旧记号：…"。
 - 发现 notation 内部矛盾或与 PROJECT.md 冲突：不悄悄改，写进 discussion 让用户裁决。
 
 ## 4. 文件纪律
 
 - 项目内一律用相对项目根目录的路径。两台机器用户名不同（`/Users/jiaxin` 与 `/Users/jiaxinzhang`），绝对路径会断。
 - **不改用户亲手写的东西**：`PROJECT.md`、`ideas/` 里「## 原话」一节、`ideas/inbox/` 的正文、`references/raw/`、用户自己的 notes。要补充就在 agent 维护区追加，要纠正就在 discussion 里说。
+- **不替用户发明研究方向**：问题树里只放用户说过的问题和它们的直接拆分；agent 自己想到的方向写在节点的「agent 备注」或 discussion，标明"agent 建议"，用户认可后才成为节点。
 - 不删文件。新结果写新文件；旧结论作废时在旧文件顶部标"已被 <新文件> 取代"。
 - 写文件前先看有没有同名或同主题的文件，避免重复。
 - 每次任务或会话结束：`log.md` 追加一条（格式见第 9 节），然后在课题目录 `git add -A && git commit -m "<一句话>"`。
@@ -57,23 +83,21 @@
 ## 5. 计算
 
 - 任务书的 `machine` 字段指定在哪跑，没写就是 studio。只在用户明确说时用笔记本或集群。
-- **并行不设固定预算，按当时空闲决定**：跑数值前先执行 `rd free-cores <课题目录>`，它会报告性能核数、当前负载、**本机所有课题**已登记的作业，以及"现在最多再用几个核"。按它说的来，并显式设线程数（`OMP_NUM_THREADS`、`MKL_NUM_THREADS`、`OPENBLAS_NUM_THREADS`、Julia `-t`、Mathematica `$ProcessorCount` 相关设置），然后 `rd jobs claim <课题目录> --cores N --label "<lab id>"` 登记，跑完 `rd jobs release --id <jid>`。登记表是机器级的（`~/.rd/jobs.json`），别的课题的数值也在里面，所以不同课题不会互相抢核。
+- **并行不设固定预算，按当时空闲决定**：跑数值前先执行 `rd free-cores <课题目录>`，它会报告性能核数、当前负载、**本机所有课题**已登记的作业，以及"现在最多再用几个核"。按它说的来，并显式设线程数（`OMP_NUM_THREADS`、`MKL_NUM_THREADS`、`OPENBLAS_NUM_THREADS`、Julia `-t`、Mathematica `$ProcessorCount` 相关设置），然后 `rd jobs claim <课题目录> --cores N --label "<lab id>" --pid <长寿命批量进程>` 登记，跑完 `rd jobs release --id <jid>`。登记表是机器级的（`~/.rd/jobs.json`），别的课题的数值也在里面，所以不同课题不会互相抢核。
 - 同一台机器上可能同时有好几个课题的 dashboard 和 agent。规矩：每个课题自己的 agent 串行；全机同时最多 `~/.rd/machine.toml` 里 `max_agents` 个 agent（默认 2），超出的排队；不要跨课题写文件。
 - 中间数据和大文件放 `config.toml` 的 `data_root`（studio 上 `~/doc_unsyn/<课题名>/<lab id>/`），项目里只留图、汇总结果和 `DATA.md`（机器、路径、内容、日期、怎么重新生成）。
 - 代码能复用的放 `src/`，一次性的留在 lab 文件夹。
 
 ## 6. 任务流程
 
-1. **想法**：用户写在 `ideas/inbox/` 或 dashboard 速记。agent 按 `rd-idea` skill 整理进想法树，原话不动。
+1. **想法**：用户写在 `ideas/inbox/` 或 dashboard 速记。agent 按 `rd-idea` skill 整理进问题树，原话不动。
 2. **任务书**：用户请求升级（或 agent 判断该动手并征得同意）时，按 `rd-lab` skill 起草 `labs/NN-slug/brief.md`，用户原话原样保留，结合本文件和 PROJECT.md 写出目标、步骤、交付物、机器。状态 `awaiting_review`。**用户说了不用过目的，直接 `approved` 并开始。**
-3. **执行**：状态改 `running`，按任务书做；推导报告按第 2 节；数值按第 5 节。
-4. **收尾清单**（缺一不可）：
-   - `report.md` 摘要 + PDF / 图；
-   - 更新相关文献卡片的「与本课题的联系」；
-   - 更新 wiki（新概念建页，旧理解改写，`index.md` 加链接）；
-   - 更新来源 idea 的状态和「进展与结论」；
-   - 有新问题就写 discussion；
-   - `log.md` 追加；状态改 `done`；git commit。
+3. **执行**：状态改 `running`，按任务书做；推导和讲解进 `notes.md`（`rd-notes`）；数值按第 5 节；中途的小结论随时写进 `report.md` 草稿。
+4. **收尾**（缺一不可，但每样只写一次）：
+   - 厚层齐：`notes.md`、`fig/`、`DATA.md`、`results/`；
+   - 交接单 `handoff.md`，然后**薄层写作步**（第 2 节）：`report.md` 首屏、受影响的 wiki 页首屏、来源 idea 的「当前回答」、`STATUS.md`；主 agent 核对限定；
+   - 卡片「与本课题的联系」加两三句；wiki `index.md` 加新页链接；
+   - 有新问题就写 discussion；`log.md` 追加；状态改 `done`；git commit。
 
 ## 7. 什么时候、怎么向用户提问
 
@@ -87,14 +111,14 @@
 ## 8. 文献卡片
 
 - `read_depth` 如实填：`abstract`（只读了摘要）、`skim`（翻过全文）、`full`（通读）。没读的部分不要总结。
-- 「与本课题的联系」是活的：每个 lab 收尾时回头看相关卡片，补一句"lab NN 的结果表明…"。
+- 「与本课题的联系」是活的：每个 lab 收尾时回头看相关卡片，补两三句"lab NN 的结果表明…"，不抄数字。
 - arXiv 候选在用户批准前只能基于摘要写理由，并注明；批准后才下载、精读、建卡。
 
 ## 9. 状态与格式速查
 
 - lab：`draft → awaiting_review → approved → running → done`；旁路 `waiting_answer`、`blocked`、`parked`。
 - discussion：`open → answered → digested → resolved`；`asked_by: agent | user`。
-- idea：`seed / exploring / lab / resolved / parked / dropped`；inbox 里未整理的没有状态。
+- idea：`seed / exploring / lab / resolved / parked / dropped`；inbox 里未整理的没有状态。节点可选 `kind: question | route | method`，默认 question。
 - inbox 候选：`pending → approved → ingested`，或 `rejected`。
 - `log.md` 条目：`## YYYY-MM-DD HH:MM · <谁> · <做了什么>`，下一行可放链接。
 
@@ -102,7 +126,7 @@
 
 ```
 rd free-cores <课题目录>                 # 现在能用几个核
-rd jobs claim <课题目录> --cores N --label X / rd jobs release <课题目录> --id J
+rd jobs claim <课题目录> --cores N --label X --pid P / rd jobs release <课题目录> --id J
 rd doctor <课题目录>                     # 断链、卡片缺节、状态异常
 rd tick <课题目录>                       # 处理所有待办（回答、审批、升级）
 ```

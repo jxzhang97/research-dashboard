@@ -3,7 +3,8 @@
 一个本地 web，用来管理**一个理论物理课题**的文献、当前理解、任务、讨论和想法；agent（Claude Code 或 Codex）直接读写同一套 markdown 文件。
 
 - **文件是唯一真相**：所有内容是带 frontmatter 的 markdown，放在课题文件夹里；web 只是视图，加四个写入口（回答问题、审批文献、速记想法、立刻派任务）。
-- **五个页面**：文献（卡片 + arXiv 候选审批）、Wiki（当前理解，互链）、Lab（任务书 → 报告）、讨论（agent 向你提问，你裁决）、想法（层级树 + 速记）。另有首页"需要你处理"和任务页（agent 运行日志）。
+- **首页是课题状态**：`STATUS.md`（研究问题与当前回答、正在进行、等你决定），agent 每次收尾重写。其余页面：文献（卡片 + arXiv 候选审批）、Wiki（概念页，互链）、Lab（任务书 → 摘要首屏 → notes）、讨论（agent 向你提问，你裁决）、问题树（每个节点带当前回答 + 速记）、任务页（agent 运行日志）。任意项目内 markdown 都能在 `#/doc/<路径>` 站内阅读（目录、锚点、相对链接）。
+- **写给谁**：面向读者的页面假定读者是刚进组的研究生；厚层（notes、代码、数据）由做研究的 agent 写，薄层（摘要首屏、wiki 首屏、问题的当前回答、STATUS）单独一步由 `write` 模型按交接单写、研究 agent 核对限定。每个事实只有一个权威位置。
 - **agent 规则是模板的一部分**：`AGENTS.md`（通用规则）+ `skills/rd-*`（各环节的工作流），Claude Code 和 Codex 都能读。
 - **自动化**：用户在网页上的每个动作（回答、批准、升级、速记、立刻执行）当场触发 agent；直接在编辑器里写进 `ideas/inbox/` 或改文件状态的，dashboard 每 15 秒扫一次也会当场开始。launchd 每小时的 tick 只是 dashboard 没开时的兜底。每天扫 arXiv，候选需用户审批后才入库。同一课题同一时间只跑一个 agent，后来的排队。
 
@@ -14,7 +15,7 @@ git clone https://github.com/jxzhang97/research-dashboard ~/doc_unsyn/research-d
 ~/doc_unsyn/research-dashboard/rd install
 ```
 
-`install` 会建 `.venv`、装依赖、把 `skills/rd-*` 软链接到 `~/.claude/skills`、`~/.codex/skills`、`~/.agents/skills`，并检查依赖的外部 skill `baby-steps-report` 是否已安装（它不在本仓库里：`git clone` 后软链接到 `~/.claude/skills/baby-steps-report`）。
+`install` 会建 `.venv`、装依赖、把 `skills/rd-*` 软链接到 `~/.claude/skills`、`~/.codex/skills`、`~/.agents/skills`，并检查可选的外部 skill `baby-steps-report` 是否已安装（只在用户明确要双语 LaTeX 报告时用；日常推导走本仓库的 `rd-notes`，输出网页可读的中文 markdown）。
 
 建议把 `rd` 加进 PATH：`ln -s ~/doc_unsyn/research-dashboard/rd ~/.local/bin/rd` 或在 shell 配置里加 alias。
 
@@ -64,7 +65,8 @@ rd scheduler status <课题目录>
 ├── config.toml             语言、模型、arXiv 检索、端口
 ├── references/ raw/ cards/ inbox/
 ├── wiki/       index.md notation.md …
-├── labs/       NN-slug/ brief.md report.md report.pdf DATA.md
+├── STATUS.md               课题状态（agent 每次收尾重写，首页）
+├── labs/       NN-slug/ brief.md report.md notes.md handoff.md fig/ DATA.md
 ├── src/
 ├── discussion/ YYYY-MM-DD-slug.md
 ├── ideas/      slug.md  inbox/
@@ -77,7 +79,7 @@ rd scheduler status <课题目录>
 1. 你在 `ideas/inbox/` 或网页速记一个想法 → agent 整理挂到想法树（原话不改）。
 2. 你点"升级为 lab" → agent 起草任务书 → 你过目批准（或事先说不用过目）→ agent 执行。
 3. 执行中遇到要你裁决的问题 → 写进讨论区，任务标 `waiting_answer` → 你在网页回答。回答**不当场消化**：每两小时（`schedule.digest_minutes`）把这段时间所有已回答的讨论放进一次运行统一消化，互相关联的裁决一起考虑；讨论页可以"现在就消化"。
-4. 任务收尾：报告摘要 + PDF、**图导出到 `fig/` 并嵌进 report.md**（lab 页有画廊）、回写文献卡片、更新 wiki（概念页配示意图）、更新想法状态、记日志、git commit。
+4. 任务收尾：notes.md 与 fig/ 齐 → 交接单 handoff.md → 薄层写作步（report.md 首屏、wiki 首屏、问题的当前回答、STATUS.md）→ 卡片两三句、index、日志、git commit。PDF 与英文版按需导出。
 5. 每天 arXiv 候选进"文献"页等你审批；批准的被下载、精读、建卡。
 
 ## 多个课题同时跑

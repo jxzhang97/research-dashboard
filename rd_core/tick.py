@@ -13,7 +13,7 @@ from .runner import Runner
 PROMPTS = {
     "digest_answer": (
         "用户回答了讨论 {path}（标题「{title}」）。请按 rd-discussion skill 消化这个回答：写出结论与后续，"
-        "把受影响的 wiki、卡片、idea、lab 任务书同步更新；如果某个 lab 的状态是 waiting_answer 且正等这个回答，"
+        "把受影响的 wiki、卡片、idea 的「当前回答」、STATUS.md、lab 任务书同步更新（改写，不追加）；如果某个 lab 的状态是 waiting_answer 且正等这个回答，"
         "把它改回 approved 并继续执行该任务（按 rd-lab skill）。完成后把讨论状态改为 digested（问题彻底解决则 resolved）。"
     ),
     "answer_user_question": (
@@ -28,8 +28,9 @@ PROMPTS = {
     ),
     "run_lab": (
         "任务书 labs/{id}/brief.md（「{title}」）已被批准。请按 rd-lab skill 执行：先把 status 改为 running，"
-        "按任务书做事，推导类报告用 baby-steps-report skill，数值前先运行 `rd free-cores` 并登记作业，"
-        "大数据放 data_root 并留 DATA.md。结束按收尾清单回写卡片、wiki、idea 状态和 log.md，status 改为 done；"
+        "按任务书做事，推导与讲解写 notes.md（rd-notes skill，中文 markdown，PDF 和英文版按需），数值前先运行 `rd free-cores` 并登记作业，"
+        "大数据放 data_root 并留 DATA.md。收尾按 rd-lab C 节：厚层齐 → 写 handoff.md → 用 write 模型子 agent 做薄层写作步"
+        "（report.md 首屏、受影响 wiki 页首屏、idea 当前回答、STATUS.md）并核对科学限定 → 卡片两三句、index、log.md，status 改为 done；"
         "遇到必须由用户裁决的问题，按无人值守规则写讨论并把 status 改为 waiting_answer。"
     ),
     "promote_idea": (
@@ -40,7 +41,7 @@ PROMPTS = {
     ),
     "triage_idea": (
         "ideas/inbox 里有一条新想法 {path}（「{title}」）。请按 rd-idea skill 整理：判断它是新想法还是已有想法的补充，"
-        "移到 ideas/<slug>.md 并补上 frontmatter（parent、status），用户原话一字不改地放在「## 原话」下；"
+        "移到 ideas/<slug>.md 并补上 frontmatter（parent、kind、status、order），用户原话一字不改地放在「## 原话」下，agent 区写「当前回答」；不要替用户发明研究方向；"
         "如果只是对已有 idea 的补充，把原话追加到那个 idea 的「## 原话」下（标注日期）并删除 inbox 文件。"
         "最后在被处理的文件 frontmatter 写 triaged: true。"
     ),
