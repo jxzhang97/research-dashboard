@@ -20,7 +20,7 @@ DEFAULTS: dict = {
         # 默认一律 Fable 5.1 + max；任务书 frontmatter 的 model / effort 字段或任务页的下拉可以单独指定
         "read": "claude-fable-5-1",   # 读文献、推导、跑数值
         "write": "claude-fable-5-1",  # 写报告正文
-        "effort": "max",              # low / medium / high / xhigh / max
+        "effort": "xhigh",            # low / medium / high / xhigh / max（用户默认 extra high，特殊要求才用 max）
     },
     "agent": {
         "backend": "claude",  # 目前自动运行只支持 claude；codex 的交互会话靠 AGENTS.md + skills

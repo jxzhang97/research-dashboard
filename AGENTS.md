@@ -37,7 +37,7 @@
   - 画法：数据图用 matplotlib（`savefig(..., dpi=160, bbox_inches="tight")`）；示意图用 matplotlib 画几何或直接手写 SVG；Mathematica 的图 `Export` 成 PNG。每张图有标题或 alt 图注，坐标轴有标签和单位。
   - 图的原始数据和脚本留在 lab 文件夹，图能重画。
 - 正式论文不用 baby-steps-report，用 `hardworking-paper-writer`。
-- 模型（`config.toml` 的 `[models]`）：默认一律 `claude-fable-5-1`、effort `max`。用户可以单独指定：任务书或 idea 的 frontmatter 写 `model:` / `effort:`，自动运行会照用；用户在对话里说"写报告用 opus"之类的，就把它写进任务书 frontmatter，并在写报告时把那部分交给对应模型的子 agent（Agent 工具的 model 参数）。
+- 模型（`config.toml` 的 `[models]`）：默认一律 `claude-fable-5-1`、effort `xhigh`（extra high）；用户特别要求时才用 `max`。用户可以单独指定：任务书或 idea 的 frontmatter 写 `model:` / `effort:`，自动运行会照用；用户在对话里说"写报告用 opus"之类的，就把它写进任务书 frontmatter，并在写报告时把那部分交给对应模型的子 agent（Agent 工具的 model 参数）。
 
 ## 3. Notation
 
