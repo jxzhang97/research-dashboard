@@ -22,6 +22,16 @@ def test_ports_are_distinct_across_projects(tmp_path: Path, rd_home: Path):
     assert registry.free_port(exclude=tmp_path / "c") > ports["b"]
 
 
+def test_own_listening_port_is_not_taken(tmp_path: Path, monkeypatch):
+    """重装时课题自己的 server 还在监听，不能把自己的端口当成被别人占了。"""
+    (tmp_path / "p").mkdir()
+    registry.register(tmp_path / "p", "p", 8010)
+    monkeypatch.setattr(registry, "port_listening", lambda port: True)
+    assert registry.port_taken(8010, exclude=tmp_path / "p") is None
+    assert registry.port_taken(8010, exclude=tmp_path / "q") == "p"
+    assert registry.port_taken(8011, exclude=tmp_path / "p") == "其他程序"
+
+
 def test_duplicate_name_rejected(tmp_path: Path):
     (tmp_path / "x").mkdir()
     (tmp_path / "y").mkdir()

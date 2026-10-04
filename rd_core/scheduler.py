@@ -74,6 +74,9 @@ def install(project: Path) -> list[str]:
     cfg = config.load(project)
     name = cfg["project"]["name"]
     done = []
+    # 先停掉本课题已有的任务（尤其是 server），否则它自己监听的端口会被当成"其他程序"占用
+    for job, pl in plists(project).items():
+        subprocess.run(["launchctl", "unload", str(LAUNCH_DIR / f"{pl['Label']}.plist")], capture_output=True)
     port = int(cfg["server"]["port"])
     taken = registry.port_taken(port, exclude=project)
     if taken:

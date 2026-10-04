@@ -64,9 +64,13 @@ def port_listening(port: int) -> bool:
 def port_taken(port: int, exclude: Path | None = None) -> str | None:
     """端口被别的课题占了就返回那个课题名；被别的程序占了返回 '其他程序'。"""
     ex = str(exclude.resolve()) if exclude else None
-    for path, info in load_projects().items():
+    projects = load_projects()
+    for path, info in projects.items():
         if path != ex and int(info.get("port", 0)) == int(port):
             return info.get("name", path)
+    # 这个课题自己登记的端口：就算正在监听（它自己的 server 还没停），也不算被占
+    if ex and int(projects.get(ex, {}).get("port", 0) or 0) == int(port):
+        return None
     if port_listening(port):
         return "其他程序"
     return None
