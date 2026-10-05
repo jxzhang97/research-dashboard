@@ -26,7 +26,7 @@
   .inbox { padding: 6px 20px 0; font-size: 13px; }
   .inbox a { margin-right: 10px; }
   .wrap { display: grid; grid-template-columns: 1fr; position: relative; min-height: calc(100vh - 120px); }
-  .wrap.wide { grid-template-columns: 1fr 440px; }
+  .wrap.wide.open { grid-template-columns: 1fr 440px; }   /* 宽屏：点了卡片才出现详情列，画布让位 */
   .canvas-outer { overflow: auto; padding: 18px 20px 40px; }
   .fit-note { font-size: 12px; color: var(--muted); margin: 0 0 8px; min-height: 14px; }
   .canvas-scale { transform-origin: top left; }
@@ -52,11 +52,11 @@
   .card .tog:hover { border-color: var(--accent); color: var(--accent); }
   /* 详情：宽屏是一列；窄屏是抽屉 */
   .detail { border-left: 1px solid var(--line); background: var(--panel); padding: 16px 18px 30px; overflow: auto; }
-  .wrap.wide .detail { position: sticky; top: 56px; height: calc(100vh - 56px); }
+  .wrap.wide .detail { position: sticky; top: 56px; height: calc(100vh - 56px); display: none; }
+  .wrap.wide.open .detail { display: block; }
   .wrap:not(.wide) .detail { position: fixed; top: 56px; right: 0; bottom: 0; width: 420px; max-width: 92vw; transform: translateX(105%); transition: transform .2s; box-shadow: -6px 0 24px rgba(0,0,0,.08); z-index: 6; }
-  .wrap:not(.wide) .detail.open { transform: none; }
-  .detail .close { float: right; font-size: 12px; }
-  .wrap.wide .detail .close { display: none; }
+  .wrap:not(.wide).open .detail { transform: none; }
+  .detail .close { float: right; font-size: 12px; margin-left: 8px; }
   .detail h2 { font-size: 17px; margin: 0 0 8px; line-height: 1.35; }
   .detail h3 { font-size: 13px; color: var(--muted); font-weight: 600; margin: 16px 0 6px; letter-spacing: .3px; }
   .detail .meta { margin-bottom: 8px; }
@@ -91,7 +91,7 @@
 <div class="inbox" id="inbox"></div>
 <div class="wrap" id="wrap">
   <div class="canvas-outer" id="outer"><div class="fit-note" id="fit-note"></div><div class="canvas-scale" id="scale"><div class="canvas" id="canvas"><svg id="links"></svg></div></div></div>
-  <aside class="detail" id="detail"><div class="empty">点一张卡片，这里显示完整的当前回答、证据、子问题，以及原话与历史。</div></aside>
+  <aside class="detail" id="detail"></aside>
 </div>
 <script>
 (() => {
@@ -154,7 +154,7 @@
   function place(n, x0) { n.x = x0 + n.w / 2; let x = x0; if (n.open) for (const c of n.children) { place(c, x); x += c.w; } }
   function draw() {
     const canvas = $("#canvas"), svg = $("#links"), outer = $("#outer");
-    $("#wrap").classList.toggle("wide", window.innerWidth >= 1100);
+    $("#wrap").classList.toggle("wide", window.innerWidth >= 1100); $("#wrap").classList.toggle("open", !!SEL);
     canvas.querySelectorAll(".card").forEach((c) => c.remove()); svg.innerHTML = "";
     let x = 0; for (const r of ROOTS) { measure(r); place(r, x); x += r.w; }
     const colW = CW + GX, rowH = CH + GY; let maxDepth = 0;
@@ -205,13 +205,13 @@
   // ---------- 详情 ----------
   async function select(n) {
     SEL = n; if (focusOn()) { applyFocus(); n.open = true; } draw(); revealCard(n);
-    const d = $("#detail"); d.classList.add("open");
+    const d = $("#detail");
     d.innerHTML = `<button class="close" id="close">关闭 ✕</button><h2>${esc(n.title)}</h2>
       <div class="meta">${kindChip(n.meta.kind)}${chip(n.meta.status)}${n.parent ? `<a href="#" data-sel="${esc(n.parent.id)}">上级：${esc(n.parent.title.replace(/^Q\d+[a-z]?\s/, "").slice(0, 16))}…</a>` : ""}${(n.meta.labs || []).map((l) => `<a href="/#/labs/${esc(l)}">lab ${esc(l)}</a>`).join("")}<a href="/#/ideas/${esc(n.id)}">完整页面 ↗</a></div>
       ${n.meta.verdict ? `<div class="verdict-line">${inline(n.meta.verdict)}</div>` : ""}
       <h3>当前回答</h3><div class="answer-box" id="ans"><span class="muted small">加载中…</span></div>
       <div id="rest"></div>`;
-    const wire = () => { d.querySelectorAll("a[data-sel]").forEach((a) => a.onclick = (e) => { e.preventDefault(); select(NODES[a.dataset.sel]); }); $("#close").onclick = () => { d.classList.remove("open"); SEL = null; draw(); }; };
+    const wire = () => { d.querySelectorAll("a[data-sel]").forEach((a) => a.onclick = (e) => { e.preventDefault(); select(NODES[a.dataset.sel]); }); $("#close").onclick = () => { SEL = null; d.innerHTML = ""; draw(); }; };
     wire();
     try {
       const full = await (await fetch(`/api/ideas/${encodeURIComponent(n.id)}`)).json();
