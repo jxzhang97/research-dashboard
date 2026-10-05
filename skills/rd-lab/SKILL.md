@@ -72,7 +72,7 @@ created: 2026-10-02
 研究 agent 不写薄层。按 `rd-writer`：用 handoff.md 和它列的材料组一份提示词，`codex-write.sh` 调 Codex（`[writer]` 的模型与强度，附上主图），让它写：
 - `report.md`（模板见下）；
 - 受影响的 wiki 页（整页，按 rd-wiki 模板；讲课体）；
-- 来源 idea 的「当前回答」（只改这一节，原话不动）；
+- 来源 idea 的「当前回答」与 frontmatter `verdict:`（只改这两处，原话不动）；
 - `STATUS.md` 里对应问题的那一行和「进行中 / 等你决定」。
 
 多个目标可以分几次调用（每次一两个文件，图随提示词附上）。写完后研究 agent **只做机械检查**：目标文件在、没碰别的文件、图和链接能打开、`rd doctor` 无断链；不核对、不改写它的文字。Codex 不可用时记 log，薄层留到下次。

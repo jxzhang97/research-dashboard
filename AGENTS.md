@@ -56,7 +56,7 @@
 | 数字、表格、收敛检查 | lab 的 `notes.md` / `results/` | 一个代表值 + 链接 |
 | 推导 | lab 的 `notes.md`；可复用的通用推导可移到 wiki 页的详细节 | 结论一句 + 链接到小节 |
 | 对一个概念的当前理解 | wiki 页 | 链接 |
-| 一个问题的当前回答 | idea 节点「当前回答」 | `STATUS.md` 引用一句 |
+| 一个问题的当前回答 | idea 节点「当前回答」（frontmatter `verdict:` 是它的一句话结论，卡片上显示） | `STATUS.md` 引用一句 |
 | 决定及理由 | discussion | 链接 |
 | 发生了什么 | `log.md` | 不复制 |
 

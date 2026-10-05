@@ -37,6 +37,7 @@ title: <问题形的中文短标题，二十字以内>
 parent: <上级 slug，根节点留空>
 kind: question        # question / route / method
 status: seed          # seed / exploring / lab / resolved / parked / dropped
+verdict: <一句结论，二十字以内，先给判断：如"非解析性尚未确立"；没答案就写"未回答">
 order: 10
 created: 2026-10-02
 labs: []
@@ -55,7 +56,7 @@ tags: []
 一两句话复述问题的核心，列出可能的二义性。
 
 ## 当前回答
-（两到四行。有答案就直接写答案和适用范围；没答案就写"未回答，等 lab NN"。每次收尾**重写**这一段，不追加。）
+（两到四行。有答案就直接写答案和适用范围；没答案就写"未回答，等 lab NN"。每次收尾**重写**这一段，不追加。frontmatter 的 `verdict:` 是它的一句话版本，先给判断、不带参数，问题树的卡片上只显示这一句。）
 
 ## 证据与链接
 - lab [[NN-slug]] 报告 → 哪一节/哪张图
@@ -88,4 +89,4 @@ tags: []
 
 ## lab 收尾时怎么改节点
 
-由薄层写作步（rd-lab C3）改写「当前回答」；研究 agent 核对后在「历史」加一行、更新「证据与链接」和 `status`。`STATUS.md` 里该问题的一行与这里的「当前回答」保持一致（STATUS 更短，引用这里）。
+由薄层写作步（rd-writer）改写「当前回答」并更新 frontmatter 的 `verdict:`；研究 agent 核对后在「历史」加一行、更新「证据与链接」和 `status`。`STATUS.md` 里该问题的一行与这里的「当前回答」保持一致（STATUS 更短，引用这里）。
