@@ -1,0 +1,182 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>问题树 · 卡片分支图（原型）</title>
+<link rel="stylesheet" href="/static/vendor/katex/katex.min.css">
+<link rel="stylesheet" href="/static/style.css">
+<script src="/static/vendor/markdown-it.min.js"></script>
+<script src="/static/vendor/katex/katex.min.js"></script>
+<script src="/static/vendor/katex/contrib/auto-render.min.js"></script>
+<style>
+  /* 原型专用：卡片分支图 + 右侧详情栏。颜色沿用 style.css 的变量，深浅色自动跟随。 */
+  :root { --card-w: 236px; --card-h: 122px; --gap-x: 22px; --gap-y: 54px; --line: var(--line); }
+  body { overflow-x: hidden; }
+  .proto-head { display: flex; align-items: center; gap: 14px; padding: 12px 20px; border-bottom: 1px solid var(--line); background: var(--panel); position: sticky; top: 0; z-index: 5; flex-wrap: wrap; }
+  .proto-head h1 { font-size: 17px; margin: 0; }
+  .proto-head .muted { font-size: 13px; }
+  .proto-head .spacer { flex: 1; }
+  .proto-head button { font-size: 13px; padding: 5px 10px; }
+  .proto-head button.on { background: var(--accent-bg); color: var(--accent); border-color: var(--accent); }
+  .wrap { display: grid; grid-template-columns: 1fr 360px; min-height: calc(100vh - 56px); }
+  @media (max-width: 900px) { .wrap { grid-template-columns: 1fr; } .detail { position: fixed; inset: auto 0 0 0; max-height: 60vh; border-top: 1px solid var(--line); } }
+  .canvas-outer { overflow: auto; padding: 24px 20px 40px; }
+  .canvas { position: relative; margin: 0 auto; }
+  .canvas svg { position: absolute; inset: 0; overflow: visible; pointer-events: none; }
+  .canvas svg path { fill: none; stroke: var(--line); stroke-width: 1.6; }
+  .canvas svg path.hot { stroke: var(--accent); stroke-width: 2; }
+  .card { position: absolute; width: var(--card-w); height: var(--card-h); box-sizing: border-box; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px 8px; cursor: pointer; transition: box-shadow .15s, border-color .15s, transform .15s; display: flex; flex-direction: column; gap: 5px; }
+  .card:hover { box-shadow: 0 4px 16px rgba(0,0,0,.08); border-color: var(--accent); }
+  .card.sel { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-bg); }
+  .card.dim { opacity: .45; }
+  .card.root { border-width: 2px; }
+  .card .top { display: flex; gap: 6px; align-items: center; min-height: 18px; }
+  .card .q { font-size: 11px; color: var(--muted); font-weight: 600; letter-spacing: .3px; }
+  .card .chip { font-size: 11px; padding: 0 7px; }
+  .card .title { font-size: 13.5px; font-weight: 600; line-height: 1.35; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  .card .ans { font-size: 12px; color: var(--muted); line-height: 1.4; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  .card .ans .katex { font-size: .95em; }
+  .card .foot { margin-top: auto; display: flex; justify-content: space-between; align-items: center; font-size: 11px; color: var(--muted); }
+  .card .foot a { color: var(--accent); }
+  .card .tog { border: 1px solid var(--line); border-radius: 10px; padding: 0 7px; background: var(--bg); font-size: 11px; cursor: pointer; }
+  .card .tog:hover { border-color: var(--accent); color: var(--accent); }
+  .detail { border-left: 1px solid var(--line); background: var(--panel); padding: 16px 18px; overflow: auto; }
+  .detail h2 { font-size: 17px; margin: 0 0 8px; line-height: 1.35; }
+  .detail .meta { margin-bottom: 8px; }
+  .detail .answer-box { background: var(--accent-bg); border-radius: 10px; padding: 10px 12px; margin: 10px 0 14px; font-size: 14px; line-height: 1.6; }
+  .detail .answer-box b { display: block; font-size: 12px; color: var(--accent); margin-bottom: 4px; }
+  .detail details summary { font-weight: 600; color: var(--text); margin: 10px 0 4px; }
+  .detail .md { font-size: 13.5px; }
+  .detail .md h2 { font-size: 14px; margin: 14px 0 6px; }
+  .detail .empty { color: var(--muted); font-size: 14px; margin-top: 30px; text-align: center; }
+  .legend { font-size: 12px; color: var(--muted); display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+</style>
+</head>
+<body>
+<div class="proto-head">
+  <h1>问题树 · 卡片分支图</h1>
+  <span class="muted">原型：读的是本课题的 <code>ideas/</code>，点卡片看详情，▾ 展开或收起分支</span>
+  <span class="spacer"></span>
+  <span class="legend" id="legend"></span>
+  <button id="mode-all">全部展开</button>
+  <button id="mode-focus">只看选中分支</button>
+  <a class="btn" href="/#/ideas">回到正式页面</a>
+</div>
+<div class="wrap">
+  <div class="canvas-outer"><div class="canvas" id="canvas"><svg id="links"></svg></div></div>
+  <aside class="detail" id="detail"><div class="empty">点一张卡片，这里显示它的当前回答、原话和历史。</div></aside>
+</div>
+<script>
+(() => {
+  const $ = (s, el = document) => el.querySelector(s);
+  const STATUS_ZH = { seed: "萌芽", exploring: "探索中", lab: "已立 lab", resolved: "已解决", parked: "搁置", dropped: "否决", inbox: "未整理" };
+  const KIND_ZH = { route: "路线", method: "方法" };
+  const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+  const chip = (s) => s ? `<span class="chip ${esc(s)}">${esc(STATUS_ZH[s] || s)}</span>` : "";
+  const kindChip = (k) => KIND_ZH[k] ? `<span class="chip kind">${KIND_ZH[k]}</span>` : "";
+  const md = window.markdownit({ html: false, linkify: true });
+  const CW = 236, CH = 122, GX = 22, GY = 54;
+
+  // ---------- markdown + 公式（与正式页同一套最小实现） ----------
+  function protectMath(src) {
+    const store = []; const keep = (m) => { store.push(m); return `MATHPH${store.length - 1}ENDPH`; };
+    src = src.replace(/\$\$[\s\S]+?\$\$/g, keep).replace(/(^|[^\\$])\$(?!\s)([^$\n]+?)(?<!\s)\$(?!\d)/g, (m, pre, body) => pre + keep("$" + body + "$"));
+    return { src, store };
+  }
+  function render(src) {
+    const { src: s1, store } = protectMath(src || "");
+    const s2 = s1.replace(/\[\[([^\]|#]+)(?:#[^\]|]*)?(?:\|([^\]]*))?\]\]/g, (_, t, l) => `[${(l || t).trim()}](/#/wiki/${encodeURIComponent(t.trim())})`);
+    let html = md.render(s2).replace(/MATHPH(\d+)ENDPH/g, (_, i) => store[+i].replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c])));
+    const div = document.createElement("div"); div.className = "md"; div.innerHTML = html;
+    div.querySelectorAll("img").forEach((im) => { const v = im.getAttribute("src") || ""; if (!/^(https?:|\/)/.test(v)) im.src = "/api/file?path=" + encodeURIComponent("ideas/" + v.replace(/^\.\//, "")); });
+    div.querySelectorAll("a").forEach((a) => { if (!/^(https?:|\/|#)/.test(a.getAttribute("href") || "")) a.href = "/api/file?path=" + encodeURIComponent("ideas/" + a.getAttribute("href")); });
+    if (window.renderMathInElement) renderMathInElement(div, { delimiters: [{ left: "$$", right: "$$", display: true }, { left: "$", right: "$", display: false }], throwOnError: false });
+    return div;
+  }
+  const inline = (text) => { const d = render(text || ""); return d.innerHTML.replace(/^<p>|<\/p>\s*$/g, ""); };
+
+  // ---------- 数据 ----------
+  let ROOTS = [], NODES = {}, SEL = null, MODE = "auto"; // auto: ≤24 个节点全展开，否则只展开选中分支
+  const count = (ns) => ns.reduce((n, x) => n + 1 + count(x.children), 0);
+  function index(ns, parent = null, depth = 0) {
+    for (const n of ns) { n.parent = parent; n.depth = depth; n.open = true; NODES[n.id] = n; index(n.children, n, depth + 1); }
+  }
+
+  // ---------- 布局：每个叶子占一列，父节点居中于子树 ----------
+  function measure(n) { n.w = (n.open && n.children.length) ? n.children.reduce((s, c) => s + measure(c), 0) : 1; return n.w; }
+  function place(n, x0) { n.x = x0 + n.w / 2; let x = x0; if (n.open) for (const c of n.children) { place(c, x); x += c.w; } }
+  function draw() {
+    const canvas = $("#canvas"); const svg = $("#links");
+    canvas.querySelectorAll(".card").forEach((c) => c.remove()); svg.innerHTML = "";
+    const total = count(ROOTS);
+    if (MODE === "focus" || (MODE === "auto" && total > 24)) applyFocus();
+    let x = 0; for (const r of ROOTS) { measure(r); place(r, x); x += r.w; }
+    const colW = CW + GX, rowH = CH + GY; let maxDepth = 0;
+    const visible = []; (function walk(ns) { for (const n of ns) { visible.push(n); maxDepth = Math.max(maxDepth, n.depth); if (n.open) walk(n.children); } })(ROOTS);
+    canvas.style.width = (x * colW) + "px"; canvas.style.height = ((maxDepth + 1) * rowH - GY) + "px";
+    svg.setAttribute("width", x * colW); svg.setAttribute("height", (maxDepth + 1) * rowH);
+    const px = (n) => n.x * colW - CW / 2, py = (n) => n.depth * rowH;
+    const onPath = new Set(); for (let n = SEL; n; n = n.parent) onPath.add(n.id);
+    for (const n of visible) {
+      if (n.parent && n.parent.open) {
+        const x1 = px(n.parent) + CW / 2, y1 = py(n.parent) + CH, x2 = px(n) + CW / 2, y2 = py(n), ym = y1 + GY / 2;
+        const p = document.createElementNS("http://www.w3.org/2000/svg", "path");
+        p.setAttribute("d", `M${x1},${y1} V${ym} H${x2} V${y2}`); if (onPath.has(n.id) && onPath.has(n.parent.id)) p.classList.add("hot"); svg.appendChild(p);
+      }
+      const card = document.createElement("div"); card.className = "card" + (n.depth === 0 ? " root" : "") + (SEL && SEL.id === n.id ? " sel" : "") + (SEL && !onPath.has(n.id) && !isDesc(n, SEL) ? " dim" : "");
+      card.style.left = px(n) + "px"; card.style.top = py(n) + "px";
+      const q = (n.title.match(/^(Q\d+[a-z]?)\s/) || [])[1] || "";
+      const title = q ? n.title.slice(q.length + 1) : n.title;
+      const labs = (n.meta.labs || []);
+      card.innerHTML = `<div class="top">${q ? `<span class="q">${esc(q)}</span>` : ""}${kindChip(n.meta.kind)}${chip(n.meta.status)}</div>
+        <div class="title">${esc(title)}</div>
+        <div class="ans">${n.answer ? inline(n.answer) : "<i>还没有当前回答</i>"}</div>
+        <div class="foot"><span>${labs.map((l) => `<a href="/#/labs/${esc(l)}" title="${esc(l)}">lab ${esc(l.slice(0, 2))}</a>`).join(" ")}</span>
+          ${n.children.length ? `<span class="tog" data-id="${esc(n.id)}">${n.open ? "▾ 收起" : `▸ ${count(n.children)} 个子问题`}</span>` : ""}</div>`;
+      card.onclick = (e) => { if (e.target.classList.contains("tog")) { toggle(n); return; } if (e.target.tagName === "A") return; select(n); };
+      canvas.appendChild(card);
+    }
+    $("#legend").textContent = `${total} 个节点 · ${visible.length} 个显示中 · ${MODE === "auto" ? (total > 24 ? "自动：只展开选中分支" : "自动：全部展开") : MODE === "all" ? "全部展开" : "只看选中分支"}`;
+    $("#mode-all").classList.toggle("on", MODE === "all"); $("#mode-focus").classList.toggle("on", MODE === "focus");
+  }
+  function isDesc(n, anc) { for (let p = n.parent; p; p = p.parent) if (p.id === anc.id) return true; return false; }
+  function applyFocus() {
+    // 只展开选中节点所在的分支：根到选中节点的路径上的节点展开，其余收起；选中节点自己展开一层
+    const open = new Set(); for (let n = SEL; n; n = n.parent) open.add(n.id);
+    (function walk(ns) { for (const n of ns) { n.open = open.has(n.id) || n.depth === 0; walk(n.children); } })(ROOTS);
+    if (SEL) SEL.open = true;
+  }
+  function toggle(n) { if (MODE === "auto" && count(ROOTS) > 24) MODE = "all"; n.open = !n.open; draw(); }
+  async function select(n) {
+    SEL = n; draw();
+    const d = $("#detail");
+    d.innerHTML = `<h2>${esc(n.title)}</h2><div class="meta">${kindChip(n.meta.kind)}${chip(n.meta.status)}${n.parent ? `<a href="#" data-sel="${esc(n.parent.id)}">上级：${esc(n.parent.title.slice(0, 18))}…</a>` : ""}${(n.meta.labs || []).map((l) => `<a href="/#/labs/${esc(l)}">lab ${esc(l)}</a>`).join("")}<a href="/#/ideas/${esc(n.id)}">完整页面 ↗</a></div>
+      <div class="answer-box"><b>当前回答</b>${n.answer ? inline(n.answer) : "<i>还没有</i>"}</div><p class="muted small">加载原话与历史…</p>`;
+    d.querySelectorAll("a[data-sel]").forEach((a) => a.onclick = (e) => { e.preventDefault(); select(NODES[a.dataset.sel]); });
+    try {
+      const full = await (await fetch(`/api/ideas/${encodeURIComponent(n.id)}`)).json();
+      const body = full.body || "";
+      const sec = (h) => { const m = body.match(new RegExp(`^##\\s*${h}[^\\n]*\\n([\\s\\S]*?)(?=^##\\s|\\s*$)`, "m")); return m ? m[1].trim() : ""; };
+      const parts = [["原话", sec("原话")], ["agent 的理解", sec("agent 的理解")], ["证据与链接", sec("证据与链接")], ["历史", sec("历史")], ["派生", sec("派生")], ["agent 备注", sec("agent 备注")]].filter(([, t]) => t);
+      d.querySelector("p.muted")?.remove();
+      for (const [h, t] of parts) {
+        const det = document.createElement("details"); det.open = (h === "原话"); det.innerHTML = `<summary>${esc(h)}</summary>`; det.appendChild(render(t)); d.appendChild(det);
+      }
+    } catch (e) { d.querySelector("p.muted").textContent = "加载失败：" + e.message; }
+  }
+
+  $("#mode-all").onclick = () => { MODE = "all"; (function w(ns) { for (const n of ns) { n.open = true; w(n.children); } })(ROOTS); draw(); };
+  $("#mode-focus").onclick = () => { MODE = "focus"; draw(); };
+  window.addEventListener("resize", draw);
+
+  fetch("/api/ideas").then((r) => r.json()).then((d) => {
+    ROOTS = d.tree.filter((n) => !n.id.startsWith("inbox/")); index(ROOTS);
+    // 根节点与 order 排序已由后端做好；默认选中根，让路径高亮有起点
+    draw();
+    if (ROOTS[0]) select(ROOTS[0]);
+  });
+})();
+</script>
+</body>
+</html>
