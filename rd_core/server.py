@@ -3,6 +3,7 @@ agent 运行放在后台线程队列里，同一时间只跑一个。"""
 
 from __future__ import annotations
 
+import ipaddress
 import json
 import mimetypes
 import queue
@@ -10,8 +11,8 @@ import threading
 import time
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException
-from fastapi.responses import FileResponse, HTMLResponse, StreamingResponse
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
@@ -188,11 +189,35 @@ class SeenIn(BaseModel):
     id: str
 
 
+def _can_write(request: Request, project: Project) -> bool:
+    """只有 config.toml server.write_from 里的网段（默认本机 + Tailscale）能写；其他来源（校园网、公网）只读。
+    拿不到合法 IP（测试客户端、unix socket）按本机处理。"""
+    host = request.client.host if request.client else ""
+    try:
+        ip = ipaddress.ip_address(host)
+    except ValueError:
+        return True
+    nets = config.load(project.root)["server"].get("write_from") or []
+    for n in nets:
+        try:
+            if ip in ipaddress.ip_network(n, strict=False):
+                return True
+        except ValueError:
+            continue
+    return False
+
+
 def create_app(project: Project) -> FastAPI:
     app = FastAPI(title="research-dashboard")
     rq = RunQueue(project)
     start_watcher(project, rq)
     start_digest_timer(project, rq)
+
+    @app.middleware("http")
+    async def readonly_guard(request: Request, call_next):
+        if request.method not in ("GET", "HEAD", "OPTIONS") and not _can_write(request, project):
+            return JSONResponse({"detail": "只读访问：这个地址只能看，不能操作"}, status_code=403)
+        return await call_next(request)
 
     @app.get("/", response_class=HTMLResponse)
     def index():
@@ -202,10 +227,11 @@ def create_app(project: Project) -> FastAPI:
 
     # ---------- 总览 ----------
     @app.get("/api/overview")
-    def overview():
+    def overview(request: Request):
         cfg = config.load(project.root)
         pm = project.root / "PROJECT.md"
         return {
+            "readonly": not _can_write(request, project),
             "project": cfg["project"], "models": cfg["models"], "attention": project.attention(), "log": project.log_entries(20),
             "queue": rq.snapshot(), "runs": project.runs(8), "host": config.hostname(), "digest": digest_status(project),
             "project_md": pm.read_text(encoding="utf-8") if pm.exists() else "",

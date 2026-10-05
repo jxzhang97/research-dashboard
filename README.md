@@ -93,6 +93,10 @@ rd scheduler status <课题目录>
 
 dashboard 右上角可以在本机的课题之间切换。
 
+## 把网址给别人看
+
+dashboard 监听所有网卡，但**只有 `config.toml` 里 `server.write_from` 网段（默认本机 + Tailscale 100.64.0.0/10）来的请求能操作**；其他地址（校园网、公网）自动变成只读：看得到全部内容，页面上没有任何按钮，POST 一律 403。所以同一个网址可以直接给别人看，自己从 Tailscale 地址进就是完整版。要让某个固定 IP 也能操作，把它加进 `write_from`。
+
 ## 自动运行的权限与登录
 
 `rd run` / `rd tick` 用 `claude -p --permission-mode bypassPermissions` 在课题目录里无人值守运行。护栏在 `AGENTS.md`：只写课题目录和 `data_root`，不改用户亲手写的文件，不删文件，每次运行 git commit。

@@ -164,3 +164,6 @@ main.full { max-width: none; padding: 14px 20px 40px; }
 .qdetail .kids .v { color: var(--muted); font-size: 12px; }
 .qdetail details { margin: 6px 0; }
 .qdetail details summary { font-weight: 600; color: var(--text); font-size: 13px; }
+/* 只读访客：看得见内容，看不见任何操作控件 */
+body.readonly button, body.readonly textarea, body.readonly .form-row, body.readonly #projects { display: none !important; }
+body.readonly #host { color: var(--warn); font-weight: 600; }

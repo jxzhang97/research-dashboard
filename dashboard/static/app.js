@@ -135,7 +135,9 @@
     } catch (e) { console.error(e); return; }
     const a = OVERVIEW.attention;
     $("#brand-name").textContent = OVERVIEW.project.name || "课题";
-    $("#host").textContent = OVERVIEW.host;
+    // 只读访客（不在 config.toml server.write_from 网段内）：隐藏所有操作控件
+    document.body.classList.toggle("readonly", !!OVERVIEW.readonly);
+    $("#host").textContent = (OVERVIEW.readonly ? "只读 · " : "") + OVERVIEW.host;
     document.title = (a.total ? `(${a.total}) ` : "") + (OVERVIEW.project.name || "课题");
     const running = (OVERVIEW.queue.current ? 1 : 0) + OVERVIEW.queue.pending.length;
     const counts = { ...a.counts, runs: running };

@@ -61,3 +61,15 @@ def test_update_adds_status_md(project_dir: Path):
     subprocess.check_call([sys.executable, "-m", "rd_core.cli", "update", str(project_dir)], cwd=ROOT)
     assert (project_dir / "STATUS.md").exists()
     assert "@AGENTS.md" in (project_dir / "CLAUDE.md").read_text()
+
+
+def test_readonly_for_outside_addresses(project_dir: Path):
+    """write_from 之外的地址只能 GET；本机和 Tailscale 网段能写。"""
+    app = create_app(Project(project_dir))
+    outside = TestClient(app, client=("169.231.1.1", 5000))
+    assert outside.get("/api/overview").json()["readonly"] is True
+    assert outside.get("/api/labs").status_code == 200
+    assert outside.post("/api/ideas", json={"text": "外人写不进来"}).status_code == 403
+    tailscale = TestClient(app, client=("100.120.253.99", 5000))
+    assert tailscale.get("/api/overview").json()["readonly"] is False
+    assert tailscale.post("/api/ideas", json={"text": "自己人"}).status_code == 200
