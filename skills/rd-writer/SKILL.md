@@ -30,6 +30,8 @@ description: 薄层写作步（research-dashboard 课题目录内使用）：把
 
 脚本做的事：从 `config.toml` 的 `[writer]` 读模型与强度；`codex exec -C <根> -m <model> -c model_reasoning_effort=<effort> -s workspace-write -i <图>… -o last_message.txt "<提示词>" < /dev/null`；把提示词、完整输出、最后回复和 `run_info.txt`（模型、强度、起止时间、耗时、退出码）存到 `.dashboard/writing/<记录目录名>/`。
 
+脚本会在 PATH、`~/.local/bin/codex`、ChatGPT.app 自带的 codex 里找可执行文件（也可用环境变量 `CODEX_BIN` 指定）。studio 上装的是 GitHub release 的独立二进制（`~/.local/bin/codex`，不需要 node）。
+
 已知的坑：`codex exec` 必须 `< /dev/null`，否则会停在 "Reading additional input from stdin" 不动；0.160 的 `exec` 不认 `--full-auto`，用 `-s workspace-write`；输出开头的 `skills scan reached its traversal limit` 是无害的；每台机器要各自 `codex login`（ChatGPT 账号），`codex login status` 能看。
 
 ## 4. 机械检查（研究 agent 做，只做这些）

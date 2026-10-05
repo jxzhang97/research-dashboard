@@ -18,9 +18,16 @@ print(w.get("model", "gpt-6-astra"), w.get("reasoning_effort", "xhigh"))
 PY
 )"
 
-if ! command -v codex >/dev/null 2>&1; then
-  echo "codex 不在 PATH（npm install -g @openai/codex；然后 codex login）" | tee "$REC/run_info.txt"; exit 2
+# codex 可能装在 PATH 之外（studio 上是 ~/.local/bin 的独立二进制，或 ChatGPT.app 自带的）
+CODEX="${CODEX_BIN:-}"
+for cand in "$CODEX" "$(command -v codex 2>/dev/null)" "$HOME/.local/bin/codex" "/opt/homebrew/bin/codex" \
+            "/Applications/ChatGPT.app/Contents/Resources/codex-cli/CodexCLI.app/Contents/MacOS/codex"; do
+  [ -n "$cand" ] && [ -x "$cand" ] && { CODEX="$cand"; break; }
+done
+if [ -z "$CODEX" ]; then
+  echo "找不到 codex（npm install -g @openai/codex，或把独立二进制放 ~/.local/bin；然后 codex login）" | tee "$REC/run_info.txt"; exit 2
 fi
+codex() { "$CODEX" "$@"; }
 if ! codex login status 2>&1 | grep -qi "logged in"; then
   echo "codex 未登录（在这台机器上 codex login）" | tee "$REC/run_info.txt"; exit 3
 fi
