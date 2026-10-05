@@ -161,7 +161,7 @@
     const visible = []; (function walk(ns) { for (const n of ns) { visible.push(n); maxDepth = Math.max(maxDepth, n.depth); if (n.open) walk(n.children); } })(ROOTS);
     const W = x * colW, H = (maxDepth + 1) * rowH - GY;
     canvas.style.width = W + "px"; canvas.style.height = H + "px"; svg.setAttribute("width", W); svg.setAttribute("height", H + GY);
-    const avail = outer.clientWidth - 40; const fit = Math.min(1, avail / W);
+    const avail = outer.clientWidth - 40; const fit = Math.max(0.75, Math.min(1, avail / W));  // 自动适应最小到 75%，再小就横向滚动，免得卡片字太小
     if (!USER_ZOOM) ZOOM = fit;
     const k = ZOOM; const sc = $("#scale");
     sc.style.transform = `scale(${k})`; sc.style.width = W + "px"; sc.style.height = (H * k) + "px"; sc.style.marginLeft = Math.max(0, (avail - W * k) / 2) + "px";
