@@ -78,7 +78,7 @@ rd scheduler status <课题目录>
 
 1. 你在 `ideas/inbox/` 或网页速记一个想法 → agent 整理挂到想法树（原话不改）。
 2. 你点"升级为 lab" → agent 起草任务书 → 你过目批准（或事先说不用过目）→ agent 执行。
-3. 执行中遇到要你裁决的问题 → 写进讨论区，任务标 `waiting_answer` → 你在网页回答。回答**不当场消化**：每两小时（`schedule.digest_minutes`）把这段时间所有已回答的讨论放进一次运行统一消化，互相关联的裁决一起考虑；讨论页可以"现在就消化"。
+3. 执行中遇到要你裁决的问题 → 写进讨论区，任务标 `waiting_answer` → 你在网页回答。回答**不当场消化**：每五小时（`schedule.digest_minutes`）把这段时间所有已回答的讨论放进一次运行统一消化，互相关联的裁决一起考虑；讨论页可以"现在就消化"。
 4. 任务收尾：notes.md 与 fig/ 齐 → 交接单 handoff.md → 薄层写作步交给 Codex（report.md、wiki 页、问题的当前回答、STATUS.md）→ 机械检查 → 卡片两三句、index、日志、git commit。PDF 与英文版按需导出。
 5. 每天 arXiv 候选进"文献"页等你审批；批准的被下载、精读、建卡。
 

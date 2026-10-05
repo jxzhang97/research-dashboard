@@ -60,7 +60,7 @@ def plists(project: Path) -> dict[str, dict]:
         "server": {**base("server", ["serve"]), "KeepAlive": True, "RunAtLoad": True},
         "tick": {**base("tick", ["tick"]), "StartInterval": int(cfg["schedule"]["tick_minutes"]) * 60, "RunAtLoad": False},
         # 回答的统一消化：server 自己有定时器，这个是 server 没开时的兜底
-        "digest": {**base("digest", ["digest"]), "StartInterval": int(cfg["schedule"].get("digest_minutes", 120)) * 60, "RunAtLoad": False},
+        "digest": {**base("digest", ["digest"]), "StartInterval": int(cfg["schedule"].get("digest_minutes", 300)) * 60, "RunAtLoad": False},
     }
     if cfg["arxiv"].get("enabled", True):
         minute = 5 + (zlib.crc32(cfg["project"]["name"].encode()) % 10) * 5  # 不同课题错开 5 分钟

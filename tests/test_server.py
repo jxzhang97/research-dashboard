@@ -36,10 +36,10 @@ def test_write_endpoints(project_dir: Path):
     assert r.json()["status"] == "approved"
     pending = c.get("/api/pending").json()
     assert {w["kind"] for w in pending["ready"]} >= {"run_lab", "triage_idea", "answer_user_question"}
-    assert all(w["kind"] != "digest_answer" for w in pending["ready"])  # 回答走两小时的统一消化，不进即时待办
+    assert all(w["kind"] != "digest_answer" for w in pending["ready"])  # 回答走定时的统一消化，不进即时待办
     assert pending["deferred"] == []
     dg = c.get("/api/digest").json()
-    assert [t["id"] for t in dg["answered"]] == ["2026-10-02-which-limit"] and dg["digest_minutes"] == 120
+    assert [t["id"] for t in dg["answered"]] == ["2026-10-02-which-limit"] and dg["digest_minutes"] == 300
     assert c.get("/api/file", params={"path": "../x"}).status_code in (403, 404)
     assert c.get("/api/file", params={"path": "PROJECT.md"}).status_code == 200
     assert c.get("/api/raw", params={"path": "wiki/notation.md"}).json()["meta"]["title"] == "notation"

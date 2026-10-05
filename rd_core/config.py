@@ -46,8 +46,8 @@ DEFAULTS: dict = {
         "watch_seconds": 15,   # dashboard 开着时，多久扫一次待办（用户动作本身是立刻触发的）
         "tick_minutes": 60,    # dashboard 没开时 launchd 的兜底间隔
         "retry_minutes": 30,   # 某项失败后多久才重试
-        # 用户对讨论的回答不当场消化：每 digest_minutes 统一消化一次，这样互相关联的几个回答能一起考虑
-        "digest_minutes": 120,
+        # 用户对讨论的回答不当场消化：每 digest_minutes 统一消化一次，这样互相关联的几个回答能一起考虑（用户 2026-10-04 定为 5 小时）
+        "digest_minutes": 300,
     },
     "server": {
         "host": "0.0.0.0",

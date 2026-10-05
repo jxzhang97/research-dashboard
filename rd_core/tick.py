@@ -81,7 +81,7 @@ def run_digest(project: Project, dry_run: bool = False) -> dict | None:
 
 
 def actionable(project: Project, cfg: dict | None = None, only: str | None = None) -> tuple[list[dict], list[dict]]:
-    """返回 (现在可以做的, 因为刚失败而暂缓的)。回答的消化不在这里，它走 run_digest 的两小时节奏。"""
+    """返回 (现在可以做的, 因为刚失败而暂缓的)。回答的消化不在这里，它走 run_digest 的 digest_minutes 节奏（默认五小时）。"""
     cfg = cfg or config.load(project.root)
     retry = int(cfg["schedule"].get("retry_minutes", 30)) * 60
     work = [w for w in project.pending_work() if w["kind"] != "digest_answer"]

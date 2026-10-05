@@ -34,7 +34,7 @@ hour = 9                     # 每天几点扫
 watch_seconds = 15           # dashboard 开着时每 15 秒扫一次待办（网页上的动作本身是立刻触发）
 tick_minutes = 60            # dashboard 没开时 launchd 的兜底间隔
 retry_minutes = 30           # 某项失败后多久才重试
-digest_minutes = 120         # 你的讨论回答不当场消化，每两小时统一消化一次（互相关联的回答一起考虑）；讨论页可手动"现在就消化"
+digest_minutes = 300          # 用户的回答每 5 小时统一消化一次（相关的裁决一起看）
 
 [server]
 host = "0.0.0.0"             # 0.0.0.0 才能从笔记本经 Tailscale 访问

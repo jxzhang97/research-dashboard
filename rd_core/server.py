@@ -124,7 +124,7 @@ def digest_status(project: Project) -> dict:
     return {
         "answered": [{"id": w["id"], "title": w["title"]} for w in answered_threads(project)],
         "next_digest": nxt, "next_digest_str": time.strftime("%H:%M", time.localtime(nxt)) if nxt else "",
-        "digest_minutes": int(cfg["schedule"].get("digest_minutes", 120)),
+        "digest_minutes": int(cfg["schedule"].get("digest_minutes", 300)),
     }
 
 
@@ -141,13 +141,13 @@ def start_digest_timer(project: Project, rq: RunQueue) -> None:
 
     def loop():
         cfg = config.load(project.root)
-        minutes = int(cfg["schedule"].get("digest_minutes", 120))
+        minutes = int(cfg["schedule"].get("digest_minutes", 300))
         if not project.state().get("next_digest"):
             schedule_next_digest(project, minutes)
         while True:
             time.sleep(30)
             try:
-                minutes = int(config.load(project.root)["schedule"].get("digest_minutes", 120))
+                minutes = int(config.load(project.root)["schedule"].get("digest_minutes", 300))
                 if time.time() >= project.state().get("next_digest", 0):
                     if answered_threads(project):
                         rq.submit_digest()
@@ -323,7 +323,7 @@ def create_app(project: Project) -> FastAPI:
     def digest_now():
         rid = rq.submit_digest()
         cfg = config.load(project.root)
-        schedule_next_digest(project, int(cfg["schedule"].get("digest_minutes", 120)))
+        schedule_next_digest(project, int(cfg["schedule"].get("digest_minutes", 300)))
         project.append_log("用户", "要求现在就统一消化已回答的讨论")
         return {"id": rid, **digest_status(project)}
 
