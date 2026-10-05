@@ -342,20 +342,124 @@
     api("/api/seen", { kind: "discussion", id }).then(refreshOverview);
   };
 
+  // ---------- 想法页：问题树的卡片分支图 ----------
+  // 每个节点一张固定宽度的卡片（编号、状态、标题两行、frontmatter verdict 一句结论）；点卡片在右侧打开详情（宽屏一列、窄屏抽屉）；
+  // 节点超过 24 个时自动只展开选中分支；可缩放。原话一字不动地保存在节点里，agent 只整理结构和回答。
+  function mdSections(body) {
+    const out = {}; let cur = null;
+    for (const line of (body || "").split("\n")) {
+      const m = line.match(/^##\s+(.+?)\s*$/);
+      if (m) { cur = m[1]; out[cur] = []; continue; }
+      if (cur) out[cur].push(line);
+    }
+    for (const k in out) out[k] = out[k].join("\n").trim();
+    return out;
+  }
+  const firstSentence = (t) => (t || "").replace(/\*\*/g, "").split(/[。；！？\n]/)[0].slice(0, 40);
+  const inlineMd = (text) => { const d = render(text || "", "ideas"); return d.innerHTML.replace(/^<p>|<\/p>\s*$/g, ""); };
+
   pages.ideas = async (slug) => {
     if (slug) return pages.idea(slug);
     const d = await api("/api/ideas");
-    const node = (n) => `<li><div class="node"><a href="#/ideas/${esc(n.id)}"><b>${esc(n.title)}</b></a> ${kindChip(n.meta.kind)}${chip(n.meta.status)}${(n.meta.labs || []).map((l) => ` <a class="small" href="#/labs/${esc(l)}">lab ${esc(l.slice(0, 2))}</a>`).join("")}
-        ${answerHtml(n.answer)}</div>${n.children.length ? `<ul>${n.children.map(node).join("")}</ul>` : ""}</li>`;
-    const tree = d.tree.filter((n) => !n.id.startsWith("inbox/"));
-    const inbox = d.tree.filter((n) => n.id.startsWith("inbox/"));
-    main.innerHTML = `<h1>问题树</h1>
-      <p class="muted small">每个节点是一个研究问题（或为回答它选的路线、方法），下面一行是它的当前回答。原话一字不改地保存在节点里；agent 只整理结构和回答。</p>
-      <div class="panel"><b>速记一个想法</b><textarea id="cap" placeholder="模糊的也行，原话会被原样保存；agent 会整理挂到树上，不会改你的话。"></textarea><div class="form-row"><button class="primary" id="save">记下</button></div></div>
-      ${inbox.length ? `<div class="panel"><b>未整理 (${inbox.length})</b><ul class="list small">${inbox.map((n) => `<li><a href="#/ideas/${esc(n.id)}">${esc(n.title)}</a><span class="muted small">${esc(n.updated)}</span></li>`).join("")}</ul></div>` : ""}
-      <div class="panel tree"><ul>${tree.map(node).join("") || "<li class='muted'>还没有问题树</li>"}</ul></div>`;
-    renderAnswers();
+    const ROOTS = d.tree.filter((n) => !n.id.startsWith("inbox/")); const INBOX = d.tree.filter((n) => n.id.startsWith("inbox/"));
+    const NODES = {}; let SEL = null, MODE = "auto", ZOOM = null, USER_ZOOM = false;
+    const CW = 232, CH = 150, GX = 18, GY = 56;
+    const count = (ns) => ns.reduce((n, x) => n + 1 + count(x.children), 0);
+    (function index(ns, parent = null, depth = 0) { for (const n of ns) { n.parent = parent; n.depth = depth; n.open = true; NODES[n.id] = n; index(n.children, n, depth + 1); } })(ROOTS);
+    const focusOn = () => MODE === "focus" || (MODE === "auto" && count(ROOTS) > 24);
+    const applyFocus = () => { const open = new Set(); for (let n = SEL; n; n = n.parent) open.add(n.id); (function w(ns) { for (const n of ns) { n.open = open.has(n.id) || n.depth === 0; w(n.children); } })(ROOTS); };
+    const isDesc = (n, anc) => { for (let p = n.parent; p; p = p.parent) if (p.id === anc.id) return true; return false; };
+
+    main.innerHTML = `<div class="qtree" id="qtree">
+      <div class="qbar"><h1>问题树</h1><span class="legend" id="legend"></span><span class="spacer"></span>
+        <span class="zoom"><button id="z-out" title="缩小">−</button><span class="pct" id="z-pct">100%</span><button id="z-in" title="放大">＋</button><button id="z-fit" title="按宽度适应">适应</button><button id="z-100" title="实际大小">1:1</button></span>
+        <button id="mode-all">全部展开</button><button id="mode-focus">只看选中分支</button></div>
+      <div class="capture"><textarea id="cap" placeholder="速记一个想法：模糊的也行，原话会被原样保存；agent 会整理挂到树上，不会改你的话。"></textarea><div><button class="primary" id="save">记下</button></div></div>
+      ${INBOX.length ? `<div class="inbox"><b>未整理 (${INBOX.length})</b> ${INBOX.map((n) => `<a href="#/ideas/${esc(n.id)}">${esc(n.title)}</a>`).join("")}</div>` : ""}
+      <div class="wrap" id="wrap">
+        <div class="canvas-outer" id="outer"><div class="fit-note" id="fit-note"></div><div class="canvas-scale" id="scale"><div class="canvas" id="canvas"><svg id="links"></svg></div></div></div>
+        <aside class="qdetail" id="detail"></aside>
+      </div></div>`;
+
+    const measure = (n) => { n.w = (n.open && n.children.length) ? n.children.reduce((s, c) => s + measure(c), 0) : 1; return n.w; };
+    const place = (n, x0) => { n.x = x0 + n.w / 2; let x = x0; if (n.open) for (const c of n.children) { place(c, x); x += c.w; } };
+    function draw() {
+      const canvas = $("#canvas"), svg = $("#links"), outer = $("#outer"); if (!canvas) return;
+      $("#wrap").classList.toggle("wide", window.innerWidth >= 1100); $("#wrap").classList.toggle("open", !!SEL);
+      canvas.querySelectorAll(".qcard").forEach((c) => c.remove()); svg.innerHTML = "";
+      let x = 0; for (const r of ROOTS) { measure(r); place(r, x); x += r.w; }
+      const colW = CW + GX, rowH = CH + GY; let maxDepth = 0;
+      const visible = []; (function walk(ns) { for (const n of ns) { visible.push(n); maxDepth = Math.max(maxDepth, n.depth); if (n.open) walk(n.children); } })(ROOTS);
+      const W = Math.max(x * colW, CW), H = (maxDepth + 1) * rowH - GY;
+      canvas.style.width = W + "px"; canvas.style.height = H + "px"; svg.setAttribute("width", W); svg.setAttribute("height", H + GY);
+      const avail = outer.clientWidth - 40; const fit = Math.max(0.75, Math.min(1, avail / W));
+      if (!USER_ZOOM) ZOOM = fit;
+      const k = ZOOM; const sc = $("#scale");
+      sc.style.transform = `scale(${k})`; sc.style.width = W + "px"; sc.style.height = (H * k) + "px"; sc.style.marginLeft = Math.max(0, (avail - W * k) / 2) + "px";
+      $("#z-pct").textContent = Math.round(k * 100) + "%";
+      $("#fit-note").textContent = (W * k > avail) ? "画布比窗口宽，可以横向滚动或缩小" : "";
+      const px = (n) => n.x * colW - CW / 2, py = (n) => n.depth * rowH;
+      const onPath = new Set(); for (let n = SEL; n; n = n.parent) onPath.add(n.id);
+      for (const n of visible) {
+        if (n.parent && n.parent.open) {
+          const x1 = px(n.parent) + CW / 2, y1 = py(n.parent) + CH, x2 = px(n) + CW / 2, y2 = py(n), ym = y1 + GY / 2;
+          const p = document.createElementNS("http://www.w3.org/2000/svg", "path");
+          p.setAttribute("d", `M${x1},${y1} V${ym} H${x2} V${y2}`); if (onPath.has(n.id) && onPath.has(n.parent.id)) p.classList.add("hot"); svg.appendChild(p);
+        }
+        const card = document.createElement("div"); card.dataset.id = n.id;
+        card.className = "qcard" + (n.depth === 0 ? " root" : "") + (SEL && SEL.id === n.id ? " sel" : "") + (SEL && !onPath.has(n.id) && !isDesc(n, SEL) ? " dim" : "");
+        card.style.left = px(n) + "px"; card.style.top = py(n) + "px";
+        const q = (n.title.match(/^(Q\d+[a-z]?)\s/) || [])[1] || ""; const title = q ? n.title.slice(q.length + 1) : n.title;
+        const verdict = n.meta.verdict;
+        card.innerHTML = `<div class="top">${q ? `<span class="q">${esc(q)}</span>` : ""}${kindChip(n.meta.kind)}${chip(n.meta.status)}</div>
+          <div class="title" title="${esc(n.title)}">${esc(title)}</div>
+          <div class="verdict${verdict ? "" : " fallback"}">${verdict ? inlineMd(verdict) : (n.answer ? inlineMd(firstSentence(n.answer)) : "<i>还没有当前回答</i>")}</div>
+          <div class="foot"><span>${(n.meta.labs || []).map((l) => `<a href="#/labs/${esc(l)}" title="${esc(l)}">lab ${esc(l.slice(0, 2))}</a>`).join(" ")}</span>
+            ${n.children.length ? `<span class="tog">${n.open ? "▾ 收起" : `▸ ${count(n.children)} 个子问题`}</span>` : ""}</div>`;
+        card.onclick = (e) => { if (e.target.classList.contains("tog")) { n.open = !n.open; draw(); return; } if (e.target.tagName === "A") return; select(n); };
+        canvas.appendChild(card);
+      }
+      $("#legend").textContent = `${count(ROOTS)} 个节点 · ${visible.length} 个显示中 · ${MODE === "auto" ? (focusOn() ? "自动：只展开选中分支" : "自动：全部展开") : MODE === "all" ? "全部展开" : "只看选中分支"}`;
+      $("#mode-all").classList.toggle("on", MODE === "all"); $("#mode-focus").classList.toggle("on", MODE === "focus");
+    }
+    function revealCard(n) {
+      const el = $(`.qcard[data-id="${CSS.escape(n.id)}"]`); if (!el) return;
+      el.scrollIntoView({ block: "nearest", inline: "nearest", behavior: "smooth" });
+      if (!$("#wrap").classList.contains("wide")) { const r = el.getBoundingClientRect(); const limit = window.innerWidth - 420 - 16; if (r.right > limit) $("#outer").scrollBy({ left: r.right - limit, behavior: "smooth" }); }
+    }
+    async function select(n) {
+      SEL = n; if (focusOn()) { applyFocus(); n.open = true; } draw(); revealCard(n);
+      const dt = $("#detail");
+      dt.innerHTML = `<button class="close" id="close">关闭 ✕</button><h2>${esc(n.title)}</h2>
+        <div class="meta">${kindChip(n.meta.kind)}${chip(n.meta.status)}${n.parent ? `<a href="#" data-sel="${esc(n.parent.id)}">上级：${esc(n.parent.title.replace(/^Q\d+[a-z]?\s/, "").slice(0, 16))}…</a>` : ""}${(n.meta.labs || []).map((l) => `<a href="#/labs/${esc(l)}">lab ${esc(l)}</a>`).join("")}<a href="#/ideas/${esc(n.id)}">完整页面 ↗</a></div>
+        ${n.meta.verdict ? `<div class="verdict-line">${inlineMd(n.meta.verdict)}</div>` : ""}
+        <h3>当前回答</h3><div class="answer-box" id="ans"><span class="muted small">加载中…</span></div><div id="rest"></div>`;
+      const wire = () => { dt.querySelectorAll("a[data-sel]").forEach((a) => a.onclick = (e) => { e.preventDefault(); select(NODES[a.dataset.sel]); }); $("#close").onclick = () => { SEL = null; dt.innerHTML = ""; draw(); }; };
+      wire();
+      try {
+        const full = await api(`/api/ideas/${encodeURIComponent(n.id)}`); if (SEL !== n) return;
+        const S = mdSections(full.body); const ans = $("#ans"); ans.innerHTML = ""; ans.appendChild(render(S["当前回答"] || "_（还没有当前回答）_", "ideas"));
+        let html = "";
+        if (S["证据与链接"]) html += `<h3>关键证据与链接</h3><div id="ev"></div>`;
+        if (n.children.length) html += `<h3>子问题</h3><div class="kids">${n.children.map((c) => `<a href="#" data-sel="${esc(c.id)}">${esc(c.title)}<br><span class="v">→ ${esc(c.meta.verdict || firstSentence(c.answer) || "未回答")}</span></a>`).join("")}</div>`;
+        html += `<h3>原话与历史</h3>`;
+        for (const h of ["原话", "agent 的理解", "历史", "派生", "agent 备注"]) if (S[h]) html += `<details ${h === "原话" ? "open" : ""}><summary>${esc(h)}</summary><div data-sec="${esc(h)}"></div></details>`;
+        const rest = $("#rest"); rest.innerHTML = html;
+        if (S["证据与链接"]) $("#ev").appendChild(render(S["证据与链接"], "ideas"));
+        rest.querySelectorAll("[data-sec]").forEach((el) => el.appendChild(render(S[el.dataset.sec], "ideas")));
+        wire();
+      } catch (e) { const a = $("#ans"); if (a) a.textContent = "加载失败：" + e.message; }
+    }
+    const setZoom = (z) => { USER_ZOOM = true; ZOOM = Math.min(2, Math.max(0.4, z)); draw(); };
+    $("#z-in").onclick = () => setZoom(ZOOM * 1.15); $("#z-out").onclick = () => setZoom(ZOOM / 1.15);
+    $("#z-100").onclick = () => setZoom(1); $("#z-fit").onclick = () => { USER_ZOOM = false; draw(); };
+    $("#mode-all").onclick = () => { MODE = "all"; (function w(ns) { for (const n of ns) { n.open = true; w(n.children); } })(ROOTS); draw(); };
+    $("#mode-focus").onclick = () => { MODE = "focus"; applyFocus(); if (SEL) SEL.open = true; draw(); };
+    $("#outer").addEventListener("wheel", (e) => { if (e.ctrlKey || e.metaKey) { e.preventDefault(); setZoom(ZOOM * (e.deltaY < 0 ? 1.08 : 1 / 1.08)); } }, { passive: false });
+    window.addEventListener("resize", draw);
     $("#save").onclick = async () => { const t = $("#cap").value.trim(); if (!t) return; await api("/api/ideas", { text: t }); toast("已记下"); pages.ideas(); };
+    if (focusOn()) applyFocus();
+    draw();
   };
 
   pages.idea = async (slug) => {
@@ -424,6 +528,7 @@
     const parts = hash.split("/");
     const key = parts[0] || "home"; const rest = parts.slice(1).join("/");
     document.querySelectorAll("nav a").forEach((a) => a.classList.toggle("active", a.dataset.key === key || (key === "inbox" && a.dataset.key === "refs")));
+    main.classList.toggle("full", key === "ideas" && !rest);  // 想法页的卡片图用全宽
     const fn = pages[key] || pages.home;
     try { await fn(rest ? decodeURIComponent(rest) : undefined); } catch (e) { main.innerHTML = `<p class="muted">出错了：${esc(e.message)}</p>`; }
     window.scrollTo(0, 0);

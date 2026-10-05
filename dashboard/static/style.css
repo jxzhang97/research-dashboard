@@ -59,9 +59,6 @@ textarea { min-height: 110px; resize: vertical; }
 .md a.wikilink { border-bottom: 1px dashed var(--accent); }
 .md a.wikilink.missing { color: var(--warn); border-bottom-color: var(--warn); }
 .katex-display { overflow-x: auto; overflow-y: hidden; }
-.tree ul { list-style: none; padding-left: 20px; margin: 4px 0; border-left: 1px solid var(--line); }
-.tree > ul { padding-left: 0; border-left: 0; }
-.tree li { padding: 3px 0; }
 .log { font-family: ui-monospace, Menlo, monospace; font-size: 12.5px; white-space: pre-wrap; background: var(--code-bg); padding: 12px; border-radius: 8px; max-height: 70vh; overflow: auto; }
 .kv { display: grid; grid-template-columns: max-content 1fr; gap: 3px 14px; font-size: 13px; }
 .kv b { color: var(--muted); font-weight: 500; }
@@ -90,8 +87,6 @@ details summary { cursor: pointer; color: var(--muted); }
 .lab-row .t { min-width: 260px; }
 .subtitle { margin: -8px 0 10px; font-size: 14px; }
 .chip.kind { background: var(--accent-bg); color: var(--accent); }
-.tree .node { padding: 2px 0; }
-.tree .node .answer { margin-left: 2px; }
 .toc { font-size: 13px; line-height: 1.5; margin-bottom: 12px; }
 .toc b { display: block; color: var(--muted); font-weight: 500; margin-bottom: 4px; }
 .toc a { display: block; padding: 2px 0; color: var(--text); cursor: pointer; }
@@ -107,3 +102,65 @@ details.panel[open] > summary { margin-bottom: 10px; }
 .answer .md { line-height: 1.5; max-width: none; }
 .answer .md p { margin: 0; }
 .answer .katex { font-size: 1em; }
+
+/* 想法页：问题树的卡片分支图（2026-10-04） */
+main.full { max-width: none; padding: 14px 20px 40px; }
+.qtree { --card-w: 232px; --card-h: 150px; }
+.qtree .qbar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 10px; }
+.qtree .qbar h1 { margin: 0 6px 0 0; }
+.qtree .qbar .spacer { flex: 1; }
+.qtree .qbar button { font-size: 13px; padding: 4px 10px; }
+.qtree .qbar button.on { background: var(--accent-bg); color: var(--accent); border-color: var(--accent); }
+.qtree .zoom { display: inline-flex; align-items: center; gap: 2px; border: 1px solid var(--line); border-radius: 8px; padding: 2px; }
+.qtree .zoom button { border: 0; padding: 3px 8px; }
+.qtree .zoom .pct { font-size: 12px; color: var(--muted); min-width: 42px; text-align: center; }
+.qtree .legend { font-size: 12px; color: var(--muted); }
+.qtree .capture { display: grid; grid-template-columns: 1fr auto; gap: 10px; align-items: start; }
+.qtree .capture textarea { min-height: 44px; }
+.qtree .inbox { font-size: 13px; margin: 8px 0 0; }
+.qtree .inbox a { margin-right: 10px; }
+.qtree .wrap { display: grid; grid-template-columns: 1fr; position: relative; min-height: 60vh; margin-top: 8px; }
+.qtree .wrap.wide.open { grid-template-columns: 1fr 440px; }
+.qtree .canvas-outer { overflow: auto; padding: 10px 0 30px; }
+.qtree .fit-note { font-size: 12px; color: var(--muted); margin: 0 0 8px; min-height: 14px; }
+.qtree .canvas-scale { transform-origin: top left; }
+.qtree .canvas { position: relative; }
+.qtree .canvas svg { position: absolute; inset: 0; overflow: visible; pointer-events: none; }
+.qtree .canvas svg path { fill: none; stroke: var(--line); stroke-width: 1.6; }
+.qtree .canvas svg path.hot { stroke: var(--accent); stroke-width: 2; }
+.qcard { position: absolute; width: var(--card-w); height: var(--card-h); box-sizing: border-box; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 9px 12px 8px; cursor: pointer; transition: box-shadow .15s, border-color .15s; display: flex; flex-direction: column; gap: 4px; overflow: hidden; }
+.qcard:hover { box-shadow: 0 4px 16px rgba(0,0,0,.08); border-color: var(--accent); }
+.qcard.sel { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-bg); }
+.qcard.dim { opacity: .5; }
+.qcard.root { border-width: 2px; }
+.qcard .top { display: flex; gap: 6px; align-items: center; min-height: 18px; }
+.qcard .q { font-size: 11px; color: var(--muted); font-weight: 600; letter-spacing: .3px; }
+.qcard .chip { font-size: 11px; padding: 0 7px; }
+.qcard .title { font-size: 13.5px; font-weight: 600; line-height: 1.35; height: 2.7em; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.qcard .verdict { font-size: 12.5px; color: var(--text); line-height: 1.4; height: 2.8em; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.qcard .verdict::before { content: "→ "; color: var(--accent); }
+.qcard .verdict.fallback { color: var(--muted); }
+.qcard .verdict .katex { font-size: .95em; }
+.qcard .foot { margin-top: auto; display: flex; justify-content: space-between; align-items: center; font-size: 11px; color: var(--muted); min-height: 18px; }
+.qcard .foot a { color: var(--accent); }
+.qcard .tog { border: 1px solid var(--line); border-radius: 10px; padding: 0 7px; background: var(--bg); font-size: 11px; cursor: pointer; }
+.qcard .tog:hover { border-color: var(--accent); color: var(--accent); }
+.qdetail { border-left: 1px solid var(--line); background: var(--panel); padding: 16px 18px 30px; overflow: auto; }
+.qtree .wrap.wide .qdetail { position: sticky; top: 58px; height: calc(100vh - 70px); display: none; }
+.qtree .wrap.wide.open .qdetail { display: block; }
+.qtree .wrap:not(.wide) .qdetail { position: fixed; top: 48px; right: 0; bottom: 0; width: 420px; max-width: 92vw; transform: translateX(105%); transition: transform .2s; box-shadow: -6px 0 24px rgba(0,0,0,.08); z-index: 6; }
+.qtree .wrap:not(.wide).open .qdetail { transform: none; }
+.qdetail .close { float: right; font-size: 12px; margin-left: 8px; }
+.qdetail h2 { font-size: 17px; margin: 0 0 8px; line-height: 1.35; }
+.qdetail h3 { font-size: 13px; color: var(--muted); font-weight: 600; margin: 16px 0 6px; letter-spacing: .3px; }
+.qdetail .verdict-line { font-size: 14px; font-weight: 600; margin: 4px 0 10px; }
+.qdetail .verdict-line::before { content: "→ "; color: var(--accent); }
+.qdetail .answer-box { background: var(--accent-bg); border-radius: 10px; padding: 10px 12px; font-size: 14px; line-height: 1.65; }
+.qdetail .md { font-size: 13.5px; max-width: none; }
+.qdetail .md p { margin: 6px 0; }
+.qdetail .md ul { padding-left: 18px; margin: 4px 0; }
+.qdetail .kids a { display: block; padding: 6px 8px; border: 1px solid var(--line); border-radius: 8px; margin: 4px 0; color: var(--text); font-size: 13px; }
+.qdetail .kids a:hover { border-color: var(--accent); text-decoration: none; }
+.qdetail .kids .v { color: var(--muted); font-size: 12px; }
+.qdetail details { margin: 6px 0; }
+.qdetail details summary { font-weight: 600; color: var(--text); font-size: 13px; }
