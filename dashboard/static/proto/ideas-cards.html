@@ -19,10 +19,14 @@
   .proto-head .spacer { flex: 1; }
   .proto-head button { font-size: 13px; padding: 5px 10px; }
   .proto-head button.on { background: var(--accent-bg); color: var(--accent); border-color: var(--accent); }
-  .wrap { display: grid; grid-template-columns: 1fr 360px; min-height: calc(100vh - 56px); }
-  @media (max-width: 900px) { .wrap { grid-template-columns: 1fr; } .detail { position: fixed; inset: auto 0 0 0; max-height: 60vh; border-top: 1px solid var(--line); } }
+  .wrap { position: relative; min-height: calc(100vh - 56px); }
   .canvas-outer { overflow: auto; padding: 24px 20px 40px; }
-  .canvas { position: relative; margin: 0 auto; }
+  .canvas-scale { transform-origin: top left; }
+  .canvas { position: relative; }
+  .detail { position: fixed; top: 56px; right: 0; bottom: 0; width: 400px; max-width: 92vw; transform: translateX(105%); transition: transform .2s; box-shadow: -6px 0 24px rgba(0,0,0,.08); z-index: 6; }
+  .detail.open { transform: none; }
+  .detail .close { position: absolute; top: 10px; right: 12px; font-size: 13px; }
+  .fit-note { font-size: 12px; color: var(--muted); margin: 0 0 8px; }
   .canvas svg { position: absolute; inset: 0; overflow: visible; pointer-events: none; }
   .canvas svg path { fill: none; stroke: var(--line); stroke-width: 1.6; }
   .canvas svg path.hot { stroke: var(--accent); stroke-width: 2; }
@@ -64,8 +68,8 @@
   <a class="btn" href="/#/ideas">回到正式页面</a>
 </div>
 <div class="wrap">
-  <div class="canvas-outer"><div class="canvas" id="canvas"><svg id="links"></svg></div></div>
-  <aside class="detail" id="detail"><div class="empty">点一张卡片，这里显示它的当前回答、原话和历史。</div></aside>
+  <div class="canvas-outer"><div class="fit-note" id="fit-note"></div><div class="canvas-scale" id="scale"><div class="canvas" id="canvas"><svg id="links"></svg></div></div></div>
+  <aside class="detail" id="detail"><button class="close" id="close">关闭 ✕</button><div class="empty">点一张卡片，这里显示它的当前回答、原话和历史。</div></aside>
 </div>
 <script>
 (() => {
@@ -114,7 +118,11 @@
     let x = 0; for (const r of ROOTS) { measure(r); place(r, x); x += r.w; }
     const colW = CW + GX, rowH = CH + GY; let maxDepth = 0;
     const visible = []; (function walk(ns) { for (const n of ns) { visible.push(n); maxDepth = Math.max(maxDepth, n.depth); if (n.open) walk(n.children); } })(ROOTS);
-    canvas.style.width = (x * colW) + "px"; canvas.style.height = ((maxDepth + 1) * rowH - GY) + "px";
+    const W = x * colW, H = (maxDepth + 1) * rowH - GY;
+    canvas.style.width = W + "px"; canvas.style.height = H + "px";
+    const avail = $(".canvas-outer").clientWidth - 40; const k = Math.max(0.72, Math.min(1, avail / W));
+    const sc = $("#scale"); sc.style.transform = `scale(${k})`; sc.style.width = W + "px"; sc.style.height = (H * k) + "px"; sc.style.marginLeft = Math.max(0, (avail - W * k) / 2) + "px";
+    $("#fit-note").textContent = k < 1 ? `画布按 ${Math.round(k * 100)}% 缩放以适应宽度${k <= 0.72 ? "，仍可横向滚动" : ""}` : "";
     svg.setAttribute("width", x * colW); svg.setAttribute("height", (maxDepth + 1) * rowH);
     const px = (n) => n.x * colW - CW / 2, py = (n) => n.depth * rowH;
     const onPath = new Set(); for (let n = SEL; n; n = n.parent) onPath.add(n.id);
@@ -150,10 +158,11 @@
   function toggle(n) { if (MODE === "auto" && count(ROOTS) > 24) MODE = "all"; n.open = !n.open; draw(); }
   async function select(n) {
     SEL = n; draw();
-    const d = $("#detail");
-    d.innerHTML = `<h2>${esc(n.title)}</h2><div class="meta">${kindChip(n.meta.kind)}${chip(n.meta.status)}${n.parent ? `<a href="#" data-sel="${esc(n.parent.id)}">上级：${esc(n.parent.title.slice(0, 18))}…</a>` : ""}${(n.meta.labs || []).map((l) => `<a href="/#/labs/${esc(l)}">lab ${esc(l)}</a>`).join("")}<a href="/#/ideas/${esc(n.id)}">完整页面 ↗</a></div>
+    const d = $("#detail"); d.classList.add("open");
+    d.innerHTML = `<button class="close" id="close">关闭 ✕</button><h2>${esc(n.title)}</h2><div class="meta">${kindChip(n.meta.kind)}${chip(n.meta.status)}${n.parent ? `<a href="#" data-sel="${esc(n.parent.id)}">上级：${esc(n.parent.title.slice(0, 18))}…</a>` : ""}${(n.meta.labs || []).map((l) => `<a href="/#/labs/${esc(l)}">lab ${esc(l)}</a>`).join("")}<a href="/#/ideas/${esc(n.id)}">完整页面 ↗</a></div>
       <div class="answer-box"><b>当前回答</b>${n.answer ? inline(n.answer) : "<i>还没有</i>"}</div><p class="muted small">加载原话与历史…</p>`;
     d.querySelectorAll("a[data-sel]").forEach((a) => a.onclick = (e) => { e.preventDefault(); select(NODES[a.dataset.sel]); });
+    $("#close").onclick = () => { d.classList.remove("open"); SEL = null; draw(); };
     try {
       const full = await (await fetch(`/api/ideas/${encodeURIComponent(n.id)}`)).json();
       const body = full.body || "";
@@ -173,8 +182,7 @@
   fetch("/api/ideas").then((r) => r.json()).then((d) => {
     ROOTS = d.tree.filter((n) => !n.id.startsWith("inbox/")); index(ROOTS);
     // 根节点与 order 排序已由后端做好；默认选中根，让路径高亮有起点
-    draw();
-    if (ROOTS[0]) select(ROOTS[0]);
+    draw();  // 默认不选中：先看全貌，点卡片再开详情抽屉
   });
 })();
 </script>
