@@ -29,8 +29,8 @@ PROMPTS = {
     "run_lab": (
         "任务书 labs/{id}/brief.md（「{title}」）已被批准。请按 rd-lab skill 执行：先把 status 改为 running，"
         "按任务书做事，推导与讲解写 notes.md（rd-notes skill，中文 markdown，PDF 和英文版按需），数值前先运行 `rd free-cores` 并登记作业，"
-        "大数据放 data_root 并留 DATA.md。收尾按 rd-lab C 节：厚层齐 → 写 handoff.md → 用 write 模型子 agent 做薄层写作步"
-        "（report.md 首屏、受影响 wiki 页首屏、idea 当前回答、STATUS.md）并核对科学限定 → 卡片两三句、index、log.md，status 改为 done；"
+        "大数据放 data_root 并留 DATA.md。收尾按 rd-lab C 节：厚层齐 → 写 handoff.md → 按 rd-writer skill 把薄层交给 Codex 写"
+        "（report.md、受影响的 wiki 页、idea 当前回答、STATUS.md），只做机械检查不改它的文字 → 卡片两三句、index、log.md，status 改为 done；"
         "遇到必须由用户裁决的问题，按无人值守规则写讨论并把 status 改为 waiting_answer。"
     ),
     "promote_idea": (

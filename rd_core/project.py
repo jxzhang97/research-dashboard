@@ -166,6 +166,8 @@ class Project:
     def wiki_pages(self) -> list[Doc]:
         docs = []
         for p in self._md_files(self.root / "wiki", recursive=True):
+            if "handoff" in p.relative_to(self.root / "wiki").parts[:-1]:
+                continue  # wiki/handoff/ 是写给 Codex 的交接单，不是概念页
             slug = self.rel(p)[len("wiki/"):-3]
             d = self._read_doc("wiki", p, id_=slug)
             d.extra["links"] = sorted({m.group(1).strip() for m in WIKILINK_RE.finditer(d.body)})

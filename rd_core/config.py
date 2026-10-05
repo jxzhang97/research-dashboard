@@ -19,8 +19,14 @@ DEFAULTS: dict = {
     "models": {
         # 默认一律 Fable 5.1 + max；任务书 frontmatter 的 model / effort 字段或任务页的下拉可以单独指定
         "read": "claude-fable-5-1",   # 读文献、推导、跑数值
-        "write": "claude-fable-5-1",  # 写报告正文
+        "write": "claude-fable-5-1",  # 已弃用：薄层写作由 [writer] 决定
         "effort": "xhigh",            # low / medium / high / xhigh / max（用户默认 extra high，特殊要求才用 max）
+    },
+    "writer": {
+        # 薄层写作步（report.md、wiki 页、idea 当前回答、STATUS.md）交给谁写；见 rd-writer skill
+        "backend": "codex",
+        "model": "gpt-6-astra",
+        "reasoning_effort": "xhigh",
     },
     "agent": {
         "backend": "claude",  # 目前自动运行只支持 claude；codex 的交互会话靠 AGENTS.md + skills

@@ -134,3 +134,10 @@ def test_idea_answer_and_status_doc(project_dir: Path):
     assert node["answer"] == "未回答，等 lab 01。" and node["meta"]["kind"] == "route"
     st = pr.status_doc()
     assert st and st["path"] == "STATUS.md" and "研究问题" in st["body"]
+
+
+def test_wiki_handoff_dir_is_not_a_page(project_dir: Path):
+    (project_dir / "wiki" / "handoff").mkdir()
+    (project_dir / "wiki" / "handoff" / "2026-10-04-rewrite.md").write_text("---\ntitle: 交接单\n---\n# 交接单\n", encoding="utf-8")
+    ids = {p.id for p in Project(project_dir).wiki_pages()}
+    assert "handoff/2026-10-04-rewrite" not in ids and "quantum-metric" in ids

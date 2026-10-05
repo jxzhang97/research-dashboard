@@ -1,5 +1,6 @@
 .DS_Store
 .dashboard/runs/
+.dashboard/writing/
 .dashboard/jobs/
 .dashboard/launchd/
 .dashboard/state.json

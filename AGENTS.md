@@ -20,12 +20,12 @@
 | `references/cards/` | 每篇文献一张卡片 `<arxiv id 或 slug>.md` | agent |
 | `references/inbox/` | arXiv 扫描候选，等用户审批 | 脚本 + agent |
 | `wiki/` | 概念页：对一个概念"我们现在怎么理解"，`[[双括号]]` 互链，随进展重写 | agent |
-| `labs/NN-slug/` | 一个任务：`brief.md` 任务书、`report.md` 摘要、`notes.md` 推导与讲解、`DATA.md`、代码、`fig/` | agent 起草，用户过目 |
+| `labs/NN-slug/` | 一个任务：`brief.md` 任务书、`report.md` 摘要（Codex 写）、`notes.md` 推导与讲解、`handoff.md` 交接单、`DATA.md`、代码、`fig/` | agent 起草，用户过目 |
 | `src/` | 从 lab 沉淀出的可复用代码 | agent |
 | `discussion/` | 需要用户裁决的问题，以及用户向 agent 提的问题 | 双方 |
 | `ideas/` | 问题树；`ideas/inbox/` 是用户的原始速记 | 用户写原话，agent 整理 |
 | `log.md` | 时间线，只追加 | 双方 |
-| `.dashboard/` | 运行记录、作业登记、本机配置，不是内容 | 程序 |
+| `.dashboard/` | 运行记录（含 `writing/` 里 Codex 写作步的提示词与输出）、作业登记、本机配置，不是内容 | 程序 |
 
 ## 2. 写给谁、写在哪、写多少
 
@@ -34,7 +34,7 @@
 **两层内容，两种写法：**
 
 - **厚层**（`notes.md`、代码、数据、验证脚本）：由做推导或跑数值的那个 agent 在同一上下文里写，按 `rd-notes` skill（问题链、无跳步、落盘验证），可以长，可以密。
-- **薄层**（`report.md` 首屏、wiki 页首屏、idea 节点的「当前回答」、`STATUS.md`）：**单独一步、新开上下文**，由 `config.toml` 的 `write` 模型子 agent 根据交接单和材料写，主 agent 只核对科学限定（有限尺寸的峰不能写成相变、某模型的结果不能写成普遍规律、混态、近似、尺寸范围不能丢），核对意见逐句给，不整体重写。交接单（`labs/NN-slug/handoff.md`）写清：这次回答了什么、改变了什么认识、哪些话不能说过头、材料在哪。
+- **薄层**（`report.md`、wiki 页、idea 节点的「当前回答」、`STATUS.md`）：**单独一步，交给 Codex 写**（`config.toml` 的 `[writer]`，默认 `gpt-6-astra`、reasoning effort xhigh、ChatGPT 账号登录），流程见 `rd-writer` skill：研究 agent 写交接单（`labs/NN-slug/handoff.md`：这次回答了什么、改变了什么认识、哪些话不能说过头、材料在哪、每张图的角色），用 `codex-write.sh` 调 Codex，写完**只做机械检查**（文件在指定位置、没碰别的文件、图和链接能打开、`rd doctor` 无断链），**不核对、不改写它的文字**；科学限定靠交接单的"不能说过头"清单把关。Codex 不可用（没装、没登录）时记 log、把薄层留到下次，不用别的模型代写。
 
 **薄层首屏固定四段**，顺序不变：
 
@@ -44,6 +44,10 @@
 4. **边界**：会改变判断的未完成检查、已知的局限。
 
 首屏之后才是细节。数字在薄层里每个论断最多出现一个代表值，其余放表格或 notes 并链接。lab 标题不超过二十个字，长的写进副标题或 `report.md` 的「问题」。
+
+**wiki 页像讲课，不像报告**：「我们现在怎么理解」先给图像再给公式，用一个课堂例子（toy）把概念说透，每个论断后面跟一句"这意味着什么 / 排除了什么 / 与原问题的关系"，可以直接对读者说话（"你可以这样想"）；少罗列、不重复 lab 报告的结论清单，数字和证据一句话链接到 lab。
+
+**图注要具体**：按"看哪里 → 看到什么 → 说明什么 / 不能说明什么"写，落到面板 (a)(b)(c)、曲线或标记（颜色、实心/空心、方块/圆点）、参数区间或色带、眼睛该看到的形状（峰、平台、陡降、重合、贴零）。写作者必须看着图写，看不清的不写。
 
 **每样东西只写一次。** 一个事实只有一个权威位置，别处用一句话加链接：
 
@@ -62,7 +66,7 @@
 
 **图**：每个 lab 的图放 `labs/NN-slug/fig/`，PNG 或 SVG，`report.md` 和 `notes.md` 用 `![图注](fig/xxx.png)` 内嵌，图注写"看哪里 → 看到什么 → 说明什么"，网页上 alt 文字就是图注。图分四种角色：问题设定、主结果、机制解释、可靠性检查；首屏只放主结果和设定。wiki 概念页尽量配一张示意图（`wiki/fig/<slug>-*.svg|png`）。数据图用 matplotlib（`savefig(..., dpi=160, bbox_inches="tight")`），示意图手画 SVG 或 matplotlib；每张图坐标轴有标签和单位；原始数据和脚本留在 lab 文件夹。
 
-**模型**（`config.toml` 的 `[models]`）：`read` 跑研究，默认 `claude-fable-5-1`、effort `xhigh`；`write` 写薄层，可以是另一个模型，由主 agent 用 Agent 工具的 model 参数调用。用户可以在任务书或 idea 的 frontmatter 写 `model:` / `effort:` 单独指定；用户在对话里说"写报告用 opus"之类的，写进任务书 frontmatter。
+**模型**：`[models].read` 跑研究（默认 `claude-fable-5-1`、effort `xhigh`）；`[writer]` 写薄层（默认 `backend = "codex"`、`model = "gpt-6-astra"`、`reasoning_effort = "xhigh"`，跑自动任务的机器上要先 `codex login`）。用户可以在任务书或 idea 的 frontmatter 写 `model:` / `effort:` 单独指定研究模型；用户在对话里说"写报告用 X"之类的，写进任务书 frontmatter。
 
 ## 3. Notation
 
@@ -95,7 +99,7 @@
 3. **执行**：状态改 `running`，按任务书做；推导和讲解进 `notes.md`（`rd-notes`）；数值按第 5 节；中途的小结论随时写进 `report.md` 草稿。
 4. **收尾**（缺一不可，但每样只写一次）：
    - 厚层齐：`notes.md`、`fig/`、`DATA.md`、`results/`；
-   - 交接单 `handoff.md`，然后**薄层写作步**（第 2 节）：`report.md` 首屏、受影响的 wiki 页首屏、来源 idea 的「当前回答」、`STATUS.md`；主 agent 核对限定；
+   - 交接单 `handoff.md`，然后**薄层写作步**（第 2 节，`rd-writer`，Codex）：`report.md`、受影响的 wiki 页、来源 idea 的「当前回答」、`STATUS.md`；主 agent 只做机械检查；
    - 卡片「与本课题的联系」加两三句；wiki `index.md` 加新页链接；
    - 有新问题就写 discussion；`log.md` 追加；状态改 `done`；git commit。
 

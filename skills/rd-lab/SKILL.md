@@ -1,6 +1,6 @@
 ---
 name: rd-lab
-description: 课题 lab 任务的起草、执行与收尾（research-dashboard 课题目录内使用）。当要把一个 idea 升级成任务书、执行一个已批准的 labs/NN-slug/brief.md、写 notes.md 与 report.md、做薄层写作步（交接单 → write 模型子 agent → 核对）、或做任务收尾回写（STATUS、wiki、idea、卡片、log）时使用。
+description: 课题 lab 任务的起草、执行与收尾（research-dashboard 课题目录内使用）。当要把一个 idea 升级成任务书、执行一个已批准的 labs/NN-slug/brief.md、写 notes.md 与 report.md、做薄层写作步（交接单 → Codex 写 → 机械检查，见 rd-writer）、或做任务收尾回写（STATUS、wiki、idea、卡片、log）时使用。
 ---
 
 # rd-lab：任务从起草到收尾
@@ -68,14 +68,14 @@ created: 2026-10-02
 ### C2. 交接单 `handoff.md`
 给写作步用，写作者没看过任何一次运行。内容：读者是谁；用户原来问什么；这次回答了什么（分**已证明 / 数值支持 / 解释与猜测**三档，每档带适用范围）；**哪些话不能说过头**（逐条）；材料在哪（notes 节号、表、图及每张图的角色）；要写哪些文件、用什么模板。
 
-### C3. 薄层写作步
-用 Agent 工具、`config.toml` 的 `write` 模型（model 参数）、新上下文，输入是 handoff.md 和它列的材料，输出：
+### C3. 薄层写作步（交给 Codex，按 rd-writer skill）
+研究 agent 不写薄层。按 `rd-writer`：用 handoff.md 和它列的材料组一份提示词，`codex-write.sh` 调 Codex（`[writer]` 的模型与强度，附上主图），让它写：
 - `report.md`（模板见下）；
-- 受影响的 wiki 页**首屏**（「这是什么」「我们现在怎么理解」两段）；
-- 来源 idea 的「当前回答」；
+- 受影响的 wiki 页（整页，按 rd-wiki 模板；讲课体）；
+- 来源 idea 的「当前回答」（只改这一节，原话不动）；
 - `STATUS.md` 里对应问题的那一行和「进行中 / 等你决定」。
 
-写作者只写这些文件，不改 notes、不跑计算。写完后主 agent 按 handoff 第"不能说过头"节逐句核对，意见给具体句子，让写作者定点改；主 agent 不整体重写。
+多个目标可以分几次调用（每次一两个文件，图随提示词附上）。写完后研究 agent **只做机械检查**：目标文件在、没碰别的文件、图和链接能打开、`rd doctor` 无断链；不核对、不改写它的文字。Codex 不可用时记 log，薄层留到下次。
 
 ### C4. 其余回写（每样一句话加链接）
 - 卡片「与本课题的联系」：本 lab 用到的每张卡片加两三句，不抄数字。
