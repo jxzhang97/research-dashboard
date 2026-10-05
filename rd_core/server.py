@@ -197,6 +197,13 @@ def _can_write(request: Request, project: Project) -> bool:
         ip = ipaddress.ip_address(host)
     except ValueError:
         return True
+    # 经本机反向代理进来的（Tailscale Funnel/Serve、cloudflared）：直连方是 127.0.0.1，真实来源在 X-Forwarded-For
+    fwd = request.headers.get("x-forwarded-for", "")
+    if ip.is_loopback and fwd:
+        try:
+            ip = ipaddress.ip_address(fwd.split(",")[0].strip())
+        except ValueError:
+            return False
     nets = config.load(project.root)["server"].get("write_from") or []
     for n in nets:
         try:

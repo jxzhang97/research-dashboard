@@ -73,3 +73,13 @@ def test_readonly_for_outside_addresses(project_dir: Path):
     tailscale = TestClient(app, client=("100.120.253.99", 5000))
     assert tailscale.get("/api/overview").json()["readonly"] is False
     assert tailscale.post("/api/ideas", json={"text": "自己人"}).status_code == 200
+
+
+def test_forwarded_ip_behind_local_proxy(project_dir: Path):
+    """Tailscale Funnel / cloudflared 从 127.0.0.1 转发进来：按 X-Forwarded-For 判断，公网访客只读，tailnet 成员可写。"""
+    app = create_app(Project(project_dir))
+    local = TestClient(app, client=("127.0.0.1", 5000))
+    assert local.get("/api/overview", headers={"x-forwarded-for": "8.8.8.8"}).json()["readonly"] is True
+    assert local.post("/api/ideas", json={"text": "x"}, headers={"x-forwarded-for": "8.8.8.8"}).status_code == 403
+    assert local.get("/api/overview", headers={"x-forwarded-for": "100.100.1.1"}).json()["readonly"] is False
+    assert local.get("/api/overview").json()["readonly"] is False  # 真正的本机请求没有转发头
