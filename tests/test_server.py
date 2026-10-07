@@ -83,3 +83,17 @@ def test_forwarded_ip_behind_local_proxy(project_dir: Path):
     assert local.post("/api/ideas", json={"text": "x"}, headers={"x-forwarded-for": "8.8.8.8"}).status_code == 403
     assert local.get("/api/overview", headers={"x-forwarded-for": "100.100.1.1"}).json()["readonly"] is False
     assert local.get("/api/overview").json()["readonly"] is False  # 真正的本机请求没有转发头
+
+
+def test_lab_comment_triggers_revision(project_dir: Path):
+    """任务页写意见：原话追加到任务书「用户意见」，comments_pending 置位，待办里出现 revise_brief；批准后不再出现。"""
+    c = client(project_dir)
+    r = c.post("/api/labs/01-first-task/comment", json={"text": "第 2 步太贵，先做小尺寸"})
+    assert r.json()["comments_pending"] is True
+    brief = (project_dir / "labs" / "01-first-task" / "brief.md").read_text()
+    assert "## 用户意见" in brief and "第 2 步太贵，先做小尺寸" in brief
+    kinds = {(w["kind"], w["id"]) for w in c.get("/api/pending").json()["ready"]}
+    assert ("revise_brief", "01-first-task") in kinds
+    c.post("/api/labs/01-first-task/approve")
+    kinds = {w["kind"] for w in c.get("/api/pending").json()["ready"]}
+    assert "revise_brief" not in kinds and "run_lab" in kinds

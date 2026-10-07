@@ -290,6 +290,20 @@ class Project:
                 n = max(n, int(m.group(1)))
         return f"{n + 1:02d}-{slugify(title)}"
 
+    def comment_lab(self, lab_id: str, text: str) -> dict:
+        """用户在任务页写的意见：追加到任务书「## 用户意见」（带时间，原话不动），标记 comments_pending，agent 随后按意见修改任务书。"""
+        p = self.safe_path(f"labs/{lab_id}/brief.md")
+        meta, body = fm.read(p)
+        stamp = now_str()
+        if "## 用户意见" not in body:
+            body = body.rstrip("\n") + "\n\n## 用户意见\n"
+        body = body.rstrip("\n") + f"\n\n### 意见 · {stamp}\n\n{text.strip()}\n"
+        meta["comments_pending"] = True
+        meta["last_comment"] = stamp
+        fm.write(p, meta, body)
+        self.append_log("用户", f"对任务书 {lab_id} 提了意见", f"labs/{lab_id}/brief.md")
+        return meta
+
     def set_lab_status(self, lab_id: str, status: str) -> dict:
         assert status in LAB_STATUSES, status
         return fm.update(self.safe_path(f"labs/{lab_id}/brief.md"), status=status)
@@ -525,6 +539,8 @@ class Project:
         for d in self.labs():
             if d.meta.get("status") == "approved":
                 work.append({"kind": "run_lab", "id": d.id, "path": d.path, "title": d.title})
+            elif d.meta.get("comments_pending") and d.meta.get("status") in ("awaiting_review", "draft", "parked"):
+                work.append({"kind": "revise_brief", "id": d.id, "path": d.path, "title": d.title})
         for d in self.ideas():
             if d.meta.get("promote_requested") and not d.meta.get("promoted_lab"):
                 work.append({"kind": "promote_idea", "id": d.id, "path": d.path, "title": d.title})

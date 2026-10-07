@@ -274,7 +274,9 @@
          ${["running", "approved"].includes(st) ? "" : `<button id="park">搁置</button> `}${st === "parked" ? `<button id="unpark">恢复为待过目</button>` : ""} ${notesBtn} ${pdfs} ${handoff}</p>
       ${d.report ? `<div class="panel" id="report"></div>` : `<div class="panel muted">还没有报告摘要（report.md）。</div>`}
       ${(d.images || []).length ? `<details class="panel" ${d.report ? "" : "open"}><summary>全部图 (${d.images.length})</summary><div class="gallery">${d.images.map((im) => `<figure class="fig"><a href="/api/file?path=${encodeURIComponent(im.path)}" target="_blank"><img src="/api/file?path=${encodeURIComponent(im.path)}" alt="${esc(im.caption || im.name)}" loading="lazy"></a><figcaption>${esc(im.caption || im.name)}</figcaption></figure>`).join("")}</div></details>` : `<p class="muted small">这个 lab 还没有图（agent 应把图放在 fig/ 并嵌进 report.md）。</p>`}
-      <details class="panel"><summary>任务书 brief.md</summary><div id="brief"></div></details>
+      <details class="panel" ${["awaiting_review", "draft", "parked"].includes(st) ? "open" : ""}><summary>任务书 brief.md${m.comments_pending ? " · 有你的意见待 agent 处理" : ""}</summary><div id="brief"></div></details>
+      <div class="panel write-only"><b>对任务书的意见</b><textarea id="cmt" placeholder="${["awaiting_review", "draft", "parked"].includes(st) ? "写下你对这份任务书的意见（要改什么、加什么、删什么）。提交后 agent 会按意见修改任务书并在意见下回复，改完仍等你过目；写「可以开始」就直接执行。" : "任务已在进行：意见会记进任务书，agent 下次运行时先读它。"}"></textarea>
+        <div class="form-row"><button class="primary" id="comment">提交意见</button><span class="muted small">原话会原样追加到任务书的「用户意见」一节</span></div></div>
       ${d.data ? `<details class="panel"><summary>数据去向 DATA.md</summary><div id="data"></div></details>` : ""}
       <details class="panel"><summary>文件 (${(d.files || []).length})</summary><ul class="list small">${files}</ul></details>`;
     $("#brief").appendChild(render(d.body, labDir));
@@ -282,6 +284,7 @@
     if (d.data) $("#data").appendChild(render(d.data.body, labDir));
     if ($("#approve")) $("#approve").onclick = async () => { await api(`/api/labs/${encodeURIComponent(id)}/approve`, {}); toast("已批准，agent 开始执行"); pages.lab(id); refreshOverview(); };
     if ($("#park")) $("#park").onclick = async () => { await api(`/api/labs/${encodeURIComponent(id)}/status/parked`, {}); pages.lab(id); };
+    if ($("#comment")) $("#comment").onclick = async () => { const t = $("#cmt").value.trim(); if (!t) return toast("先写意见"); await api(`/api/labs/${encodeURIComponent(id)}/comment`, { text: t }); toast(["awaiting_review", "draft", "parked"].includes(st) ? "已记下，agent 开始按意见修改任务书" : "已记下，agent 下次运行会读到"); pages.lab(id); refreshOverview(); };
     if ($("#unpark")) $("#unpark").onclick = async () => { await api(`/api/labs/${encodeURIComponent(id)}/status/awaiting_review`, {}); pages.lab(id); };
     api("/api/seen", { kind: "lab", id }).then(refreshOverview);
   };

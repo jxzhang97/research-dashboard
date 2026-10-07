@@ -33,6 +33,12 @@ PROMPTS = {
         "（report.md、受影响的 wiki 页、idea 当前回答、STATUS.md），只做机械检查不改它的文字 → 卡片两三句、index、log.md，status 改为 done；"
         "遇到必须由用户裁决的问题，按无人值守规则写讨论并把 status 改为 waiting_answer。"
     ),
+    "revise_brief": (
+        "用户在 dashboard 上对任务书 labs/{id}/brief.md（「{title}」）提了意见，见文末「## 用户意见」里 comments_pending 之后的新条目。"
+        "请按 rd-lab skill 第 A.6 条处理：通读全部意见，按意见修改目标、步骤、交付物、特别要求（改写，不留两套），"
+        "在每条意见正下方写「**agent 回复 · <时间>**：改了什么、没改的为什么」，把 frontmatter 的 comments_pending 改为 false，"
+        "状态保持 awaiting_review 等用户再看；用户在意见里明确说可以/批准/开始的，改为 approved 并按 rd-lab 开始执行。用户原话一字不动。记 log，git commit。"
+    ),
     "promote_idea": (
         "用户请求把 idea {path}（「{title}」）升级为 lab 任务。请按 rd-lab skill 起草任务书："
         "新建 labs/<编号>-<slug>/brief.md，用户原话原样保留，结合 AGENTS.md 和 PROJECT.md 的默认规则写出目标、步骤、交付物。"

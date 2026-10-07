@@ -319,6 +319,16 @@ def create_app(project: Project) -> FastAPI:
         rq.submit_tick()
         return meta
 
+    @app.post("/api/labs/{lab_id}/comment")
+    def lab_comment(lab_id: str, body: AnswerIn):
+        """用户对任务书的意见：追加到 brief.md，然后立刻派 agent 按意见修改任务书。"""
+        try:
+            meta = project.comment_lab(lab_id, body.text)
+        except FileNotFoundError:
+            raise HTTPException(404)
+        rq.submit_tick()
+        return meta
+
     @app.post("/api/labs/{lab_id}/status/{status}")
     def lab_status(lab_id: str, status: str):
         try:

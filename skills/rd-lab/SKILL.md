@@ -16,6 +16,7 @@ description: 课题 lab 任务的起草、执行与收尾（research-dashboard �
 3. 写出目标、步骤、交付物、机器。默认规则（语言、rd-notes、notation、并行、数据去向）不用重复，只写与默认不同的。标题二十字以内，细节放副标题或目标。
 4. 判断是否需要用户过目：默认 `status: awaiting_review`；用户原话或 promote_note 里说了"不用过目 / 直接做"就 `approved` 并立即进入 B。
 5. 在来源 idea 的 frontmatter 写 `promoted_lab: <lab id>`、`labs: [<lab id>]`、`status: lab`。记 log。
+6. **用户的意见**：用户在 dashboard 任务页写的意见会由程序追加到任务书末尾的「## 用户意见」（带时间，原话不动），并把 frontmatter `comments_pending` 设为 true；系统随即派一次 `revise_brief` 运行。处理：通读全部意见；按意见修改目标、步骤、交付物、特别要求（改写，不留两套）；在每条意见正下方写一段「**agent 回复 · <时间>**：改了什么、没改的为什么」；把 `comments_pending` 改为 false；状态保持 `awaiting_review` 等用户再看——除非用户在意见里明确说"可以 / 批准 / 开始"，那就 `approved` 并进入 B。运行中（`running`）的任务也可能收到意见：下一次运行开始时先读「用户意见」，按它调整，回复写在意见下面。
 
 任务书模板：
 
@@ -50,6 +51,9 @@ created: 2026-10-02
 
 ## 我对任务书的疑问
 （起草时发现 idea 有二义性，列在这里；严重到不能开工的，同时写 discussion。）
+
+## 用户意见
+（用户在 dashboard 任务页写的意见由程序追加到这里；agent 在每条下面回复并修改任务书。）
 ```
 
 ## B. 执行

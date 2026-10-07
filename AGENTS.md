@@ -62,7 +62,9 @@
 
 收尾时**改写**受影响页面的当前回答，不要往每个页面追加一段同样的进度。卡片「与本课题的联系」每个 lab 最多两三句，不抄数字。
 
-**语言与格式**：全项目默认中文；`config.toml` 的 `project.language = "en"` 时改用英文。卡片里的术语可以中英并列。推导和讲解写 markdown（`rd-notes`），公式用 `$…$` 和 `$$…$$`（网页用 KaTeX 渲染，不用自定义宏，编号用 `\tag{}`）。PDF 和英文版都**按需**生成（用户要分享、打印或明确要求时），不是完成任务的条件。正式论文用 `hardworking-paper-writer`，不用 rd-notes。
+**语言与格式**：全项目默认中文；`config.toml` 的 `project.language = "en"` 时改用英文。推导和讲解写 markdown（`rd-notes`），公式用 `$…$` 和 `$$…$$`（网页用 KaTeX 渲染，不用自定义宏，编号用 `\tag{}`）。PDF 和英文版都**按需**生成（用户要分享、打印或明确要求时），不是完成任务的条件。正式论文用 `hardworking-paper-writer`，不用 rd-notes。
+
+**专有名词中英并列**：读者可能只认识英文术语。所有面向读者的页面和 notes 里，专有名词、方法名、物理量名**首次出现时写成「中文（English）」**，例如 非稳定子性（magic / nonstabilizerness）、稳定子态（stabilizer state）、鲁棒性（robustness of magic）、费米子高斯态（fermionic Gaussian state）、混态（mixed state）、自然占据数（natural occupation number）；`notation.md` 登记记号时也附英文名；同一页后面可以只用其中一种。
 
 **图**：每个 lab 的图放 `labs/NN-slug/fig/`，PNG 或 SVG，`report.md` 和 `notes.md` 用 `![图注](fig/xxx.png)` 内嵌，图注写"看哪里 → 看到什么 → 说明什么"，网页上 alt 文字就是图注。图分四种角色：问题设定、主结果、机制解释、可靠性检查；首屏只放主结果和设定。wiki 概念页尽量配一张示意图（`wiki/fig/<slug>-*.svg|png`）。数据图用 matplotlib（`savefig(..., dpi=160, bbox_inches="tight")`），示意图手画 SVG 或 matplotlib；每张图坐标轴有标签和单位；原始数据和脚本留在 lab 文件夹。
 
@@ -95,7 +97,7 @@
 ## 6. 任务流程
 
 1. **想法**：用户写在 `ideas/inbox/` 或 dashboard 速记。agent 按 `rd-idea` skill 整理进问题树，原话不动。
-2. **任务书**：用户请求升级（或 agent 判断该动手并征得同意）时，按 `rd-lab` skill 起草 `labs/NN-slug/brief.md`，用户原话原样保留，结合本文件和 PROJECT.md 写出目标、步骤、交付物、机器。状态 `awaiting_review`。**用户说了不用过目的，直接 `approved` 并开始。**
+2. **任务书**：用户请求升级（或 agent 判断该动手并征得同意）时，按 `rd-lab` skill 起草 `labs/NN-slug/brief.md`，用户原话原样保留，结合本文件和 PROJECT.md 写出目标、步骤、交付物、机器。状态 `awaiting_review`。**用户说了不用过目的，直接 `approved` 并开始。** 用户可以在 dashboard 的任务页对任务书写意见（追加到任务书的「## 用户意见」，原话不动）；系统会派一次 `revise_brief` 运行，agent 按意见修改任务书、在每条意见下回复，状态保持 `awaiting_review` 等用户再看。
 3. **执行**：状态改 `running`，按任务书做；推导和讲解进 `notes.md`（`rd-notes`）；数值按第 5 节；中途的小结论随时写进 `report.md` 草稿。
 4. **收尾**（缺一不可，但每样只写一次）：
    - 厚层齐：`notes.md`、`fig/`、`DATA.md`、`results/`；
