@@ -26,8 +26,13 @@ from . import config
 KINDS = {"audit": ("auditor", "auditing"), "write": ("writer", "writing")}
 BUNDLED = Path("/Applications/ChatGPT.app/Contents/Resources/codex-cli/bin/codex")
 LEGACY_BUNDLED = Path("/Applications/ChatGPT.app/Contents/Resources/codex-cli/CodexCLI.app/Contents/MacOS/codex")
-# 0.16x 的独立二进制在工具执行不可用时不报错，只在输出里留这些话，然后带着 exit 0 返回一句"报告未生成"
-FAIL_CLOSED_RE = re.compile(r"code mode is unavailable|fail(?:s|ing)? closed|code[- _]mode[- _]host", re.I)
+# 0.16x 的独立二进制在工具执行不可用时不报错，只在输出里留 codex 自己的诊断行（行首是 "warning: Code Mode is unavailable"
+# 或带时间戳的 "ERROR codex_core::tools::router: error=failed to spawn code-mode host"），然后带着 exit 0 返回一句"报告未生成"。
+# 只认这两种行首形式：提示词、skill 文本、log.md 被 codex 读出来时也会含"fail closed""code-mode-host"字样，不能按词匹配。
+FAIL_CLOSED_RE = re.compile(
+    r"^(?:warning: Code Mode is unavailable|\d{4}-\d{2}-\d{2}T\S+\s+ERROR codex_core::tools::router: error=failed to spawn code-mode host)",
+    re.I | re.M,
+)
 PLACEHOLDER_RE = re.compile(r"{{[A-Z_]+}}")
 STILL_RUNNING = 7
 DIED = 9

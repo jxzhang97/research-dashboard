@@ -37,7 +37,25 @@ FAKE_FAIL_CLOSED = r'''
 case "$1" in
   login) echo "Logged in using ChatGPT"; exit 0;;
   --version) echo "codex-cli 0.160.0"; exit 0;;
-  exec) echo "WARN Code Mode is unavailable (missing codex-code-mode-host); tools will fail closed"; echo "报告未生成"; exit 0;;
+  exec) echo "OpenAI Codex v0.160.0"
+        echo "warning: Code Mode is unavailable because failed to spawn code-mode host /x/codex-code-mode-host: host executable was not found. Code mode will fail closed"
+        echo "2026-10-08T09:06:23.854005Z ERROR codex_core::tools::router: error=failed to spawn code-mode host /x/codex-code-mode-host: No such file or directory (os error 2)"
+        echo "报告未生成"; exit 0;;
+esac
+'''
+
+# 健康的运行：codex 把提示词和它读到的 skill 文本、log.md 原样回显，里面也有 "fail closed""codex-code-mode-host" 字样，不能算失败
+FAKE_ECHOES_WORDS = r'''
+case "$1" in
+  login) echo "Logged in using ChatGPT"; exit 0;;
+  --version) echo "codex-cli 0.160.0"; exit 0;;
+  exec)
+    out=""; while [ $# -gt 0 ]; do [ "$1" = "-o" ] && { out="$2"; shift; }; shift; done
+    echo "OpenAI Codex v0.160.0"; echo "user"
+    echo "# 等待：退出码 6 Codex 工具执行 fail closed、9 进程消失"
+    echo "模板问题：本机 codex 缺同目录的 codex-code-mode-host，Codex 的工具执行 fail closed"
+    echo "codex"; echo "读完了，Code Mode is unavailable 这句只是引文"; echo "tokens used"; echo "100"
+    echo "报告已生成" > "$out"; exit 0;;
 esac
 '''
 
@@ -108,6 +126,14 @@ def test_fail_closed_is_a_failure(project_dir: Path, tmp_path: Path, monkeypatch
     st = codex.wait(project_dir, "audit", "t-fc", max_seconds=30, poll=1)
     assert st["state"] == "failed" and st["code"] == codex.FAIL_CLOSED
     assert "fail closed" in st["detail"]
+
+
+def test_quoted_fail_closed_words_are_not_a_failure(project_dir: Path, tmp_path: Path, monkeypatch):
+    fake = _fake_codex(tmp_path / "echo", FAKE_ECHOES_WORDS)
+    res = _start(project_dir, fake, "t-echo", monkeypatch)
+    assert res["ok"], res
+    st = codex.wait(project_dir, "audit", "t-echo", max_seconds=30, poll=1)
+    assert st["state"] == "done" and st["code"] == 0, st
 
 
 def test_dead_worker_is_reported_as_died(project_dir: Path):
