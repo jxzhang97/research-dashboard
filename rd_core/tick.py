@@ -50,6 +50,17 @@ PROMPTS = {
         "移到 ideas/<slug>.md 并补上 frontmatter（parent、kind、status、order），用户原话一字不改地放在「## 原话」下，agent 区写「当前回答」；不要替用户发明研究方向；"
         "如果只是对已有 idea 的补充，把原话追加到那个 idea 的「## 原话」下（标注日期）并删除 inbox 文件。"
         "最后在被处理的文件 frontmatter 写 triaged: true。"
+        "这是文书任务，AGENTS.md §0 的通读对它放宽：只读 PROJECT.md 的目标段、STATUS.md、ideas/ 各节点的 frontmatter 与标题、wiki/index.md 的目录，"
+        "不要通读 wiki 页、卡片、lab notes 或 log。"
+    ),
+    "resume_lab": (
+        "lab labs/{id}/（「{title}」）的任务书状态是 running，但没有活着的运行：上一次运行 {last_run_id}（{last_run_status}）已经结束，"
+        "它最后说：「{last_run_result}」。请按 rd-lab skill 的 D 节续跑。本提示是幂等的：先读 labs/{id}/resume.md（续跑单，若有）、brief.md、report.md、"
+        "log.md 末尾与本 lab 相关的几条，看 handoff.md 与 audit/ 是否存在，查 .dashboard/auditing 与 .dashboard/writing 里本 lab 记录的 run_info.txt 有无 exit 行"
+        "（codex-audit.sh --status / codex-write.sh --status），由此判断停在哪一步：厚层未齐 / 等数值 / 审计被杀或进行中 / 审计报告已出未处理 / 交接单未写 / 薄层未写 / 只差回写与 commit。"
+        "从那一步继续，做过的不重做，不要整体重读 notes.md（需要时只读相关小节）。Codex 审计或写作还活着就用 --wait 在前台等；死了没结果就重新启动。"
+        "数值批量还在跑就核对进度、更新续跑单后结束运行。收尾按 rd-lab C 节；结束前更新 resume.md；"
+        "lab 状态只能停在 done / waiting_answer / awaiting_review / blocked，或仍在等外部进程的 running。"
     ),
 }
 
@@ -86,21 +97,55 @@ def run_digest(project: Project, dry_run: bool = False) -> dict | None:
     return meta
 
 
+def model_for(cfg: dict, kind: str, path: str | None = None, project: Project | None = None) -> tuple[str, str | None]:
+    """某个工作项用什么模型：[models].read/effort → [models.kinds].<kind> → 该文件 frontmatter 的 model/effort。"""
+    model = cfg["models"]["write"] if kind in WRITE_KINDS else cfg["models"]["read"]
+    effort = cfg["models"].get("effort")
+    kc = (cfg["models"].get("kinds") or {}).get(kind) or {}
+    model = kc.get("model") or model
+    effort = kc.get("effort") or effort
+    if path and project is not None:
+        # 该工作项对应文件的 frontmatter 可以单独指定 model / effort（例如任务书里写 model: claude-opus-5-5）
+        try:
+            doc_meta, _ = fm.read(project.root / path)
+            model = doc_meta.get("model") or model
+            effort = doc_meta.get("effort") or effort
+        except (OSError, ValueError):
+            pass
+    return model, effort
+
+
 def actionable(project: Project, cfg: dict | None = None, only: str | None = None) -> tuple[list[dict], list[dict]]:
-    """返回 (现在可以做的, 因为刚失败而暂缓的)。回答的消化不在这里，它走 run_digest 的 digest_minutes 节奏（默认五小时）。"""
+    """返回 (现在可以做的, 暂缓的)。暂缓的三种情况：刚失败还在退避期；Claude 额度用尽还没到重置时刻（last_status=limit）；
+    续跑的 lab 还有 Codex 审计/写作在跑（last_status=codex）。回答的消化不在这里，它走 run_digest 的 digest_minutes 节奏。"""
     cfg = cfg or config.load(project.root)
     retry = int(cfg["schedule"].get("retry_minutes", 30)) * 60
     work = [w for w in project.pending_work() if w["kind"] != "digest_answer"]
     if only:
         work = [w for w in work if w["kind"] == only]
     ready, deferred = [], []
+    pause = project.pause_info()
+    codex_live = None
     for w in work:
         info = project.attempt_info(w["kind"], w["id"])
+        if pause:
+            deferred.append({**w, "last_status": "limit", "retry_in_s": int(pause["until"] - time.time()), "reason": pause["reason"]})
+            continue
         if info and info.get("status") != "done" and time.time() - info["t"] < retry:
-            w = {**w, "last_status": info["status"], "retry_in_s": int(retry - (time.time() - info["t"]))}
-            deferred.append(w)
-        else:
-            ready.append(w)
+            deferred.append({**w, "last_status": info["status"], "retry_in_s": int(retry - (time.time() - info["t"]))})
+            continue
+        if w["kind"] == "resume_lab":
+            if codex_live is None:
+                from .codex import live_jobs
+                try:
+                    codex_live = live_jobs(project.root)
+                except OSError:
+                    codex_live = []
+            job = next((j for j in codex_live if j.get("lab") == w["id"]), None)
+            if job:
+                deferred.append({**w, "last_status": "codex", "retry_in_s": 300, "reason": f"{job['kind']} {job['name']} 还在跑（pid {job.get('pid')}）"})
+                continue
+        ready.append(w)
     return ready, deferred
 
 
@@ -111,21 +156,24 @@ def run_pending(project: Project, only: str | None = None, dry_run: bool = False
         ready, deferred = ready + deferred, []
     results = []
     for w in deferred:
-        results.append({"kind": w["kind"], "id": w["id"], "status": "deferred", "last_status": w["last_status"], "retry_in_s": w["retry_in_s"]})
+        results.append({"kind": w["kind"], "id": w["id"], "status": "deferred", "last_status": w["last_status"], "retry_in_s": w["retry_in_s"],
+                        **({"reason": w["reason"]} if w.get("reason") else {})})
+    max_fail = int(cfg["schedule"].get("max_resume_failures", 3))
     for w in ready:
         prompt = PROMPTS[w["kind"]].format(**w)
+        model, effort = model_for(cfg, w["kind"], w.get("path"), project)
         if dry_run:
-            results.append({"kind": w["kind"], "id": w["id"], "status": "ready", "prompt": prompt})
+            results.append({"kind": w["kind"], "id": w["id"], "status": "ready", "prompt": prompt, "model": model, "effort": effort})
             continue
-        model = cfg["models"]["write"] if w["kind"] in WRITE_KINDS else cfg["models"]["read"]
-        effort = cfg["models"].get("effort")
-        # 该工作项对应文件的 frontmatter 可以单独指定 model / effort（例如任务书里写 model: claude-opus-5-5）
-        try:
-            doc_meta, _ = fm.read(project.root / w["path"])
-            model = doc_meta.get("model") or model
-            effort = doc_meta.get("effort") or effort
-        except (OSError, ValueError):
-            pass
+        if w["kind"] == "resume_lab":
+            info = project.attempt_info(w["kind"], w["id"]) or {}
+            if int(info.get("fails", 0)) >= max_fail:
+                # 连续几次续跑都失败：不再自动试，改 blocked 让首页提醒用户
+                project.set_lab_status(w["id"], "blocked")
+                project.append_log("agent", f"lab {w['id']} 连续 {info.get('fails')} 次续跑失败，改为 blocked 等用户处理", f"labs/{w['id']}/brief.md")
+                project.record_attempt(w["kind"], w["id"], "blocked")
+                results.append({"kind": w["kind"], "id": w["id"], "status": "blocked", "fails": info.get("fails")})
+                continue
         meta = Runner(project).run(prompt, kind=w["kind"], label=f"{w['kind']}:{w['id']}", model=model, effort=effort)
         project.record_attempt(w["kind"], w["id"], meta["status"])
         results.append(meta)
@@ -136,12 +184,12 @@ def run_pending(project: Project, only: str | None = None, dry_run: bool = False
 AUDIT_PROMPTS = {
     "audit_derivation": (
         "用户在 dashboard 点了 labs/{id}/ 的「推导审计」。请按 rd-audit skill 执行：组提示词（kind=derivation，对象 notes.md 及其引用的 wiki 页，"
-        "上下文含 notation、引用的卡片与原文、用户 notes）→ 调 codex-audit.sh → 读报告 → 逐条处理（typo 和非吹毛求疵的不严谨直接改并重跑验证；"
+        "上下文含 notation、引用的卡片与原文、用户 notes）→ codex-audit.sh 启动，用 --wait 在前台等到结束（不要放后台）→ 读报告 → 逐条处理（typo 和非吹毛求疵的不严谨直接改并重跑验证；"
         "改变结论开讨论并把 brief.md 状态改 awaiting_review，不要自己改结论）→ 在 report.md 的 audits、相关 wiki 页的 audited_by、STATUS.md 挂标记 → 记 log → git commit。"
     ),
     "audit_code": (
         "用户在 dashboard 点了 labs/{id}/ 的「代码审计」。请按 rd-audit skill 执行：组提示词（kind=code，对象是脚本、results/、DATA.md、画图脚本；"
-        "先 `rd free-cores` 并把那句话填进 CORES）→ 调 codex-audit.sh → 读报告 → 逐条处理（typo 和非吹毛求疵的不严谨直接改代码并重跑受影响的小尺寸检查；"
+        "先 `rd free-cores` 并把那句话填进 CORES）→ codex-audit.sh 启动，用 --wait 在前台等到结束（不要放后台）→ 读报告 → 逐条处理（typo 和非吹毛求疵的不严谨直接改代码并重跑受影响的小尺寸检查；"
         "改变结论开讨论并把 brief.md 状态改 awaiting_review，不要自己改结论或结果）→ 在 report.md 的 audits、STATUS.md 挂标记 → 记 log → git commit。"
     ),
 }

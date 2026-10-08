@@ -16,6 +16,16 @@ description: 课题文献卡片的建立与更新（research-dashboard 课题目
 5. **互链**：卡片里用 `[[概念]]` 链接 wiki 页；相关 wiki 页的「文献」小节加上这张卡。新概念值得单独一页的，按 rd-wiki 建页。
 6. **记录**：`log.md` 追加一条；如果是 inbox 候选，把 `references/inbox/<id>.md` 的 `status` 改为 `ingested`。
 
+## 在 lab 里批量建卡（文献 lab、补引用链）
+
+一次 lab 要建好几张卡时，主 agent 的上下文不该装进整篇 PDF 的文本：lab 03 用 6 个子 agent 建了 17 张卡，每个子 agent 都把整篇 PDF 灌进上下文，18 分钟就花掉了一次正常 lab 两倍的额度，贵的不是卡，是读法。规矩：
+
+- **数量是预算。** 任务书写了"8–10 张"就是上限；超出的只凭摘要写一句理由挂在 notes 的引用链里，不建卡。已有卡片不重建，只在「与本课题的联系」加一条。
+- **深度决定模型。** 任务书点名要精读、lab 推导要用到其公式或数字的文献：`read_depth: full`，由主 agent 自己读相关章节，或子 agent 用主模型；只为引用链和背景建的卡：`read_depth: skim` 或 `abstract`，子 agent 用 `model: "opus"`（Opus 5.5，effort 仍 xhigh），卡片如实标 `read_depth`。
+- **不整篇灌入。** 抽 PDF 文本后先 `grep -n` 定位节标题、式号和关键词，只读摘要、引言、结论和与课题目标相关的节；一次读不超过两三页的范围。要确认一个公式就读那一页。
+- **子 agent 只带回卡片。** 子 agent 写完 `references/cards/<key>.md` 后只回报：key、`read_depth`、「一句话」和「与本课题的联系」的要点，不把全文摘要贴回主上下文；主 agent 需要细节就读卡片。
+- lab 推导用到的公式、数字，主 agent 最后回 PDF 对应页核对一次（任务书里"每个数能回到页码"就是指这个）。
+
 ## 更新卡片的时机
 
 - lab 收尾：回头看该 lab 引用过的卡片，在「与本课题的联系」追加一条带日期的话，**两三句、不抄数字**，例如"2026-10-02 · lab 03 的 ED 结果与其式 (12) 的 bound 一致，见 lab 03 notes §4"。数字和表格的权威位置是 lab 的 notes/results，卡片只链接。

@@ -96,7 +96,10 @@ def test_lab_comment_triggers_revision(project_dir: Path):
     assert ("revise_brief", "01-first-task") in kinds
     c.post("/api/labs/01-first-task/approve")
     kinds = {w["kind"] for w in c.get("/api/pending").json()["ready"]}
-    assert "revise_brief" not in kinds and "run_lab" in kinds
+    assert "revise_brief" not in kinds
+    # 批准会立刻派一次 tick；如果后台线程已经把 run_lab 排进队列，待办里就不再列它（去重），否则还列着
+    queued = any(str(r.get("label", "")).endswith(":01-first-task") for r in Project(project_dir).runs())
+    assert "run_lab" in kinds or queued
 
 
 def test_audit_reports_and_button(project_dir: Path):

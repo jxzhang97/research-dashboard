@@ -21,6 +21,12 @@ DEFAULTS: dict = {
         "read": "claude-fable-5-1",   # 读文献、推导、跑数值
         "write": "claude-fable-5-1",  # 已弃用：薄层写作由 [writer] 决定
         "effort": "xhigh",            # low / medium / high / xhigh / max（用户默认 extra high，特殊要求才用 max）
+        # 按工作项种类给默认模型：只凭摘要筛 arXiv、把原话挂进问题树这两类文书任务不需要最贵的模型；
+        # 起草任务书、建卡、消化裁决、执行 lab 仍用 read 的模型。任务书 frontmatter 的 model/effort 仍然优先。
+        "kinds": {
+            "arxiv_reason": {"model": "claude-opus-5-5", "effort": "xhigh"},
+            "triage_idea": {"model": "claude-opus-5-5", "effort": "xhigh"},
+        },
     },
     "writer": {
         # 薄层写作步（report.md、wiki 页、idea 当前回答、STATUS.md）交给谁写；见 rd-writer skill
@@ -53,6 +59,8 @@ DEFAULTS: dict = {
         "watch_seconds": 15,   # dashboard 开着时，多久扫一次待办（用户动作本身是立刻触发的）
         "tick_minutes": 60,    # dashboard 没开时 launchd 的兜底间隔
         "retry_minutes": 30,   # 某项失败后多久才重试
+        # running 但没有活着的运行的 lab 会被自动续跑（resume_lab）；连续失败这么多次就改成 blocked 等用户看
+        "max_resume_failures": 3,
         # 用户对讨论的回答不当场消化：每 digest_minutes 统一消化一次，这样互相关联的几个回答能一起考虑（用户 2026-10-04 定为 5 小时）
         "digest_minutes": 300,
     },

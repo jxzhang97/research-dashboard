@@ -25,12 +25,17 @@ description: 薄层写作步（research-dashboard 课题目录内使用）：把
 ## 3. 调用
 
 ```bash
+# 启动：立刻返回，写作在独立会话里跑（不随本次 agent 运行结束而死）
 ~/doc_unsyn/research-dashboard/skills/rd-writer/codex-write.sh <课题根目录> <提示词文件> <记录目录名> [图1.png 图2.png …]
+# 等待：前台阻塞最多 540 秒；退出码 0 完成、7 还在跑（再调一次）、6 Codex 工具执行 fail closed、9 进程消失
+~/doc_unsyn/research-dashboard/skills/rd-writer/codex-write.sh --wait <课题根目录> <记录目录名> 540
+# 只看状态
+~/doc_unsyn/research-dashboard/skills/rd-writer/codex-write.sh --status <课题根目录> <记录目录名>
 ```
 
-脚本做的事：从 `config.toml` 的 `[writer]` 读模型与强度；`codex exec -C <根> -m <model> -c model_reasoning_effort=<effort> -s workspace-write -i <图>… -o last_message.txt "<提示词>" < /dev/null`；把提示词、完整输出、最后回复和 `run_info.txt`（模型、强度、起止时间、耗时、退出码）存到 `.dashboard/writing/<记录目录名>/`。
+脚本做的事（底层是 `rd codex start/wait/status`）：从 `config.toml` 的 `[writer]` 读模型与强度；自动挑可用的 codex（优先 ChatGPT.app 自带的、旁边有 `codex-code-mode-host` 的；没有 host 的独立二进制会 fail closed，输出里出现这句就判失败）；`codex exec -C <根> -m <model> -c model_reasoning_effort=<effort> -s workspace-write -i <图>… -o last_message.txt "<提示词>" < /dev/null`；把提示词、完整输出、最后回复、`job.json`（pid）和 `run_info.txt`（模型、强度、起止时间、耗时、退出码）存到 `.dashboard/writing/<记录目录名>/`。也可用环境变量 `CODEX_BIN` 指定可执行文件。
 
-脚本会在 PATH、`~/.local/bin/codex`、ChatGPT.app 自带的 codex 里找可执行文件（也可用环境变量 `CODEX_BIN` 指定）。studio 上装的是 GitHub release 的独立二进制（`~/.local/bin/codex`，不需要 node）。
+**等的规矩**：不要用 run_in_background 启动、不要靠"等通知"（本次运行一结束它们就被清掉）；用 `--wait`，Bash timeout 设 600000，循环到退出码不是 7。几份页面可以一起启动（各自一个记录目录名），再逐个 `--wait`。退出码 9 或 6 就换个记录目录名重启一次。万一必须在写作结束前退出，先把记录目录名写进 `labs/NN-slug/resume.md` 续跑单，系统会派续跑运行接着做机械检查。
 
 已知的坑：`codex exec` 必须 `< /dev/null`，否则会停在 "Reading additional input from stdin" 不动；0.160 的 `exec` 不认 `--full-auto`，用 `-s workspace-write`；输出开头的 `skills scan reached its traversal limit` 是无害的；每台机器要各自 `codex login`（ChatGPT 账号），`codex login status` 能看。
 

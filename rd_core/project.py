@@ -11,7 +11,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 
-from . import fm
+from . import config, fm
 
 WIKILINK_RE = re.compile(r"\[\[([^\]|#]+)(?:#[^\]|]*)?(?:\|([^\]]*))?\]\]")
 LOG_ENTRY_RE = re.compile(r"^## (\d{4}-\d{2}-\d{2}(?: \d{2}:\d{2})?)\s*·\s*(.*)$")
@@ -226,7 +226,54 @@ class Project:
                 if d.is_dir() and (d / "brief.md").exists() and not d.name.startswith("."):
                     docs.append(self._lab_doc(d))
         docs.sort(key=lambda d: d.id, reverse=True)
+        self._annotate_runs(docs)
         return docs
+
+    # ---------- 活着的运行（去重派发、续跑判断都靠它） ----------
+    def live_runs(self) -> list[dict]:
+        """status 为 queued/running 且不陈旧的运行记录。running 以 started + timeout 为限；
+        queued 只有 id 里的时间戳，排队超过一天当作陈旧（服务器死了留下的）。"""
+        timeout = int(config.load(self.root)["agent"].get("timeout_minutes", 240)) * 60 + 600
+        now = time.time()
+        out = []
+        for m in self.runs(200):
+            st = m.get("status")
+            if st == "running":
+                try:
+                    t = datetime.strptime(m.get("started") or "", "%Y-%m-%d %H:%M:%S").timestamp()
+                except ValueError:
+                    t = 0
+                if now - t < timeout:
+                    out.append(m)
+            elif st == "queued":
+                try:
+                    t = datetime.strptime(str(m.get("id", ""))[:15], "%Y%m%d-%H%M%S").timestamp()
+                except ValueError:
+                    t = 0
+                if now - t < 86400:
+                    out.append(m)
+        return out
+
+    @staticmethod
+    def _run_for_lab(runs: list[dict], lab_id: str) -> dict | None:
+        for m in runs:
+            if str(m.get("label", "")).endswith(f":{lab_id}"):
+                return m
+        return None
+
+    def last_lab_run(self, lab_id: str) -> dict | None:
+        """最近一次与这个 lab 有关的运行（任何状态），给续跑提示词用。"""
+        return self._run_for_lab(self.runs(200), lab_id)
+
+    def _annotate_runs(self, docs: list[Doc]) -> None:
+        """status 为 running 但没有活着的运行 → stale_run（上次运行中断，等自动续跑）。"""
+        if not any(d.meta.get("status") == "running" for d in docs):
+            for d in docs:
+                d.extra["stale_run"] = False
+            return
+        live = self.live_runs()
+        for d in docs:
+            d.extra["stale_run"] = d.meta.get("status") == "running" and self._run_for_lab(live, d.id) is None
 
     # ---------- 审计报告（labs/NN/audit/*.md，见 rd-audit skill） ----------
     def _audits(self, d: Path) -> list[dict]:
@@ -274,6 +321,8 @@ class Project:
     def lab(self, lab_id: str) -> Doc:
         d = self.safe_path(f"labs/{lab_id}")
         doc = self._lab_doc(d)
+        self._annotate_runs([doc])
+        doc.extra["has_resume"] = (d / "resume.md").exists()
         for name in ("report.md", "DATA.md"):
             p = d / name
             if p.exists():
@@ -481,11 +530,28 @@ class Project:
     # 工作项的最近一次尝试：失败后一段时间内不重试，避免登录失效之类的问题每 15 秒撞一次
     def record_attempt(self, kind: str, id_: str, status: str) -> None:
         s = self.state()
-        s.setdefault("attempts", {})[f"{kind}:{id_}"] = {"t": time.time(), "status": status}
+        key = f"{kind}:{id_}"
+        prev = s.setdefault("attempts", {}).get(key) or {}
+        fails = 0 if status == "done" else int(prev.get("fails", 0)) + 1  # 连续失败次数，续跑上限用
+        s["attempts"][key] = {"t": time.time(), "status": status, "fails": fails}
         self._save_state(s)
 
     def attempt_info(self, kind: str, id_: str) -> dict | None:
         return self.state().get("attempts", {}).get(f"{kind}:{id_}")
+
+    # Claude 额度用尽：runner 看到 limit 提示就记下重置时刻，到时之前什么都不派
+    def set_pause(self, until: float, reason: str = "") -> None:
+        s = self.state()
+        s["paused_until"] = float(until)
+        s["pause_reason"] = reason[:300]
+        self._save_state(s)
+
+    def pause_info(self) -> dict | None:
+        s = self.state()
+        until = float(s.get("paused_until") or 0)
+        if until > time.time():
+            return {"until": until, "reason": s.get("pause_reason", ""), "until_str": datetime.fromtimestamp(until).strftime("%m-%d %H:%M")}
+        return None
 
     def is_unread(self, kind: str, id_: str, mtime: float) -> bool:
         return self.state().get("seen", {}).get(f"{kind}:{id_}", 0) < mtime
@@ -560,10 +626,20 @@ class Project:
         for d in self.inbox():
             if d.meta.get("status") == "approved":
                 work.append({"kind": "ingest_reference", "id": d.id, "path": d.path, "title": d.title})
-        for d in self.labs():
-            if d.meta.get("status") == "approved":
+        # lab：已批准的派执行；running 但没有活着的运行的派续跑（上次运行被额度/超时/自己提前结束打断）。
+        # 已有排队或运行中的记录就不再派，网页批准与 tick 扫描相隔几秒时不会派两次。旧 lab 先。
+        live = self.live_runs()
+        for d in sorted(self.labs(), key=lambda x: x.id):
+            st = d.meta.get("status")
+            busy = self._run_for_lab(live, d.id) is not None
+            if st == "approved" and not busy:
                 work.append({"kind": "run_lab", "id": d.id, "path": d.path, "title": d.title})
-            elif d.meta.get("comments_pending") and d.meta.get("status") in ("awaiting_review", "draft", "parked"):
+            elif st == "running" and not busy:
+                last = self.last_lab_run(d.id) or {}
+                work.append({"kind": "resume_lab", "id": d.id, "path": d.path, "title": d.title,
+                             "last_run_id": last.get("id", "（没有记录）"), "last_run_status": last.get("status", "?"),
+                             "last_run_result": " ".join(str(last.get("result") or "（无）").split())[:400]})
+            elif d.meta.get("comments_pending") and st in ("awaiting_review", "draft", "parked"):
                 work.append({"kind": "revise_brief", "id": d.id, "path": d.path, "title": d.title})
         for d in self.ideas():
             if d.meta.get("promote_requested") and not d.meta.get("promoted_lab"):

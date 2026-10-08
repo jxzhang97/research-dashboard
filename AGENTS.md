@@ -10,6 +10,8 @@
 4. `log.md` 最近 20 条：别人（包括上一次的你）刚做了什么。
 5. 与当前任务相关的 `labs/`、`ideas/`、`discussion/` 文件。
 
+例行文书任务（整理想法、只凭摘要筛 arXiv）按提示词给的精简清单读，不必通读 wiki 页、卡片和 lab notes；续跑一个 lab 时先读它的 `resume.md`，不整体重读 notes。
+
 ## 1. 目录与职责
 
 | 目录 | 放什么 | 谁写 |
@@ -68,7 +70,7 @@
 
 **图**：每个 lab 的图放 `labs/NN-slug/fig/`，PNG 或 SVG，`report.md` 和 `notes.md` 用 `![图注](fig/xxx.png)` 内嵌，图注写"看哪里 → 看到什么 → 说明什么"，网页上 alt 文字就是图注。图分四种角色：问题设定、主结果、机制解释、可靠性检查；首屏只放主结果和设定。wiki 概念页尽量配一张示意图（`wiki/fig/<slug>-*.svg|png`）。数据图用 matplotlib（`savefig(..., dpi=160, bbox_inches="tight")`），示意图手画 SVG 或 matplotlib；每张图坐标轴有标签和单位；原始数据和脚本留在 lab 文件夹。
 
-**模型**：`[models].read` 跑研究（默认 `claude-fable-5-1`、effort `xhigh`）；`[writer]` 写薄层（默认 `backend = "codex"`、`model = "gpt-6-astra"`、`reasoning_effort = "xhigh"`，跑自动任务的机器上要先 `codex login`）。用户可以在任务书或 idea 的 frontmatter 写 `model:` / `effort:` 单独指定研究模型；用户在对话里说"写报告用 X"之类的，写进任务书 frontmatter。
+**模型**：`[models].read` 跑研究（默认 `claude-fable-5-1`、effort `xhigh`）；`[models.kinds]` 按工作项种类给默认（arXiv 摘要筛选、想法整理默认 `claude-opus-5-5` + `xhigh`，起草任务书、建卡、消化裁决、执行与续跑 lab 仍用 read 的模型）；`[writer]` 写薄层（默认 `backend = "codex"`、`model = "gpt-6-astra"`、`reasoning_effort = "xhigh"`，跑自动任务的机器上要先 `codex login`）。用户可以在任务书或 idea 的 frontmatter 写 `model:` / `effort:` 单独指定研究模型；用户在对话里说"写报告用 X"之类的，写进任务书 frontmatter。lab 里批量建卡的子 agent：精读卡用主模型，只为引用链建的 skim/abstract 卡用 `model: "opus"`，见 rd-reference。
 
 ## 3. Notation
 
@@ -143,3 +145,11 @@ rd tick <课题目录>                       # 处理所有待办（回答、审
 - 发现分三档。`typo` 和 `不严谨` 由你直接改，改完在报告「处理」一节记一行；`改变结论` 不自己改，开讨论让用户裁决，lab 状态 `awaiting_review`，并且不写薄层。
 - **什么算不严谨、什么算吹毛求疵**：不严谨 = 读者照 notes 自己重推会在这一步卡住或得出不同的适用范围（假设没交代、极限交换没检查、范围没标、记号没定义、收敛没展示）。吹毛求疵 = 换种写法更清楚、可以多加一句、记号偏好、教科书通常省略的中间步、与结论无关的细节。判据只有一条：不改，读者会被误导或结论会错吗？答不上来的发现可以不予理会，但要在「处理」里写一句为什么。
 - 审计标记要挂到看得见的地方：`report.md` 的 `audits:`、wiki 页的 `audited_by:`、`STATUS.md` 问题行末尾。
+
+## 12. 后台进程、续跑与额度
+
+- **无人值守运行是一次性进程**：它一结束，用 Claude Code 后台任务（run_in_background）起的进程一起被清掉，"等通知"永远等不到。Codex 审计/写作只用 `codex-audit.sh` / `codex-write.sh` 启动（它们自己脱离父进程、记 pid），用 `--wait` 在前台等（单次最多 540 秒，Bash timeout 600000，循环到退出码不是 7）；数值批量用 `nohup … &` 启动、`rd jobs claim` 登记 pid、留完成标记文件。
+- **续跑单**：lab 每到一个里程碑和每次运行结束前更新 `labs/NN-slug/resume.md`（做完了什么、还差什么、在等哪个进程、下一步具体命令），半页以内，模板见 rd-lab B.6。
+- **自动续跑**：lab 状态 `running` 但没有活着的运行（上次被额度、超时打断或在等外部进程时结束），调度器会派 `resume_lab` 运行；续跑接着做、不重做、不整体重读 notes（rd-lab D 节）；该 lab 的 Codex 作业还活着时调度器先等它。连续三次续跑失败改 `blocked`。运行结束时 lab 状态只能是 `done` / `waiting_answer` / `awaiting_review` / `blocked`，或仍在等外部进程的 `running`。
+- **额度**：运行输出里出现 Claude 的 limit 提示（"hit your session limit · resets …"），调度器记下重置时刻，到时之前不派任何任务；所以每到里程碑就 commit 并更新续跑单，被打断时损失只有最后一小段。
+- **同一个 lab 不会被派两次**：已有排队或运行中的记录时，批准、tick、文件监视都不再派。

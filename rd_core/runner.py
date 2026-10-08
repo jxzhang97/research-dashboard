@@ -6,12 +6,13 @@ from __future__ import annotations
 import fcntl
 import json
 import os
+import re
 import shlex
 import signal
 import subprocess
 import threading
 import time
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 
 from . import config, registry
@@ -23,7 +24,40 @@ HEADLESS_RULES = """
 2. 只在课题目录内写文件；大的中间数据写到 config.toml 的 data_root 下，并在 lab 文件夹留 DATA.md。
 3. 结束前：更新受影响的卡片/wiki/idea 状态，追加 log.md，然后 `git add -A && git commit -m "<简述>"`（如果课题目录是 git 仓库）。
 4. 最后一条输出用三到五行中文总结：做了什么、改了哪些文件、还有什么没做。
+5. 本次运行一结束，你用 Claude Code 后台任务（run_in_background）起的进程会一起被清掉。所以：Codex 审计/写作只用 codex-audit.sh / codex-write.sh 启动（它们自己脱离父进程），用它们的 `--wait` 在前台等（单次最多 540 秒，Bash timeout 设 600000，循环到返回 0）；数值批量用 `nohup … &` 启动并 `rd jobs claim` 登记 pid。不要用 run_in_background 跑任何必须活过本次运行的东西，也不要靠"等通知"。
+6. 如果结束时 lab 的状态仍是 running（在等数值或 Codex），先更新 `labs/<id>/resume.md` 续跑单（做完了什么、还差什么、在等哪个进程、下一步具体命令和要看的文件），再结束；系统会在没有活着的运行时自动派续跑。续跑运行从续跑单、brief、report 开始，不整体重读 notes。lab 状态只能停在 done / waiting_answer / awaiting_review / blocked，或仍在等外部进程的 running。
 """.strip()
+
+# Claude 订阅额度用尽时的提示；看到它就暂停派发，到重置时刻再试
+LIMIT_RE = re.compile(r"(hit your (?:session|weekly|usage) limit|reached your [\w .]*limit|usage limit reached)", re.I)
+RESET_RE = re.compile(r"resets?\s+(?:at\s+)?(\d{1,2}(?::\d{2})?\s*(?:am|pm)?)\s*\(([^)]+)\)", re.I)
+
+
+def parse_reset(msg: str, now: float | None = None) -> float:
+    """从 "resets 5:50am (America/Los_Angeles)" 算出重置时刻（epoch 秒，加两分钟余量）；认不出就一小时后。"""
+    now = now if now is not None else time.time()
+    m = RESET_RE.search(msg or "")
+    if not m:
+        return now + 3600
+    t, tz = m.group(1).strip().lower(), m.group(2).strip()
+    try:
+        from zoneinfo import ZoneInfo
+        zone = ZoneInfo(tz)
+    except Exception:  # noqa: BLE001
+        return now + 3600
+    mm = re.match(r"(\d{1,2})(?::(\d{2}))?\s*(am|pm)?", t)
+    if not mm:
+        return now + 3600
+    h, mi, ap = int(mm.group(1)), int(mm.group(2) or 0), mm.group(3)
+    if ap == "pm" and h < 12:
+        h += 12
+    if ap == "am" and h == 12:
+        h = 0
+    cur = datetime.fromtimestamp(now, zone)
+    target = cur.replace(hour=h, minute=mi, second=0, microsecond=0)
+    if target.timestamp() <= now:
+        target = target + timedelta(days=1)
+    return target.timestamp() + 120
 
 
 def _run_dir(project: Project, run_id: str) -> Path:
@@ -185,6 +219,7 @@ class Runner:
 
                 threading.Thread(target=killer, daemon=True).start()
                 assert proc.stdout is not None
+                limit_msg = ""
                 for line in proc.stdout:
                     raw.write(line)
                     raw.flush()
@@ -201,6 +236,8 @@ class Runner:
                     txt = _fmt_event(ev)
                     if txt:
                         self._log(d, txt, on_line)
+                        if not limit_msg and LIMIT_RE.search(txt):
+                            limit_msg = next((ln for ln in txt.splitlines() if LIMIT_RE.search(ln)), txt).strip()[:300]
                 proc.wait()
                 if (d / "STOP").exists():
                     meta["status"] = "stopped"
@@ -212,6 +249,13 @@ class Runner:
                 if last_result:
                     meta["result"] = str(last_result.get("result", ""))[:4000]
                     meta["cost_usd"] = last_result.get("total_cost_usd")
+                    if LIMIT_RE.search(meta["result"]):
+                        limit_msg = meta["result"][:300]
+                if limit_msg and meta["status"] != "done":
+                    until = parse_reset(limit_msg)
+                    self.project.set_pause(until, limit_msg)
+                    meta["limit"] = limit_msg
+                    self._log(d, f"⏸ Claude 额度用尽，暂停派发到 {datetime.fromtimestamp(until).strftime('%m-%d %H:%M')}：{limit_msg}", on_line)
             except Exception as e:  # noqa: BLE001
                 meta["status"] = "failed"
                 self._log(d, f"运行器异常: {e!r}", on_line)

@@ -28,10 +28,23 @@ description: 推导与代码的独立审计步（research-dashboard 课题目录
 ## 2. 调用
 
 ```bash
+# 启动：立刻返回，审计在独立会话里跑（不随本次 agent 运行结束而死），打印 pid 与记录目录
 ~/doc_unsyn/research-dashboard/skills/rd-audit/codex-audit.sh <课题根目录> <提示词文件> <记录目录名>
+# 等待：在前台阻塞，最多 540 秒；退出码 0 完成、7 还在跑（再调一次）、6 Codex 工具执行 fail closed、9 进程消失
+~/doc_unsyn/research-dashboard/skills/rd-audit/codex-audit.sh --wait <课题根目录> <记录目录名> 540
+# 只看状态
+~/doc_unsyn/research-dashboard/skills/rd-audit/codex-audit.sh --status <课题根目录> <记录目录名>
 ```
 
-和 `codex-write.sh` 同一套：读 `[auditor]` 的模型与强度，`codex exec -s workspace-write`，记录在 `.dashboard/auditing/<记录目录名>/`。Codex 不可用（没装、没登录、失败）：记 log，`report.md` 的 `audits` 留空，继续收尾，**不用别的模型代审**。
+和 `codex-write.sh` 同一套（底层是 `rd codex start/wait/status`）：读 `[auditor]` 的模型与强度，自动挑可用的 codex（优先 ChatGPT.app 自带的、旁边有 `codex-code-mode-host` 的那个；没有 host 的独立二进制会 fail closed，输出里有这句就判失败），`codex exec -s workspace-write`，记录在 `.dashboard/auditing/<记录目录名>/`（`job.json` 有 pid、`run_info.txt` 有开始行和结束行）。
+
+**等的规矩**（无人值守运行尤其重要）：
+- **不要用 run_in_background 启动，不要靠"等通知"。** 本次运行一结束，后台任务一起被清掉；lab 02 的审计就是这样死的。用上面的 `--wait`，Bash 的 timeout 设 600000，循环调用直到退出码不是 7。推导审计通常 10–20 分钟。
+- 等的间隙可以做不依赖审计结果的收尾（C4 的卡片回写、`wiki/index.md`），但薄层不能写。
+- 退出码 9（进程消失）或 6（fail closed）：重新启动一次（换个记录目录名）；再失败就记 log、`report.md` 的 `audits` 留空、继续收尾，**不用别的模型代审**。
+- 万一本次运行必须在审计结束前退出（例如额度告急）：更新 `labs/NN-slug/resume.md` 续跑单写明记录目录名，系统会在审计结束后派续跑运行接着处理报告（调度器看到该 lab 的 codex 作业还活着会先等）。
+
+Codex 不可用（没装、没登录、失败）：记 log，`report.md` 的 `audits` 留空，继续收尾，**不用别的模型代审**。
 
 ## 2b. 报告长什么样
 

@@ -148,11 +148,14 @@ def cmd_run(args):
 def cmd_tick(args):
     from .tick import run_pending
     proj = _project(args.path)
+    pause = proj.pause_info()
+    if pause and not args.force:
+        print(f"⏸ Claude 额度用尽，暂停派发到 {pause['until_str']}（{pause['reason']}）；--force 可无视")
     res = run_pending(proj, only=args.only, dry_run=args.dry_run, force=args.force)
     if not res:
         print("没有待处理项")
     for r in res:
-        print(json.dumps({k: v for k, v in r.items() if k in ("kind", "id", "status", "prompt", "last_status", "retry_in_s")}, ensure_ascii=False))
+        print(json.dumps({k: v for k, v in r.items() if k in ("kind", "id", "status", "prompt", "last_status", "retry_in_s", "reason", "model", "effort", "fails")}, ensure_ascii=False))
 
 
 def cmd_digest(args):
@@ -178,12 +181,16 @@ def cmd_arxiv(args):
     print(json.dumps(res, ensure_ascii=False, indent=1))
     if not args.dry_run and res.get("written") and not args.no_agent:
         from .runner import Runner
+        from .tick import model_for
         n = len(res["written"])
+        cfg = config.load(proj.root)
         prompt = (f"references/inbox/ 里刚新增 {n} 篇 arXiv 候选（status: pending，reason 为空）。请按 rd-arxiv skill："
                   f"读 PROJECT.md 和 wiki/index.md，只凭摘要判断每篇和本课题的关系，给每篇写一两句「为什么可能相关」到 reason 字段"
                   f"和正文对应小节（注明仅基于摘要）；明显无关的直接把 status 改为 rejected 并写明理由；"
-                  f"最多保留 {config.load(proj.root)['arxiv']['max_per_day']} 篇 pending 等用户审批。不要下载 PDF。")
-        Runner(proj).run(prompt, kind="arxiv_reason", label="arxiv-reason")
+                  f"最多保留 {cfg['arxiv']['max_per_day']} 篇 pending 等用户审批。不要下载 PDF。"
+                  f"这是文书任务，AGENTS.md §0 的通读对它放宽：除 PROJECT.md、STATUS.md、wiki/index.md 和候选文件本身外，不要通读 wiki 页、卡片、lab notes 或 log。")
+        model, effort = model_for(cfg, "arxiv_reason")
+        Runner(proj).run(prompt, kind="arxiv_reason", label="arxiv-reason", model=model, effort=effort)
 
 
 # ---------- cores / jobs ----------
@@ -277,6 +284,8 @@ def main(argv=None):
     p = sub.add_parser("projects", help="本机登记的课题、端口和运行状态"); p.set_defaults(fn=cmd_projects)
     p = sub.add_parser("scheduler", help="launchd 定时任务"); p.add_argument("action", choices=["install", "uninstall", "status"]); p.add_argument("path"); p.set_defaults(fn=cmd_scheduler)
     p = sub.add_parser("doctor", help="检查断链、缺节、状态"); p.add_argument("path"); p.set_defaults(fn=cmd_doctor)
+    from .codex import add_parser as _codex_parser
+    _codex_parser(sub)
 
     args = ap.parse_args(argv)
     try:

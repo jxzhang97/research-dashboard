@@ -10,6 +10,12 @@ data_root = "~/doc_unsyn/{name}"   # 大的中间数据放这里（studio），�
 read = "claude-fable-5-1"    # 读文献、推导、跑数值、写 notes.md
 effort = "xhigh"             # low / medium / high / xhigh / max；默认 extra high，特殊要求才 max
 
+[models.kinds]
+# 按工作项种类的默认模型。只凭摘要筛 arXiv、把原话挂进问题树这两类文书任务用 Opus（强度照样 xhigh）；
+# 起草任务书、建卡、消化裁决、执行与续跑 lab 仍用上面 read 的模型。任务书 frontmatter 的 model/effort 优先。
+arxiv_reason = { model = "claude-opus-5-5", effort = "xhigh" }
+triage_idea = { model = "claude-opus-5-5", effort = "xhigh" }
+
 [writer]
 # 薄层写作步（report.md、wiki 页、idea 当前回答、STATUS.md）交给 Codex（ChatGPT 账号登录，跑自动任务的机器上先 `codex login`）；见 rd-writer skill
 backend = "codex"

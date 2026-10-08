@@ -63,6 +63,23 @@ created: 2026-10-02
 3. 推导、分析、方法说明都进 `notes.md`，按 rd-notes skill，在同一上下文里写（谁推导谁写）。
 4. 数值：先 `rd free-cores <课题目录>`，按建议设线程数并 `rd jobs claim … --pid <批量进程>`；大数据写到 `data_root/<lab id>/`，跑完 `rd jobs release`。脚本放本 lab 文件夹，可复用的提到 `src/`。
 5. 中途的小结论随时写进 `report.md`（草稿状态，首屏可以先只有「问题」和「当前回答（初步）」），避免运行中断什么都没留下。
+6. **续跑单 `resume.md`**：每到一个里程碑（批量启动、厚层齐、审计启动、交接单写完、每次 commit）就更新 `labs/NN-slug/resume.md`，运行结束前必须更新一次。它是写给下一次运行的你的，只回答四件事：做完了什么（指向文件，不复述内容）；还差什么（按顺序）；在等哪个外部进程（数值批量的 pid 与完成标记、Codex 审计/写作的记录目录名）；下一步具体跑哪条命令、看哪个文件。半页以内。模板：
+
+   ```markdown
+   ---
+   updated: 2026-10-08 12:00
+   stage: 厚层未齐 | 等数值 | 审计进行中 | 审计待处理 | 交接单未写 | 薄层未写 | 回写未完
+   waiting_on: 无 | 批量 pid 12345（results/batch.log 出现 BATCH_ALL_DONE） | codex audit 2026-10-08-lab02-derivation-3
+   ---
+   ## 已完成
+   - notes §0–§5 已写并 commit（a1b2c3d）；fig/main.png 已出
+   ## 未完成（按顺序）
+   1. 等审计报告 → 逐条处理 → 2. handoff.md → 3. 薄层三份 → 4. 卡片回写、index、log、done
+   ## 下一步
+   - `codex-audit.sh --wait . 2026-10-08-lab02-derivation-3 540`，报告在 audit/2026-10-08-gpt-6-astra-derivation.md
+   ```
+7. **后台进程**：Codex 审计/写作只用 `codex-audit.sh` / `codex-write.sh` 启动并用 `--wait` 前台等（它们自己脱离父进程）；数值批量用 `nohup … &` 启动、`rd jobs claim` 登记 pid、留完成标记文件。**不要用 Claude Code 的 run_in_background 跑任何必须活过本次运行的东西**，本次运行一结束它们就被清掉。
+8. 运行结束时状态只能是 `done` / `waiting_answer` / `awaiting_review` / `blocked`，或仍在等外部进程的 `running`（续跑单写清在等什么）。`running` 且没有活着的运行的 lab，系统会自动派续跑（D 节）。
 
 ## C. 收尾
 
@@ -70,7 +87,7 @@ created: 2026-10-02
 - `notes.md`、`fig/`（关键图至少一张结果图加一张问题设定示意图）、`results/`、`DATA.md`（有大数据时：机器、绝对路径、内容、日期、重新生成命令）。
 
 ### C1b. 推导审计（自动，按 rd-audit skill）
-厚层齐了、交接单还没写之前，把 `notes.md`（和它引用的 wiki 页）交给 Codex 独立审计：组提示词 → `codex-audit.sh` → 读报告 → 逐条处理（`typo`、非吹毛求疵的 `不严谨` 直接改并重跑验证脚本；`改变结论` 开讨论、`status: awaiting_review`、**停在这里不写薄层**）→ `report.md` frontmatter 记 `audits:`。`[auditor]` 的 `auto_derivation = false` 时跳过。代码审计不自动做，用户在 lab 页点按钮才做。
+厚层齐了、交接单还没写之前，把 `notes.md`（和它引用的 wiki 页）交给 Codex 独立审计：组提示词 → `codex-audit.sh` 启动 → `--wait` 在前台等到结束（不放后台，见 B.7）→ 读报告 → 逐条处理（`typo`、非吹毛求疵的 `不严谨` 直接改并重跑验证脚本；`改变结论` 开讨论、`status: awaiting_review`、**停在这里不写薄层**）→ `report.md` frontmatter 记 `audits:`。`[auditor]` 的 `auto_derivation = false` 时跳过。代码审计不自动做，用户在 lab 页点按钮才做。
 
 ### C2. 交接单 `handoff.md`
 给写作步用，写作者没看过任何一次运行。内容：读者是谁；用户原来问什么；这次回答了什么（分**已证明 / 数值支持 / 解释与猜测**三档，每档带适用范围）；**哪些话不能说过头**（逐条）；材料在哪（notes 节号、表、图及每张图的角色）；要写哪些文件、用什么模板。
@@ -82,13 +99,22 @@ created: 2026-10-02
 - 来源 idea 的「当前回答」与 frontmatter `verdict:`（只改这两处，原话不动）；
 - `STATUS.md` 里对应问题的那一行和「进行中 / 等你决定」。
 
-多个目标可以分几次调用（每次一两个文件，图随提示词附上）。写完后研究 agent **只做机械检查**：目标文件在、没碰别的文件、图和链接能打开、`rd doctor` 无断链；不核对、不改写它的文字。Codex 不可用时记 log，薄层留到下次。
+多个目标可以分几次调用（每次一两个文件，图随提示词附上），可以一起启动、再逐个 `--wait`（见 rd-writer §3；不放后台）。写完后研究 agent **只做机械检查**：目标文件在、没碰别的文件、图和链接能打开、`rd doctor` 无断链；不核对、不改写它的文字。Codex 不可用时记 log，薄层留到下次。
 
 ### C4. 其余回写（每样一句话加链接）
 - 卡片「与本课题的联系」：本 lab 用到的每张卡片加两三句，不抄数字。
 - `wiki/index.md`：新页加一行。
 - 新问题 → discussion。
 - `log.md` 追加；`brief.md` 的 `status: done`；git commit。
+
+## D. 续跑（上一次运行中断之后）
+
+调度器发现某个 lab 是 `running` 但没有活着的运行（上次运行被额度用尽、超时打断，或自己在等数值/Codex 时结束了），就派一次 `resume_lab` 运行。续跑的原则是**接着做，不重做，不重读**：
+
+1. 先读 `resume.md`（没有就读 `brief.md`、`report.md`、log 末尾本 lab 的几条、看 `handoff.md` 与 `audit/` 在不在），再用 `codex-audit.sh --status` / `codex-write.sh --status` 看 `.dashboard/auditing`、`.dashboard/writing` 里本 lab 的记录：有结束行就是跑完了，没结束行且 pid 不在就是被杀了。
+2. 判断停在哪一步（厚层未齐 / 等数值 / 审计被杀或进行中 / 审计报告已出未处理 / 交接单未写 / 薄层未写 / 只差回写与 commit），从那一步继续。`notes.md` 只读与下一步直接相关的小节，不整体重读；已 commit 的东西不重算。
+3. Codex 作业还活着就 `--wait`；死了没结果就换个记录目录名重启。数值批量还在跑就核对进度、更新续跑单、结束运行（调度器会再派）。
+4. 收尾仍按 C 节；结束前更新 `resume.md`。连续三次续跑失败，调度器会把 lab 改成 `blocked` 让用户看。
 
 ### report.md 模板
 

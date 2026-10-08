@@ -283,7 +283,7 @@
     if (id) return pages.lab(id);
     const list = await api("/api/labs");
     const rows = list.map((x) => `<li class="lab-row"><span class="t"><a href="#/labs/${esc(x.id)}"><b>${esc(x.short || x.title)}</b></a> <span class="small muted">${esc(x.id)}</span>
-        ${x.answer ? answerHtml(x.answer) : x.question ? answerHtml("问题：" + x.question, "answer muted") : ""}</span>${chip(x.meta.status)}${auditChip(x.audit)}${x.meta.machine ? `<span class="chip">${esc(x.meta.machine)}</span>` : ""}<span class="small muted">${esc(x.updated)}</span></li>`).join("");
+        ${x.answer ? answerHtml(x.answer) : x.question ? answerHtml("问题：" + x.question, "answer muted") : ""}</span>${chip(x.meta.status)}${x.stale_run ? `<span class="chip blocked" title="上次运行已结束但任务没收尾；系统会自动派续跑（额度用尽时等重置）">运行中断·等续跑</span>` : ""}${auditChip(x.audit)}${x.meta.machine ? `<span class="chip">${esc(x.meta.machine)}</span>` : ""}<span class="small muted">${esc(x.updated)}</span></li>`).join("");
     main.innerHTML = `<h1>Lab</h1><p class="muted small">每个任务一个文件夹：任务书 brief.md、摘要 report.md（首屏：问题 / 当前回答 / 为什么信 / 边界）、推导与分析 notes.md、数据去向 DATA.md。想法页里可以把问题升级成 lab。</p><div class="panel"><ul class="list">${rows || "<li class='muted'>还没有任务</li>"}</ul></div>`;
     renderAnswers();
   };
@@ -298,7 +298,7 @@
     const files = (d.files || []).map((f) => /\.md$/i.test(f.name) ? `<li><a href="${docRoute(f.path)}">${esc(f.name)}</a> <span class="muted small">${(f.size / 1024).toFixed(1)} KB</span></li>` : `<li><a href="/api/file?path=${encodeURIComponent(f.path)}" target="_blank">${esc(f.name)}</a> <span class="muted small">${(f.size / 1024).toFixed(1)} KB</span></li>`).join("");
     const short = d.short && d.short !== d.title ? d.short : d.title;
     main.innerHTML = `<p><a href="#/labs">← Lab</a></p><h1>${esc(short)}</h1>${short !== d.title ? `<p class="subtitle muted">${esc(d.title)}</p>` : ""}
-      <div class="meta">${chip(st)}<span>${esc(id)}</span>${m.idea ? `<a href="#/ideas/${esc(m.idea)}">来自问题：${esc(m.idea)}</a>` : ""}${(m.discussions || []).map((x) => `<a href="#/discussion/${esc(x)}">讨论 ${esc(x)}</a>`).join("")}${m.machine ? `<span>机器：${esc(m.machine)}</span>` : ""}<span>更新：${esc(d.updated)}</span></div>
+      <div class="meta">${chip(st)}${d.stale_run ? `<span class="chip blocked" title="上次运行已结束但任务没收尾；系统会自动派续跑（额度用尽时等重置）">运行中断·等续跑</span>` : ""}${d.has_resume ? `<a href="${docRoute(labDir + "/resume.md")}">续跑单</a>` : ""}<span>${esc(id)}</span>${m.idea ? `<a href="#/ideas/${esc(m.idea)}">来自问题：${esc(m.idea)}</a>` : ""}${(m.discussions || []).map((x) => `<a href="#/discussion/${esc(x)}">讨论 ${esc(x)}</a>`).join("")}${m.machine ? `<span>机器：${esc(m.machine)}</span>` : ""}<span>更新：${esc(d.updated)}</span></div>
       <p>${st === "awaiting_review" ? `<button class="primary" id="approve">批准，开始执行</button> ` : ""}
          ${["running", "approved"].includes(st) ? "" : `<button id="park">搁置</button> `}${st === "parked" ? `<button id="unpark">恢复为待过目</button>` : ""} ${notesBtn} ${pdfs} ${handoff}</p>
       <p class="small">审计：${auditLine}</p>

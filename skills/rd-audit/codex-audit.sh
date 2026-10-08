@@ -1,51 +1,18 @@
 #!/bin/bash
 # 审计步：用 Codex 按提示词独立审计推导或代码。见 rd-audit/SKILL.md。
-# 用法：codex-audit.sh <课题根目录> <提示词文件> <记录目录名>
-# 记录（提示词、完整输出、最后回复、run_info）写到 <课题根>/.dashboard/auditing/<记录目录名>/
+# 作业在独立会话里跑，不随 agent 的运行结束而死；启动后立刻返回，用 --wait 前台等。
+#   codex-audit.sh <课题根目录> <提示词文件> <记录目录名>            启动（立刻返回，打印 pid 与记录目录）
+#   codex-audit.sh --wait <课题根目录> <记录目录名> [最多等几秒]      前台等待，默认 100 秒；退出码 0 完成、7 还在跑、6 工具执行 fail closed、9 进程消失
+#   codex-audit.sh --status <课题根目录> <记录目录名>                 只看状态
+#   codex-audit.sh --sync <课题根目录> <提示词文件> <记录目录名>      启动并一直等到结束（交互会话用）
+# 记录（提示词、完整输出、最后回复、run_info、pid）在 <课题根>/.dashboard/auditing/<记录目录名>/
 set -u
-ROOT="$(cd "$1" && pwd)"; PROMPT="$2"; NAME="$3"
-REC="$ROOT/.dashboard/auditing/$NAME"; mkdir -p "$REC"
-cp "$PROMPT" "$REC/prompt.md"
-
-# [auditor] 配置：model / reasoning_effort（缺省 gpt-6-astra / xhigh）
-read -r MODEL EFFORT <<<"$(python3 - "$ROOT/config.toml" <<'PY'
-import sys, tomllib
-try:
-    a = tomllib.load(open(sys.argv[1], "rb")).get("auditor", {})
-except Exception:
-    a = {}
-print(a.get("model", "gpt-6-astra"), a.get("reasoning_effort", "xhigh"))
-PY
-)"
-
-CODEX="${CODEX_BIN:-}"
-for cand in "$CODEX" "$(command -v codex 2>/dev/null)" "$HOME/.local/bin/codex" "/opt/homebrew/bin/codex" \
-            "/Applications/ChatGPT.app/Contents/Resources/codex-cli/CodexCLI.app/Contents/MacOS/codex"; do
-  [ -n "$cand" ] && [ -x "$cand" ] && { CODEX="$cand"; break; }
-done
-if [ -z "$CODEX" ]; then
-  echo "找不到 codex（npm install -g @openai/codex，或把独立二进制放 ~/.local/bin；然后 codex login）" | tee "$REC/run_info.txt"; exit 2
-fi
-codex() { "$CODEX" "$@"; }
-if ! codex login status 2>&1 | grep -qi "logged in"; then
-  echo "codex 未登录（在这台机器上 codex login）" | tee "$REC/run_info.txt"; exit 3
-fi
-
-# 提示词里的 {{MODEL}} {{EFFORT}} {{DATE}} 由这里填，其余占位符应已由研究 agent 填好
-TODAY=$(date '+%Y-%m-%d')
-sed -e "s/{{MODEL}}/$MODEL/g" -e "s/{{EFFORT}}/$EFFORT/g" -e "s/{{DATE}}/$TODAY/g" "$PROMPT" > "$REC/prompt.filled.md"
-if grep -q '{{[A-Z_]*}}' "$REC/prompt.filled.md"; then
-  echo "提示词还有没填的占位符: $(grep -o '{{[A-Z_]*}}' "$REC/prompt.filled.md" | sort -u | tr '\n' ' ')" | tee "$REC/run_info.txt"; exit 5
-fi
-
-START=$(date +%s)
-echo "codex-cli $(codex --version 2>/dev/null | awk '{print $2}') | start $(date '+%Y-%m-%d %H:%M:%S') | model $MODEL | reasoning_effort $EFFORT | sandbox workspace-write | prompt: $(basename "$PROMPT")" > "$REC/run_info.txt"
-# stdin 必须接 /dev/null，否则 codex exec 会等标准输入
-codex exec -C "$ROOT" -m "$MODEL" -c "model_reasoning_effort=$EFFORT" -s workspace-write \
-  -o "$REC/last_message.txt" "$(cat "$REC/prompt.filled.md")" < /dev/null > "$REC/codex_output.txt" 2>&1
-RC=$?
-END=$(date +%s)
-echo "exit $RC | end $(date '+%Y-%m-%d %H:%M:%S') | duration $((END-START)) s | tokens: $(grep -A1 '^tokens used' "$REC/codex_output.txt" 2>/dev/null | tail -1 | tr -d ' ')" >> "$REC/run_info.txt"
-cat "$REC/run_info.txt"
-echo "--- last message ---"; cat "$REC/last_message.txt" 2>/dev/null
-exit $RC
+SELF="$(python3 -c 'import os,sys;print(os.path.realpath(sys.argv[1]))' "${BASH_SOURCE[0]}")"
+RD="$(cd "$(dirname "$SELF")/../.." && pwd)/rd"
+case "${1:-}" in
+  --wait)   shift; exec "$RD" codex wait "$1" --kind audit --name "$2" --max-seconds "${3:-100}" ;;
+  --status) shift; exec "$RD" codex status "$1" --kind audit --name "$2" ;;
+  --sync)   shift; exec "$RD" codex start "$1" --kind audit --prompt "$2" --name "$3" --sync ;;
+  --help|-h|"") sed -n '2,9p' "$SELF"; exit 0 ;;
+  *) [ $# -ge 3 ] || { sed -n '2,9p' "$SELF"; exit 1; }; exec "$RD" codex start "$1" --kind audit --prompt "$2" --name "$3" ;;
+esac
