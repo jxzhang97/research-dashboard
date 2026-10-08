@@ -28,6 +28,13 @@ DEFAULTS: dict = {
         "model": "gpt-6-astra",
         "reasoning_effort": "xhigh",
     },
+    "auditor": {
+        # 审计步：推导审计每个 lab 收尾自动做，代码审计按钮触发；见 rd-audit skill
+        "backend": "codex",
+        "model": "gpt-6-astra",
+        "reasoning_effort": "xhigh",
+        "auto_derivation": True,
+    },
     "agent": {
         "backend": "claude",  # 目前自动运行只支持 claude；codex 的交互会话靠 AGENTS.md + skills
         "max_turns": 0,       # 0 = 不限制

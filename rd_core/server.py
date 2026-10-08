@@ -329,6 +329,20 @@ def create_app(project: Project) -> FastAPI:
         rq.submit_tick()
         return meta
 
+    @app.post("/api/labs/{lab_id}/audit/{kind}")
+    def lab_audit(lab_id: str, kind: str):
+        from .tick import AUDIT_PROMPTS
+        key = f"audit_{kind}"
+        if key not in AUDIT_PROMPTS:
+            raise HTTPException(400, "kind 只能是 derivation 或 code")
+        try:
+            project.lab(lab_id)
+        except FileNotFoundError:
+            raise HTTPException(404)
+        rid = rq.submit(AUDIT_PROMPTS[key].format(id=lab_id), kind=key, label=f"{key}:{lab_id}")
+        project.append_log("用户", f"要求对 {lab_id} 做{'推导' if kind == 'derivation' else '代码'}审计", f".dashboard/runs/{rid}/log.txt")
+        return {"id": rid}
+
     @app.post("/api/labs/{lab_id}/status/{status}")
     def lab_status(lab_id: str, status: str):
         try:

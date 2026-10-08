@@ -16,6 +16,13 @@ backend = "codex"
 model = "gpt-6-astra"
 reasoning_effort = "xhigh"
 
+[auditor]
+# 审计步（推导审计每个 lab 收尾自动做；代码审计在 dashboard 点按钮）交给 Codex；见 rd-audit skill
+backend = "codex"
+model = "gpt-6-astra"
+reasoning_effort = "xhigh"
+auto_derivation = true      # lab 收尾时自动做推导审计
+
 [agent]
 backend = "claude"
 max_turns = 0                # 0 = 不限

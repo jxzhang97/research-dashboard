@@ -93,6 +93,10 @@ rd scheduler status <课题目录>
 
 dashboard 右上角可以在本机的课题之间切换。
 
+## 审计
+
+每个 lab 的推导在收尾时自动交给另一个模型（`[auditor]`，Codex `gpt-6-astra`）独立审计；代码审计在 lab 页点按钮。报告在 `labs/NN/audit/`，发现只分三档：`typo`、`不严谨`、`改变结论`，并明确不吹毛求疵。前两档由研究 agent 直接改（吹毛求疵的可以不予理会，但要写明），第三档开讨论让你裁决、不写薄层。lab 页、wiki 页、STATUS.md 上都有审计标记。见 `skills/rd-audit`。
+
 ## 把网址给别人看
 
 dashboard 监听所有网卡，但**只有 `config.toml` 里 `server.write_from` 网段（默认本机 + Tailscale 100.64.0.0/10）来的请求能操作**；其他地址（校园网、公网）自动变成只读：看得到全部内容，页面上没有任何按钮，POST 一律 403。所以同一个网址可以直接给别人看，自己从 Tailscale 地址进就是完整版。要让某个固定 IP 也能操作，把它加进 `write_from`。

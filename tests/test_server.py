@@ -97,3 +97,21 @@ def test_lab_comment_triggers_revision(project_dir: Path):
     c.post("/api/labs/01-first-task/approve")
     kinds = {w["kind"] for w in c.get("/api/pending").json()["ready"]}
     assert "revise_brief" not in kinds and "run_lab" in kinds
+
+
+def test_audit_reports_and_button(project_dir: Path):
+    """audit/ 里的报告出现在 lab 的标记里；按钮接口把审计任务入队。"""
+    lab = project_dir / "labs" / "01-first-task"
+    (lab / "audit").mkdir()
+    (lab / "audit" / "2026-10-07-gpt-6-astra-derivation.md").write_text(
+        "---\ntitle: 推导审计 · 01\nkind: derivation\nverdict: minor\ncounts: {typo: 1, 不严谨: 2, 改变结论: 0}\ndate: 2026-10-07\nmodel: gpt-6-astra\nhandled: true\n---\n# 推导审计\n", encoding="utf-8")
+    (lab / "audit" / "prompt-2026-10-07-derivation.md").write_text("提示词，不是报告", encoding="utf-8")
+    c = client(project_dir)
+    d = c.get("/api/labs/01-first-task").json()
+    assert d["audit"]["derivation"]["verdict"] == "minor" and d["audit"]["derivation"]["counts"]["不严谨"] == 2
+    assert [a["kind"] for a in d["audits"]] == ["derivation"]
+    assert c.get("/api/labs").json()[0]["audit"]["derivation"]["handled"] is True
+    r = c.post("/api/labs/01-first-task/audit/code")
+    assert r.status_code == 200 and r.json()["id"]
+    assert c.post("/api/labs/01-first-task/audit/style").status_code == 400
+    assert c.post("/api/labs/nope/audit/code").status_code == 404

@@ -130,3 +130,18 @@ def run_pending(project: Project, only: str | None = None, dry_run: bool = False
         project.record_attempt(w["kind"], w["id"], meta["status"])
         results.append(meta)
     return results
+
+
+# 用户在 lab 页点的审计按钮（推导 / 代码）；自动的推导审计在 rd-lab 收尾里做，不走这里
+AUDIT_PROMPTS = {
+    "audit_derivation": (
+        "用户在 dashboard 点了 labs/{id}/ 的「推导审计」。请按 rd-audit skill 执行：组提示词（kind=derivation，对象 notes.md 及其引用的 wiki 页，"
+        "上下文含 notation、引用的卡片与原文、用户 notes）→ 调 codex-audit.sh → 读报告 → 逐条处理（typo 和非吹毛求疵的不严谨直接改并重跑验证；"
+        "改变结论开讨论并把 brief.md 状态改 awaiting_review，不要自己改结论）→ 在 report.md 的 audits、相关 wiki 页的 audited_by、STATUS.md 挂标记 → 记 log → git commit。"
+    ),
+    "audit_code": (
+        "用户在 dashboard 点了 labs/{id}/ 的「代码审计」。请按 rd-audit skill 执行：组提示词（kind=code，对象是脚本、results/、DATA.md、画图脚本；"
+        "先 `rd free-cores` 并把那句话填进 CORES）→ 调 codex-audit.sh → 读报告 → 逐条处理（typo 和非吹毛求疵的不严谨直接改代码并重跑受影响的小尺寸检查；"
+        "改变结论开讨论并把 brief.md 状态改 awaiting_review，不要自己改结论或结果）→ 在 report.md 的 audits、STATUS.md 挂标记 → 记 log → git commit。"
+    ),
+}

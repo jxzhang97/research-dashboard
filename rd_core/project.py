@@ -228,6 +228,28 @@ class Project:
         docs.sort(key=lambda d: d.id, reverse=True)
         return docs
 
+    # ---------- 审计报告（labs/NN/audit/*.md，见 rd-audit skill） ----------
+    def _audits(self, d: Path) -> list[dict]:
+        out = []
+        for p in sorted((d / "audit").glob("*.md")) if (d / "audit").exists() else []:
+            if p.name.startswith("prompt"):
+                continue
+            meta, _ = fm.read(p)
+            if not meta.get("kind"):
+                continue
+            out.append({"path": self.rel(p), "name": p.name, "kind": meta.get("kind"), "verdict": meta.get("verdict", "pass"),
+                        "counts": meta.get("counts") or {}, "date": str(meta.get("date", "")), "model": meta.get("model", ""),
+                        "handled": bool(meta.get("handled", False)), "title": meta.get("title", p.stem)})
+        return out
+
+    @staticmethod
+    def _audit_summary(audits: list[dict]) -> dict:
+        """每种审计只取最新一份，给列表页和 lab 页的标记用。"""
+        latest: dict[str, dict] = {}
+        for a in audits:
+            latest[a["kind"]] = a
+        return latest
+
     def _lab_doc(self, d: Path) -> Doc:
         doc = self._read_doc("lab", d / "brief.md", id_=d.name)
         doc.meta.setdefault("status", "draft")
@@ -238,6 +260,7 @@ class Project:
         pdfs = sorted(str(p.relative_to(d)) for p in d.rglob("*.pdf")
                       if not any(part.startswith(".") or part in ("results", "writing-test") for part in p.relative_to(d).parts))
         doc.extra["pdfs"] = pdfs[:20]
+        doc.extra["audit"] = self._audit_summary(self._audits(d))
         doc.extra["question"] = doc.extra["answer"] = ""
         doc.extra["notes"] = ""
         if doc.extra["has_report"]:
@@ -280,6 +303,7 @@ class Project:
         files.sort(key=lambda f: f["name"])
         doc.extra["files"] = files[:500]
         doc.extra["images"] = images[:200]  # lab 页的图画廊：fig/ 里的图都能看到，图注来自 report.md / notes.md 的 alt 文字
+        doc.extra["audits"] = self._audits(d)
         return doc
 
     def next_lab_id(self, title: str) -> str:

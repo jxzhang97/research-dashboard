@@ -170,3 +170,10 @@ body.readonly #host { color: var(--warn); font-weight: 600; }
 
 /* 只读访问时整块隐藏需要写入的面板（任务书意见等） */
 body.readonly .write-only { display: none !important; }
+
+/* 审计标记 */
+.chip.audit { text-decoration: none; }
+.chip.audit.pass { background: var(--ok-bg); color: var(--ok); }
+.chip.audit.minor { background: var(--warn-bg); color: var(--warn); }
+.chip.audit.major { background: var(--warn-bg); color: var(--danger); font-weight: 600; }
+button.small { font-size: 12px; padding: 2px 8px; }
