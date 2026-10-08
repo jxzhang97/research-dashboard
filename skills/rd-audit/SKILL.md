@@ -33,6 +33,10 @@ description: 推导与代码的独立审计步（research-dashboard 课题目录
 
 和 `codex-write.sh` 同一套：读 `[auditor]` 的模型与强度，`codex exec -s workspace-write`，记录在 `.dashboard/auditing/<记录目录名>/`。Codex 不可用（没装、没登录、失败）：记 log，`report.md` 的 `audits` 留空，继续收尾，**不用别的模型代审**。
 
+## 2b. 报告长什么样
+
+报告是给人在网页上读的（dashboard 的文档页会渲染公式，并把带「等级」列的旧式表格自动转成一条一卡）。新报告按 `audit-prompt.md` 的格式：「总评」最多五句 → 「发现一览」一行一条按等级从重到轻 → 每条发现一个小节（问题 / 依据 / 建议，各一到三句，长推导放 `scratch/` 链接）→ 「独立复算」→ 「拿不准的」。链接报告时用站内路径（dashboard 的 `#/doc/<路径>`），不要给 `/api/file` 原文件链接。
+
 ## 3. 逐条处理（研究 agent 做，这是关键一步）
 
 读报告，对每条发现 F1…Fn 决定，并在报告末尾追加「## 处理」一节，一行一条：

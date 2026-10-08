@@ -21,7 +21,7 @@
       const c = v.counts || {}; let cls = "pass", txt = "✅";
       if (v.verdict === "major") { cls = "major"; txt = `❌ 改变结论 ${c["改变结论"] || ""}`; }
       else if (v.verdict === "minor") { cls = "minor"; txt = `⚠️ 不严谨 ${c["不严谨"] || ""}`; }
-      return `<a class="chip audit ${cls}" href="/api/file?path=${encodeURIComponent(v.path)}" target="_blank" title="${esc(v.date)} ${esc(v.model)}${v.handled ? "" : " · 发现未处理"}">${AUDIT_KIND_ZH[k] || k} ${txt}${v.handled ? "" : " ·待处理"}</a>`;
+      return `<a class="chip audit ${cls}" href="${docRoute(v.path)}" title="${esc(v.date)} ${esc(v.model)}${v.handled ? "" : " · 发现未处理"}">${AUDIT_KIND_ZH[k] || k} ${txt}${v.handled ? "" : " ·待处理"}</a>`;
     }).join(" ");
   };
   const chip = (s, extra = "") => `<span class="chip ${esc(s)} ${extra}">${esc(zh(s))}</span>`;
@@ -110,6 +110,23 @@
       const a = document.createElement("a"); a.href = img.src; a.target = "_blank";
       img.replaceWith(fig); a.appendChild(img); fig.appendChild(a);
       if (img.alt) { const cap = document.createElement("figcaption"); cap.textContent = img.alt; fig.appendChild(cap); }
+    });
+    // 审计发现表（有「等级」列）→ 一条发现一张卡；旧格式的报告也能读
+    div.querySelectorAll("table").forEach((t) => {
+      const heads = [...t.querySelectorAll("thead th")].map((th) => th.textContent.trim());
+      const gi = heads.indexOf("等级"); if (gi < 0 || heads.length < 4) return;
+      const wrap = document.createElement("div"); wrap.className = "findings";
+      t.querySelectorAll("tbody tr").forEach((tr) => {
+        const cells = [...tr.children]; if (!cells.length) return;
+        const grade = (cells[gi] ? cells[gi].textContent : "").trim();
+        const cls = grade === "改变结论" ? "major" : grade === "不严谨" ? "minor" : "typo";
+        const li = heads.indexOf("位置"); const idx = heads.indexOf("#") >= 0 ? heads.indexOf("#") : 0;
+        const sec = document.createElement("section"); sec.className = `finding ${cls}`;
+        let html = `<div class="finding-head"><span class="chip audit ${cls}">${esc(grade)}</span> <b>${cells[idx] ? cells[idx].innerHTML : ""}</b>${li >= 0 && cells[li] ? ` · <span class="loc">${cells[li].innerHTML}</span>` : ""}</div>`;
+        heads.forEach((h, i) => { if (i === gi || i === idx || i === li || !cells[i]) return; html += `<p><b>${esc(h)}</b>${cells[i].innerHTML}</p>`; });
+        sec.innerHTML = html; wrap.appendChild(sec);
+      });
+      t.replaceWith(wrap);
     });
     if (window.renderMathInElement) {
       renderMathInElement(div, { delimiters: [{ left: "$$", right: "$$", display: true }, { left: "\\[", right: "\\]", display: true }, { left: "\\(", right: "\\)", display: false }, { left: "$", right: "$", display: false }], throwOnError: false });
@@ -274,7 +291,7 @@
   pages.lab = async (id) => {
     const d = await api(`/api/labs/${encodeURIComponent(id)}`); const m = d.meta; const st = m.status;
     const labDir = dirOf(d.path);
-    const auditLine = `${auditChip(d.audit) || "<span class='muted'>还没审计</span>"} <button id="audit-der" class="small">推导审计</button> <button id="audit-code" class="small">代码审计</button>${(d.audits || []).length ? ` <span class="small muted">历史：${d.audits.map((a) => `<a href="/api/file?path=${encodeURIComponent(a.path)}" target="_blank">${esc(a.date)} ${esc(AUDIT_KIND_ZH[a.kind] || a.kind)}</a>`).join(" · ")}</span>` : ""}`;
+    const auditLine = `${auditChip(d.audit) || "<span class='muted'>还没审计</span>"} <button id="audit-der" class="small">推导审计</button> <button id="audit-code" class="small">代码审计</button>${(d.audits || []).length ? ` <span class="small muted">历史：${d.audits.map((a) => `<a href="${docRoute(a.path)}">${esc(a.date)} ${esc(AUDIT_KIND_ZH[a.kind] || a.kind)}</a>`).join(" · ")}</span>` : ""}`;
     const pdfs = (d.pdfs || []).map((p) => `<a class="btn" href="/api/file?path=${encodeURIComponent(labDir + "/" + p)}" target="_blank">📄 ${esc(p)}</a>`).join(" ");
     const notesBtn = d.notes && /\.md$/i.test(d.notes) ? `<a class="btn primary" href="${docRoute(joinPath(labDir, d.notes))}">📖 推导与分析 ${esc(d.notes)}</a>` : "";
     const handoff = (d.files || []).some((f) => f.name === "handoff.md") ? `<a class="btn" href="${docRoute(labDir + "/handoff.md")}">交接单</a>` : "";
@@ -321,9 +338,19 @@
     crumbs.push(`<span>${esc(parts[parts.length - 1])}</span>`);
     const title = d.meta.title || (d.body.match(/^#\s+(.+)$/m) || [])[1] || parts[parts.length - 1];
     const sib = (d.siblings || []).map((s) => `<a href="${docRoute(dirOf(path) ? dirOf(path) + "/" + s : s)}">${esc(s)}</a>`).join("");
+    let auditBanner = "";
+    if ((d.meta.kind === "derivation" || d.meta.kind === "code") && path.includes("/audit/")) {
+      const c = d.meta.counts || {}; const v = d.meta.verdict || "pass";
+      const vtxt = v === "major" ? "❌ 有改变结论的发现" : v === "minor" ? "⚠️ 有不严谨之处" : "✅ 通过";
+      auditBanner = `<div class="audit-banner ${esc(v)}"><b>${esc(vtxt)}</b>
+        <span class="chip audit major">改变结论 ${c["改变结论"] ?? 0}</span><span class="chip audit minor">不严谨 ${c["不严谨"] ?? 0}</span><span class="chip audit typo">typo ${c["typo"] ?? 0}</span>
+        <span class="small muted">${esc(d.meta.model || "")} · ${esc(String(d.meta.date || ""))} · commit ${esc(String(d.meta.commit || ""))}</span>
+        <span class="chip ${d.meta.handled ? "done" : "open"}">${d.meta.handled ? "发现已处理" : "发现待处理"}</span>
+        ${d.meta.lab ? `<a href="#/labs/${esc(d.meta.lab)}">← 回到 lab</a>` : ""}</div>`;
+    }
     main.innerHTML = `<p class="crumbs small">${crumbs.join(" / ")}</p><h1>${esc(title)}</h1>
       <div class="meta"><span>更新：${esc(d.updated || "")}</span>${d.meta.status ? chip(d.meta.status) : ""}<a href="/api/file?path=${encodeURIComponent(path)}" target="_blank">原文件</a></div>
-      <div class="two"><div class="side panel" id="toc-side">${sib ? `<div class="small muted" style="margin-top:10px">同文件夹</div>${sib}` : ""}</div><div class="panel" id="body"></div></div>`;
+      ${auditBanner}<div class="two"><div class="side panel" id="toc-side">${sib ? `<div class="small muted" style="margin-top:10px">同文件夹</div>${sib}` : ""}</div><div class="panel" id="body"></div></div>`;
     const baseDir = base || d.meta.base || dirOf(path);
     const body = render(d.body, baseDir); $("#body").appendChild(body);
     const toc = tocFor(body, 3); if (toc) $("#toc-side").prepend(toc);

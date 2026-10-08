@@ -7,6 +7,7 @@ rd_core/config.py
 rd_core/cores.py
 rd_core/fm.py
 rd_core/project.py
+rd_core/registry.py
 rd_core/runner.py
 rd_core/scheduler.py
 rd_core/server.py
@@ -17,4 +18,5 @@ research_dashboard.egg-info/dependency_links.txt
 research_dashboard.egg-info/requires.txt
 research_dashboard.egg-info/top_level.txt
 tests/test_project.py
+tests/test_registry.py
 tests/test_server.py

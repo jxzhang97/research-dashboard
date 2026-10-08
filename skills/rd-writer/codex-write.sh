@@ -41,7 +41,7 @@ done
 START=$(date +%s)
 echo "codex-cli $(codex --version 2>/dev/null | awk '{print $2}') | start $(date '+%Y-%m-%d %H:%M:%S') | model $MODEL | reasoning_effort $EFFORT | sandbox workspace-write | images: $# | prompt: $(basename "$PROMPT")" > "$REC/run_info.txt"
 # stdin 必须接 /dev/null，否则 codex exec 会等标准输入
-codex exec -C "$ROOT" -m "$MODEL" -c "model_reasoning_effort=$EFFORT" -s workspace-write "${IMG_ARGS[@]}" \
+codex exec -C "$ROOT" -m "$MODEL" -c "model_reasoning_effort=$EFFORT" -s workspace-write ${IMG_ARGS[@]+"${IMG_ARGS[@]}"} \
   -o "$REC/last_message.txt" "$(cat "$PROMPT")" < /dev/null > "$REC/codex_output.txt" 2>&1
 RC=$?
 END=$(date +%s)

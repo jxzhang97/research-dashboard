@@ -177,3 +177,13 @@ body.readonly .write-only { display: none !important; }
 .chip.audit.minor { background: var(--warn-bg); color: var(--warn); }
 .chip.audit.major { background: var(--warn-bg); color: var(--danger); font-weight: 600; }
 button.small { font-size: 12px; padding: 2px 8px; }
+
+/* 审计报告：横幅与发现卡片 */
+.audit-banner { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; padding: 10px 14px; border-radius: 10px; margin-bottom: 12px; background: var(--panel); border: 1px solid var(--line); }
+.audit-banner.major { border-color: var(--danger); } .audit-banner.minor { border-color: var(--warn); } .audit-banner.pass { border-color: var(--ok); }
+.chip.audit.typo { background: var(--code-bg); color: var(--muted); }
+.findings { margin: 10px 0; }
+.finding { border: 1px solid var(--line); border-left: 4px solid var(--muted); border-radius: 8px; padding: 10px 14px; margin: 12px 0; }
+.finding.major { border-left-color: var(--danger); } .finding.minor { border-left-color: var(--warn); }
+.finding-head { margin-bottom: 6px; } .finding-head .loc { color: var(--muted); }
+.finding p { margin: 5px 0; } .finding p > b:first-child { color: var(--muted); font-weight: 500; margin-right: 8px; }
