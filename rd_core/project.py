@@ -665,33 +665,40 @@ class Project:
 
     # ---------- 待处理工作项（tick 用） ----------
     def pending_work(self) -> list[dict]:
+        """待办工作项。任何一项只要已有排队或运行中的记录（label 为 kind:id）就不再列出：
+        网页动作、文件监视、launchd 兜底 tick 相隔几秒各扫一次时，同一项不会被派两次。"""
+        live = self.live_runs()
+        live_labels = {str(m.get("label", "")) for m in live}
         work = []
+
+        def add(kind: str, d: Doc, **extra) -> None:
+            if f"{kind}:{d.id}" not in live_labels:
+                work.append({"kind": kind, "id": d.id, "path": d.path, "title": d.title, **extra})
+
         for d in self.discussions():
             if d.meta["status"] == "answered":
-                work.append({"kind": "digest_answer", "id": d.id, "path": d.path, "title": d.title})
+                add("digest_answer", d)
             elif d.meta["status"] == "open" and d.meta.get("asked_by") == "user":
-                work.append({"kind": "answer_user_question", "id": d.id, "path": d.path, "title": d.title})
+                add("answer_user_question", d)
         for d in self.inbox():
             if d.meta.get("status") == "approved":
-                work.append({"kind": "ingest_reference", "id": d.id, "path": d.path, "title": d.title})
+                add("ingest_reference", d)
         # lab：已批准的派执行；running 但没有活着的运行的派续跑（上次运行被额度/超时/自己提前结束打断）。
-        # 已有排队或运行中的记录就不再派，网页批准与 tick 扫描相隔几秒时不会派两次。旧 lab 先。
-        live = self.live_runs()
+        # lab 的"活着"按 label 后缀匹配，手工的 resume_lab:<id>、审计 audit_*:<id> 也算。旧 lab 先。
         for d in sorted(self.labs(), key=lambda x: x.id):
             st = d.meta.get("status")
             busy = self._run_for_lab(live, d.id) is not None
             if st == "approved" and not busy:
-                work.append({"kind": "run_lab", "id": d.id, "path": d.path, "title": d.title})
+                add("run_lab", d)
             elif st == "running" and not busy:
                 last = self.last_lab_run(d.id) or {}
-                work.append({"kind": "resume_lab", "id": d.id, "path": d.path, "title": d.title,
-                             "last_run_id": last.get("id", "（没有记录）"), "last_run_status": last.get("status", "?"),
-                             "last_run_result": " ".join(str(last.get("result") or "（无）").split())[:400]})
-            elif d.meta.get("comments_pending") and st in ("awaiting_review", "draft", "parked"):
-                work.append({"kind": "revise_brief", "id": d.id, "path": d.path, "title": d.title})
+                add("resume_lab", d, last_run_id=last.get("id", "（没有记录）"), last_run_status=last.get("status", "?"),
+                    last_run_result=" ".join(str(last.get("result") or "（无）").split())[:400])
+            elif d.meta.get("comments_pending") and st in ("awaiting_review", "draft", "parked") and not busy:
+                add("revise_brief", d)
         for d in self.ideas():
             if d.meta.get("promote_requested") and not d.meta.get("promoted_lab"):
-                work.append({"kind": "promote_idea", "id": d.id, "path": d.path, "title": d.title})
+                add("promote_idea", d)
             elif d.id.startswith("inbox/") and not d.meta.get("triaged"):
-                work.append({"kind": "triage_idea", "id": d.id, "path": d.path, "title": d.title})
+                add("triage_idea", d)
         return work

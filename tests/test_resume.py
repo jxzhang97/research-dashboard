@@ -161,6 +161,20 @@ def test_second_item_is_rechecked_before_dispatch(project_dir: Path, monkeypatch
     assert [r["status"] for r in res] == ["done", "skipped"]
 
 
+def test_non_lab_items_are_deduped_too(project_dir: Path):
+    """想法整理、升级、建卡、回答用户提问：已有排队/运行中的同名记录就不再列为待办。"""
+    pr = Project(project_dir)
+    (project_dir / "ideas" / "inbox").mkdir(exist_ok=True)
+    (project_dir / "ideas" / "inbox" / "2026-10-08-x.md").write_text("---\ntitle: x\n---\n# x\n\n原话\n", encoding="utf-8")
+    fm.update(project_dir / "ideas" / "root-idea.md", promote_requested="2026-10-08 10:00")
+    kinds = sorted(w["kind"] for w in pr.pending_work())
+    assert kinds == ["promote_idea", "triage_idea"]
+    now = datetime.now()
+    _run(project_dir, _stamp(now) + "-triage", "triage_idea:inbox/2026-10-08-x", "running", now)
+    _run(project_dir, _stamp(now) + "-promote", "promote_idea:root-idea", "queued")
+    assert pr.pending_work() == []
+
+
 def test_reap_stale_runs_on_server_start(project_dir: Path):
     import os
     from rd_core import config
