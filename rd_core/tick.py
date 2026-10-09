@@ -159,12 +159,18 @@ def run_pending(project: Project, only: str | None = None, dry_run: bool = False
         results.append({"kind": w["kind"], "id": w["id"], "status": "deferred", "last_status": w["last_status"], "retry_in_s": w["retry_in_s"],
                         **({"reason": w["reason"]} if w.get("reason") else {})})
     max_fail = int(cfg["schedule"].get("max_resume_failures", 3))
-    for w in ready:
+    for i, w in enumerate(ready):
         prompt = PROMPTS[w["kind"]].format(**w)
         model, effort = model_for(cfg, w["kind"], w.get("path"), project)
         if dry_run:
             results.append({"kind": w["kind"], "id": w["id"], "status": "ready", "prompt": prompt, "model": model, "effort": effort})
             continue
+        if i > 0 and not force:
+            # 前一项可能跑了一个小时，期间 launchd 的兜底 tick 或网页动作可能已经把这一项派出去了：派之前再查一次
+            still, _ = actionable(project, cfg, only)
+            if not any(s["kind"] == w["kind"] and s["id"] == w["id"] for s in still):
+                results.append({"kind": w["kind"], "id": w["id"], "status": "skipped", "reason": "已被别的 tick 派出或不再是待办"})
+                continue
         if w["kind"] == "resume_lab":
             info = project.attempt_info(w["kind"], w["id"]) or {}
             if int(info.get("fails", 0)) >= max_fail:

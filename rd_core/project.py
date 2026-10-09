@@ -85,6 +85,18 @@ def _mtime(p: Path) -> float:
         return 0.0
 
 
+def _pid_alive(pid: int | None) -> bool:
+    if not pid:
+        return False
+    try:
+        os.kill(int(pid), 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    return True
+
+
 @dataclass
 class Doc:
     kind: str
@@ -235,9 +247,16 @@ class Project:
         queued 只有 id 里的时间戳，排队超过一天当作陈旧（服务器死了留下的）。"""
         timeout = int(config.load(self.root)["agent"].get("timeout_minutes", 240)) * 60 + 600
         now = time.time()
+        host = config.hostname()
         out = []
         for m in self.runs(200):
             st = m.get("status")
+            if st not in ("queued", "running"):
+                continue
+            # 本机的记录：排队/运行它的进程已经不在（服务器重启、tick 被杀）就不算活着
+            rp = m.get("runner_pid")
+            if m.get("host") == host and rp and not _pid_alive(int(rp)):
+                continue
             if st == "running":
                 try:
                     t = datetime.strptime(m.get("started") or "", "%Y-%m-%d %H:%M:%S").timestamp()
@@ -252,6 +271,35 @@ class Project:
                     t = 0
                 if now - t < 86400:
                     out.append(m)
+        return out
+
+    def reap_stale_runs(self) -> list[str]:
+        """服务启动时调用：本机上次留下的 queued（没来得及跑）和 running（进程已不在）记录标为 stopped / failed，
+        免得被 live_runs 当成活着的运行而挡住派发。别的进程（launchd 的 tick）正排着队的记录，其 runner_pid 还活着，不动。"""
+        host = config.hostname()
+        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        out = []
+        for m in self.runs(200):
+            st = m.get("status")
+            if st not in ("queued", "running"):
+                continue
+            if m.get("host") and m.get("host") != host:
+                continue
+            rp, pid = m.get("runner_pid"), m.get("pid")
+            if rp and _pid_alive(int(rp)):
+                continue  # 还有人在排/在跑它
+            if st == "running" and pid and _pid_alive(int(pid)):
+                continue
+            if not rp and st == "queued" and not m.get("host"):
+                # 旧版本服务器队列里的记录（没有 runner_pid 也没有 host）：服务器既然重启了，它们一定不会再跑
+                pass
+            elif not rp:
+                continue  # 没法判断归属的记录不碰
+            m["status"] = "stopped" if st == "queued" else "failed"
+            m["ended"] = now
+            m["note"] = "服务重启时清理：排队/运行它的进程已不在"
+            (self.dash / "runs" / m["id"] / "meta.json").write_text(json.dumps(m, ensure_ascii=False, indent=1), encoding="utf-8")
+            out.append(m["id"])
         return out
 
     @staticmethod

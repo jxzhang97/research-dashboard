@@ -178,7 +178,7 @@ class Runner:
         meta = {
             "id": run_id, "kind": kind, "label": label or kind, "prompt": prompt, "model": model,
             "effort": effort, "status": "queued", "started": None, "ended": None, "pid": None,
-            "host": config.hostname(),
+            "host": config.hostname(), "runner_pid": os.getpid(),  # 排队/运行它的进程（服务器或 launchd tick），死了记录就是陈旧的
         }
         (d / "meta.json").write_text(json.dumps(meta, ensure_ascii=False, indent=1), encoding="utf-8")
         (d / "prompt.md").write_text(prompt, encoding="utf-8")
@@ -188,6 +188,16 @@ class Runner:
             self._log(d, "⏳ 等待 agent 锁（同一课题同时只跑一个）…")
             fcntl.flock(lock, fcntl.LOCK_EX)
             slot = acquire_slot(lambda s: self._log(d, s), kind=kind)
+            if (d / "STOP").exists():
+                # 排队期间被用户停掉：不启动 agent
+                meta["status"] = "stopped"
+                meta["ended"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                self._save(d, meta)
+                self._log(d, "■ 排队时被停止，未启动", on_line)
+                fcntl.flock(slot, fcntl.LOCK_UN)
+                slot.close()
+                fcntl.flock(lock, fcntl.LOCK_UN)
+                return meta
             meta["status"] = "running"
             meta["started"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             cmd = build_command(self.project, prompt, model, effort, self.cfg)

@@ -6,6 +6,7 @@ from __future__ import annotations
 import ipaddress
 import json
 import mimetypes
+import os
 import queue
 import threading
 import time
@@ -40,7 +41,8 @@ class RunQueue:
         item = {"id": run_id, "prompt": prompt, "kind": kind, "label": label, "model": model, "effort": effort}
         d = self.project.dash / "runs" / run_id
         d.mkdir(parents=True, exist_ok=True)
-        (d / "meta.json").write_text(json.dumps({"id": run_id, "kind": kind, "label": label, "status": "queued", "model": model, "prompt": prompt}, ensure_ascii=False), encoding="utf-8")
+        (d / "meta.json").write_text(json.dumps({"id": run_id, "kind": kind, "label": label, "status": "queued", "model": model, "prompt": prompt,
+                                                 "host": config.hostname(), "runner_pid": os.getpid()}, ensure_ascii=False), encoding="utf-8")
         with self._lock:
             self.pending.append(item)
         self.q.put(item)
@@ -216,6 +218,9 @@ def _can_write(request: Request, project: Project) -> bool:
 
 def create_app(project: Project) -> FastAPI:
     app = FastAPI(title="research-dashboard")
+    reaped = project.reap_stale_runs()  # 上次服务留下的排队/运行记录：进程不在了就标掉，免得挡住派发
+    if reaped:
+        project.append_log("程序", f"服务启动：清理了 {len(reaped)} 条陈旧运行记录（{', '.join(reaped[:5])}）")
     rq = RunQueue(project)
     start_watcher(project, rq)
     start_digest_timer(project, rq)

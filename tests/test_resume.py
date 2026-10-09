@@ -136,6 +136,57 @@ def test_models_per_kind_and_frontmatter_override(project_dir: Path):
     assert model_for(cfg, "triage_idea") == ("claude-opus-5-5", "xhigh")
 
 
+def test_second_item_is_rechecked_before_dispatch(project_dir: Path, monkeypatch):
+    """同一次 tick 里排在后面的项，派之前再查一次：前一项跑的那段时间里别的 tick 可能已经派过它了。"""
+    from rd_core import tick
+    pr = Project(project_dir)
+    _lab(project_dir, "approved")
+    (project_dir / "ideas" / "inbox").mkdir(exist_ok=True)
+    (project_dir / "ideas" / "inbox" / "2026-10-08-new.md").write_text("---\ntitle: 新想法\n---\n# 新想法\n\n原话\n", encoding="utf-8")
+    ready, _ = tick.actionable(pr)
+    assert [w["kind"] for w in ready] == ["run_lab", "triage_idea"]
+    calls = []
+
+    def fake_run(self, prompt, kind="manual", label="", model=None, effort=None, **_):
+        calls.append(kind)
+        if kind == "run_lab":
+            # 第一项跑的期间，"别的 tick" 已经把 triage 派了出去：留下一条排队记录
+            _run(project_dir, _stamp(datetime.now()) + "-triage", "triage_idea:inbox/2026-10-08-new", "queued")
+            fm.update(project_dir / "ideas" / "inbox" / "2026-10-08-new.md", triaged=True)
+        return {"status": "done"}
+
+    monkeypatch.setattr(tick.Runner, "run", fake_run)
+    res = tick.run_pending(pr)
+    assert calls == ["run_lab"]
+    assert [r["status"] for r in res] == ["done", "skipped"]
+
+
+def test_reap_stale_runs_on_server_start(project_dir: Path):
+    import os
+    from rd_core import config
+    pr = Project(project_dir)
+    now = datetime.now()
+    host = config.hostname()
+    alive, dead = os.getpid(), 999999
+    # 死掉的服务器排的队 → stopped；还活着的进程（launchd tick）排的队 → 不动；别的机器的 → 不动；running 且 agent 进程已不在 → failed
+    for rid, label, st, rp, pid, h in [
+        ("a", "run_lab:01-first-task", "queued", dead, None, host),
+        ("b", "triage_idea:x", "queued", alive, None, host),
+        ("c", "run_lab:zz", "queued", dead, None, "studio"),
+        ("d", "run_lab:01-first-task", "running", dead, dead, host),
+    ]:
+        d = project_dir / ".dashboard" / "runs" / (_stamp(now) + "-" + rid)
+        d.mkdir(parents=True)
+        (d / "meta.json").write_text(json.dumps({"id": d.name, "kind": label.split(":")[0], "label": label, "status": st, "runner_pid": rp, "pid": pid, "host": h,
+                                                 "started": now.strftime("%Y-%m-%d %H:%M:%S")}), encoding="utf-8")
+    reaped = pr.reap_stale_runs()
+    assert sorted(x[-1] for x in reaped) == ["a", "d"]
+    states = {m["id"][-1]: m["status"] for m in pr.runs()}
+    assert states["a"] == "stopped" and states["d"] == "failed" and states["b"] == "queued" and states["c"] == "queued"
+    # live_runs 也不把死进程的记录当活的
+    assert sorted(m["id"][-1] for m in pr.live_runs()) == ["b", "c"]
+
+
 def test_resume_waits_for_live_codex_job(project_dir: Path, monkeypatch):
     from rd_core import codex, tick
     pr = Project(project_dir)
