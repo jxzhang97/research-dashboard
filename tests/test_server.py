@@ -35,7 +35,10 @@ def test_write_endpoints(project_dir: Path):
     r = c.post("/api/labs/01-first-task/approve")
     assert r.json()["status"] == "approved"
     pending = c.get("/api/pending").json()
-    assert {w["kind"] for w in pending["ready"]} >= {"run_lab", "triage_idea", "answer_user_question"}
+    # 网页动作会立刻派 tick；后台线程已经把某项排进队列的话，待办里就不再列它（去重），所以"在待办里"或"已有运行记录"都算
+    ready_kinds = {w["kind"] for w in pending["ready"]}
+    live_kinds = {str(r.get("label", "")).split(":")[0] for r in Project(project_dir).runs() if r.get("status") in ("queued", "running")}
+    assert {"run_lab", "triage_idea", "answer_user_question"} <= (ready_kinds | live_kinds)
     assert all(w["kind"] != "digest_answer" for w in pending["ready"])  # 回答走定时的统一消化，不进即时待办
     assert pending["deferred"] == []
     dg = c.get("/api/digest").json()

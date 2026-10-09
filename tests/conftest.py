@@ -14,6 +14,21 @@ def rd_home(tmp_path: Path, monkeypatch):
     return tmp_path / "rd_home"
 
 
+FAKE_RESULT = '{"type":"result","subtype":"success","is_error":false,"result":"（测试用的假 agent）","total_cost_usd":0}'
+
+
+@pytest.fixture(autouse=True)
+def no_real_claude(monkeypatch):
+    """测试里任何一次 Runner.run 都不许启动真正的 claude（server 测试的网页动作会立刻派 tick，
+    以前这里真的在临时目录里起了 claude -p 并花掉订阅额度）。换成一条立刻返回成功 result 的 shell 命令。"""
+    from rd_core import runner
+
+    def fake_build_command(project, prompt, model, effort, cfg):
+        return ["/bin/sh", "-c", f"printf '%s\\n' '{FAKE_RESULT}'"]
+
+    monkeypatch.setattr(runner, "build_command", fake_build_command)
+
+
 @pytest.fixture
 def project_dir(tmp_path: Path, rd_home: Path) -> Path:
     d = tmp_path / "demo"
