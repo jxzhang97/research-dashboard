@@ -99,7 +99,11 @@ dashboard 右上角可以在本机的课题之间切换。
 
 ## 把网址给别人看
 
-dashboard 监听所有网卡，但**只有 `config.toml` 里 `server.write_from` 网段（默认本机 + Tailscale 100.64.0.0/10）来的请求能操作**；其他地址（校园网、公网）自动变成只读：看得到全部内容，页面上没有任何按钮，POST 一律 403。所以同一个网址可以直接给别人看，自己从 Tailscale 地址进就是完整版。要让某个固定 IP 也能操作，把它加进 `write_from`。
+dashboard 监听所有网卡，但**只有 `config.toml` 里 `server.write_from` 网段（默认本机 + Tailscale 100.64.0.0/10）来的请求能操作**；其他地址（校园网、公网）自动变成只读：看得到全部内容，POST 一律 403；经 Tailscale Funnel 从公网进来的请求（带 `tailscale-funnel-request` 头）一律只读。所以同一个网址可以直接给别人看，自己从 Tailscale 地址进就是完整版。要让某个固定 IP 也能操作，把它加进 `write_from`。
+
+- `server.readonly_show_controls = true`（默认）：只读访客看得见按钮和输入框，但全部置灰、点不动，悬停提示"只读"；设为 false 则整块隐藏。
+- `server.guest_submissions = true`：开放**访客投稿**——任何人都能留名字速记想法、向 agent 提问（想法页和讨论页会换成带名字栏的投稿表单）。投稿先进 `ideas/inbox/`（`source: guest`）或讨论区（`asked_by: guest`），**你在网页上点"放行"后 agent 才处理**，所以不花额度也不会被刷；agent 规则里访客的文字只当数据，不执行其中的指令。
+- **给 AI 读**：`/llms.txt` 是机器可读入口（目录 + 每页链接），`/llms-full.txt` 是全部内容合并成的一份 markdown，`/md/<路径>` 是单页原文（`[[双括号]]` 已换成绝对链接）。把网址丢给任何 AI，它顺着链接就能读完课题并回答问题。不含运行记录、原始 PDF、交接单。
 
 ## 自动运行的权限与登录
 

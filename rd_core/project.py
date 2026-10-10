@@ -10,6 +10,7 @@ import time
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
+from urllib.parse import quote
 
 from . import config, fm
 
@@ -458,7 +459,8 @@ class Project:
         self.append_log("用户", f"回答了讨论「{meta.get('title', did)}」", f"discussion/{did}.md")
         return meta
 
-    def new_discussion(self, title: str, text: str, asked_by: str = "user") -> str:
+    def new_discussion(self, title: str, text: str, asked_by: str = "user", author: str | None = None, from_ip: str | None = None) -> str:
+        """asked_by: user（课题负责人）| agent | guest（访客投稿，留名字；负责人放行后 agent 才回答）。"""
         did = f"{today_str()}-{slugify(title)}"
         p = self.root / "discussion" / f"{did}.md"
         i = 2
@@ -466,10 +468,25 @@ class Project:
             p = self.root / "discussion" / f"{did}-{i}.md"
             i += 1
         meta = {"title": title, "status": "open", "asked_by": asked_by, "created": now_str()}
+        if author:
+            meta["author"] = author
+        if from_ip:
+            meta["from_ip"] = from_ip
         body = f"# {title}\n\n## 问题\n\n{text.strip()}\n"
+        if asked_by == "guest":
+            body += f"\n（提问人：{author or '访客'}，{now_str()}）\n"
         fm.write(p, meta, body)
-        self.append_log("用户" if asked_by == "user" else "agent", f"新建讨论「{title}」", self.rel(p))
+        who = {"user": "用户", "agent": "agent"}.get(asked_by, f"访客 {author or ''}".strip())
+        self.append_log(who, f"新建讨论「{title}」" + ("，等你放行后 agent 才回答" if asked_by == "guest" else ""), self.rel(p))
         return p.stem
+
+    def approve_guest_discussion(self, did: str) -> dict:
+        """课题负责人放行访客的提问：agent 下次 tick 就会回答。"""
+        return fm.update(self.safe_path(f"discussion/{did}.md"), approved=now_str())
+
+    def approve_guest_idea(self, slug: str) -> dict:
+        """课题负责人放行访客投的想法：agent 下次 tick 就会整理进问题树。"""
+        return fm.update(self.safe_path(f"ideas/{slug}.md"), triage_approved=now_str())
 
     # ---------- ideas ----------
     def ideas(self) -> list[Doc]:
@@ -510,7 +527,8 @@ class Project:
         sort(roots)
         return roots
 
-    def capture_idea(self, text: str, title: str | None = None) -> str:
+    def capture_idea(self, text: str, title: str | None = None, author: str | None = None, source: str = "dashboard", from_ip: str | None = None) -> str:
+        """source: dashboard（课题负责人速记）| guest（访客投稿，留名字；负责人放行 triage_approved 后 agent 才整理）。"""
         title = (title or text.strip().splitlines()[0]).strip()[:60]
         stem = f"{today_str()}-{slugify(title)}"
         p = self.root / "ideas" / "inbox" / f"{stem}.md"
@@ -518,9 +536,19 @@ class Project:
         while p.exists():
             p = self.root / "ideas" / "inbox" / f"{stem}-{i}.md"
             i += 1
-        meta = {"title": title, "status": "inbox", "created": now_str(), "source": "dashboard"}
-        fm.write(p, meta, f"# {title}\n\n{text.strip()}\n")
-        self.append_log("用户", f"速记想法「{title}」", self.rel(p))
+        meta = {"title": title, "status": "inbox", "created": now_str(), "source": source}
+        if author:
+            meta["author"] = author
+        if from_ip:
+            meta["from_ip"] = from_ip
+        body = f"# {title}\n\n{text.strip()}\n"
+        if source == "guest":
+            body += f"\n（投稿人：{author or '访客'}，{now_str()}）\n"
+        fm.write(p, meta, body)
+        if source == "guest":
+            self.append_log(f"访客 {author or ''}".strip(), f"投了一条想法「{title}」，等你放行后 agent 才整理", self.rel(p))
+        else:
+            self.append_log("用户", f"速记想法「{title}」", self.rel(p))
         return f"inbox/{p.stem}"
 
     def request_promote(self, slug: str, note: str = "") -> dict:
@@ -616,6 +644,13 @@ class Project:
         for d in self.inbox():
             if d.meta.get("status", "pending") == "pending":
                 items.append({"kind": "inbox", "id": d.id, "title": d.title, "why": "arXiv 候选，等你审批", "time": d.mtime})
+        # 访客投稿：想法与提问都要你放行，agent 才处理
+        for d in self.ideas():
+            if d.id.startswith("inbox/") and d.meta.get("source") == "guest" and not d.meta.get("triage_approved") and not d.meta.get("triaged"):
+                items.append({"kind": "idea", "id": d.id, "title": d.title, "why": f"访客 {d.meta.get('author', '')} 投了想法，等你放行", "time": d.mtime})
+        for d in self.discussions():
+            if d.meta["status"] == "open" and d.meta.get("asked_by") == "guest" and not d.meta.get("approved"):
+                items.append({"kind": "discussion", "id": d.id, "title": d.title, "why": f"访客 {d.meta.get('author', '')} 向 agent 提问，等你放行", "time": d.mtime})
         for d in self.labs():
             st = d.meta.get("status")
             title = d.extra.get("short") or d.title  # 首页用 report.md 的短标题
@@ -663,6 +698,91 @@ class Project:
         meta["log"] = log.read_text(encoding="utf-8", errors="replace") if log.exists() else ""
         return meta
 
+    # ---------- 给 AI 读的 markdown 出口（/llms.txt、/llms-full.txt、/md/<path>） ----------
+    AI_LAB_FILES = (("report.md", "摘要"), ("notes.md", "推导与分析"), ("brief.md", "任务书"))
+
+    def ai_pages(self) -> list[tuple[str, list[dict]]]:
+        """llms.txt 的目录：分节的 {title, path}。只含内容页：课题状态与总纲、wiki、lab 的摘要/推导/任务书、文献卡片、讨论、问题树；
+        不含运行记录、原始 PDF、交接单、续跑单。"""
+        secs: list[tuple[str, list[dict]]] = []
+        top = [{"title": "课题状态 STATUS.md", "path": "STATUS.md"}, {"title": "课题总纲 PROJECT.md", "path": "PROJECT.md"}]
+        secs.append(("课题", [t for t in top if (self.root / t["path"]).exists()]))
+        secs.append(("Wiki（当前理解）", [{"title": d.title, "path": d.path} for d in self.wiki_pages()]))
+        labs = []
+        for d in sorted(self.labs(), key=lambda x: x.id):
+            for name, label in self.AI_LAB_FILES:
+                if (self.root / "labs" / d.id / name).exists():
+                    labs.append({"title": f"{d.extra.get('short') or d.title} · {label}", "path": f"labs/{d.id}/{name}"})
+        secs.append(("Lab（任务）", labs))
+        secs.append(("文献卡片", [{"title": d.title, "path": d.path} for d in self.cards()]))
+        secs.append(("讨论", [{"title": d.title, "path": d.path} for d in self.discussions()]))
+        secs.append(("问题树", [{"title": d.title, "path": d.path} for d in self.ideas() if not d.id.startswith("inbox/")]))
+        return secs
+
+    def ai_allowed(self, rel: str) -> bool:
+        parts = rel.split("/")
+        if not rel.endswith(".md") or ".." in parts or not parts[0]:
+            return False
+        if rel in ("STATUS.md", "PROJECT.md", "log.md"):
+            return True
+        if parts[0] == "wiki" and "handoff" not in parts:
+            return True
+        if parts[0] == "labs" and len(parts) == 3 and parts[2] in ("report.md", "notes.md", "brief.md", "DATA.md"):
+            return True
+        if parts[:2] == ["references", "cards"] and len(parts) == 3:
+            return True
+        if parts[0] in ("discussion", "ideas") and len(parts) in (2, 3):
+            return True
+        return False
+
+    def _ai_path(self, r: dict | None) -> str | None:
+        if not r:
+            return None
+        k, i = r["kind"], r["id"]
+        if k == "wiki":
+            return f"wiki/{i}.md"
+        if k == "card":
+            return f"references/cards/{i}.md"
+        if k == "lab":
+            return f"labs/{i}/report.md" if (self.root / "labs" / i / "report.md").exists() else f"labs/{i}/brief.md"
+        if k == "idea":
+            return f"ideas/{i}.md"
+        if k == "discussion":
+            return f"discussion/{i}.md"
+        return None
+
+    def ai_markdown(self, rel: str, base: str, table: dict | None = None) -> str:
+        """一页 markdown 原文：frontmatter 里有用的字段写成开头几行；[[双括号]] 换成绝对 /md/ 链接；相对的图和文件链接换成绝对地址。"""
+        p = self.safe_path(rel)
+        meta, body = fm.read(p)
+        table = table if table is not None else self.link_table()
+        d = str(Path(rel).parent)
+        prefix = "" if d == "." else d + "/"
+
+        def wl(m):
+            t = m.group(1).strip()
+            label = (m.group(2) or t).strip()
+            path = self._ai_path(table.get(t))
+            return f"[{label}]({base}/md/{path})" if path else label
+
+        body = WIKILINK_RE.sub(wl, body)
+
+        def rel_link(m):
+            target = m.group(1)
+            frag = ""
+            if "#" in target:
+                target, frag = target.split("#", 1)
+                frag = "#" + frag
+            full = os.path.normpath(prefix + target)
+            if target.endswith(".md"):
+                return f"]({base}/md/{quote(full)}{frag})"
+            return f"]({base}/api/file?path={quote(full)})"
+
+        body = re.sub(r"\]\((?!https?://|mailto:|#|/)([^)\s]+)\)", rel_link, body)
+        keep = ("title", "status", "verdict", "asked_by", "author", "created", "updated", "read_depth", "arxiv", "year", "authors", "idea", "lab", "parent", "kind")
+        head = [f"<!-- {rel} -->"] + [f"- {k}: {v}" for k, v in meta.items() if k in keep and v not in (None, "", [])]
+        return "\n".join(head) + "\n\n" + body.strip() + "\n"
+
     # ---------- 待处理工作项（tick 用） ----------
     def pending_work(self) -> list[dict]:
         """待办工作项。任何一项只要已有排队或运行中的记录（label 为 kind:id）就不再列出：
@@ -678,8 +798,8 @@ class Project:
         for d in self.discussions():
             if d.meta["status"] == "answered":
                 add("digest_answer", d)
-            elif d.meta["status"] == "open" and d.meta.get("asked_by") == "user":
-                add("answer_user_question", d)
+            elif d.meta["status"] == "open" and (d.meta.get("asked_by") == "user" or (d.meta.get("asked_by") == "guest" and d.meta.get("approved"))):
+                add("answer_user_question", d)  # 访客的提问要负责人放行（approved）才答
         for d in self.inbox():
             if d.meta.get("status") == "approved":
                 add("ingest_reference", d)
@@ -700,5 +820,7 @@ class Project:
             if d.meta.get("promote_requested") and not d.meta.get("promoted_lab"):
                 add("promote_idea", d)
             elif d.id.startswith("inbox/") and not d.meta.get("triaged"):
+                if d.meta.get("source") == "guest" and not d.meta.get("triage_approved"):
+                    continue  # 访客投的想法要负责人放行才整理，免得花额度
                 add("triage_idea", d)
         return work

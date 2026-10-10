@@ -69,6 +69,10 @@ DEFAULTS: dict = {
         # 只有这些网段来的请求能写（回答、审批、立刻执行）；其他地址一律只读。默认：本机 + Tailscale（100.64.0.0/10）
         "write_from": ["127.0.0.1/32", "::1/128", "100.64.0.0/10"],
         "port": 8010,
+        # 只读访客看得见按钮和输入框但点不动（置灰并提示"只读"）；false 则整块隐藏
+        "readonly_show_controls": True,
+        # 访客投稿层：任何人都能留名字速记想法、向 agent 提问；投稿先进 inbox/讨论区等课题负责人放行，agent 才处理
+        "guest_submissions": False,
     },
 }
 

@@ -163,9 +163,13 @@
     } catch (e) { console.error(e); return; }
     const a = OVERVIEW.attention;
     $("#brand-name").textContent = OVERVIEW.project.name || "课题";
-    // 只读访客（不在 config.toml server.write_from 网段内）：隐藏所有操作控件
-    document.body.classList.toggle("readonly", !!OVERVIEW.readonly);
-    $("#host").textContent = (OVERVIEW.readonly ? "只读 · " : "") + OVERVIEW.host;
+    // 只读访客（不在 config.toml server.write_from 网段内）：readonly_show_controls 时控件置灰可见（readonly-soft），否则整块隐藏（readonly）
+    const ro = !!OVERVIEW.readonly, soft = ro && OVERVIEW.readonly_show_controls !== false;
+    document.body.classList.toggle("readonly", ro && !soft);
+    document.body.classList.toggle("readonly-soft", soft);
+    $("#host").textContent = (ro ? "只读 · " : "") + OVERVIEW.host;
+    $("#host").title = ro ? RO_TIP + (OVERVIEW.guest_submissions ? "；但可以留名字投想法、向 agent 提问" : "") : "";
+    disableControls(main);
     document.title = (a.total ? `(${a.total}) ` : "") + (OVERVIEW.project.name || "课题");
     const running = (OVERVIEW.queue.current ? 1 : 0) + OVERVIEW.queue.pending.length;
     const counts = { ...a.counts, runs: running };
@@ -182,6 +186,18 @@
     } catch (e) { /* 注册表不可用就不显示 */ }
   }
 
+  // ---------- 只读访客：控件置灰 ----------
+  const RO_TIP = "只读：这个地址只能看，不能操作";
+  const isGuest = () => !!(OVERVIEW && OVERVIEW.readonly && OVERVIEW.guest_submissions);
+  function disableControls(root) {
+    if (!document.body.classList.contains("readonly-soft")) return;
+    root.querySelectorAll("button, textarea, input, select").forEach((el) => {
+      if (el.closest(".guest-ok")) return;  // 访客投稿表单、缩放等纯浏览控件照常可用
+      el.disabled = true; el.title = RO_TIP;
+    });
+  }
+  new MutationObserver(() => disableControls(main)).observe(main, { childList: true, subtree: true });
+
   // ---------- 页面 ----------
   const pages = {};
 
@@ -193,7 +209,8 @@
     const log = o.log.map((e) => `<li><span class="muted small">${esc(e.time)}</span><span class="t">${esc(e.who)} · ${esc(clip(e.what, 220))}</span></li>`).join("");
     const q = o.queue; const cur = q.current ? `agent 正在运行：<a href="#/runs/${q.current.id}">${esc(q.current.label)}</a>` : "agent 空闲";
     const jobs = (cores && cores.jobs || []).filter((j) => !o.project.name || j.project === o.project.name);
-    const jobsHtml = jobs.length ? `后台数值：${jobs.map((j) => `<span class="chip running">${esc(j.label)} · ${j.cores} 核</span>`).join(" ")}` : "没有登记中的后台数值";
+    const jobsHtml = (jobs.length ? `后台数值：${jobs.map((j) => `<span class="chip running">${esc(j.label)} · ${j.cores} 核</span>`).join(" ")}` : "没有登记中的后台数值")
+      + ` · 给 AI 读：<a href="/llms.txt" target="_blank" title="把这个网址丢给任何 AI，它顺着链接就能读完全部内容">llms.txt</a>`;
     main.innerHTML = `
       <div class="row">
         <div class="col" style="flex:2">
@@ -364,29 +381,41 @@
     const grp = (s) => list.filter((x) => x.meta.status === s);
     const digestBar = dg && dg.answered.length ? `<div class="panel attn"><b>${dg.answered.length} 条回答等待统一消化</b> · 为了把互相关联的回答放在一起考虑，agent 每 ${dg.digest_minutes} 分钟消化一次，下次约 ${esc(dg.next_digest_str)}。
         <button id="digest-now" style="margin-left:8px">现在就消化</button></div>` : "";
-    const row = (x) => `<li><span class="t"><a href="#/discussion/${esc(x.id)}"><b>${esc(x.title)}</b></a> <span class="small muted">${x.meta.asked_by === "user" ? "你问 agent" : "agent 问你"}${x.meta.lab ? " · " + esc(x.meta.lab) : ""}</span></span>${chip(x.meta.status)}<span class="small muted">${esc(x.updated)}</span></li>`;
+    const who = (m) => m.asked_by === "user" ? "你问 agent" : m.asked_by === "guest" ? `访客 ${esc(m.author || "")} 问 agent${m.approved ? "" : " · 等你放行"}` : "agent 问你";
+    const row = (x) => `<li><span class="t"><a href="#/discussion/${esc(x.id)}"><b>${esc(x.title)}</b></a> <span class="small muted">${who(x.meta)}${x.meta.lab ? " · " + esc(x.meta.lab) : ""}</span></span>${chip(x.meta.status)}<span class="small muted">${esc(x.updated)}</span></li>`;
     const sec = (title, arr) => arr.length ? `<h2>${title} (${arr.length})</h2><div class="panel"><ul class="list">${arr.map(row).join("")}</ul></div>` : "";
+    const askPanel = isGuest()
+      ? `<div class="panel guest-ok"><b>向 agent 提问（访客投稿）</b><p class="hint">留下名字和问题。课题负责人放行后 agent 才会回答，回答会出现在这条讨论页里。</p><div class="form-row"><input id="gname" placeholder="你的名字" style="max-width:220px"><input id="qt" placeholder="标题"></div><textarea id="qb" placeholder="问题内容，可以写公式 $…$"></textarea><div class="form-row"><button class="primary" id="ask">提交问题</button></div></div>`
+      : `<div class="panel"><b>向 agent 提问</b><div class="form-row"><input id="qt" placeholder="标题"></div><textarea id="qb" placeholder="问题内容，可以写公式 $…$"></textarea><div class="form-row"><button class="primary" id="ask">提交</button></div></div>`;
     main.innerHTML = `<h1>讨论</h1>${digestBar}
-      <div class="panel"><b>向 agent 提问</b><div class="form-row"><input id="qt" placeholder="标题"></div><textarea id="qb" placeholder="问题内容，可以写公式 $…$"></textarea><div class="form-row"><button class="primary" id="ask">提交</button><span class="muted small">提交后 agent 会去读相关材料并回答</span></div></div>
-      ${sec("等你回答", grp("open").filter((x) => x.meta.asked_by === "agent"))}${sec("等 agent 回答", grp("open").filter((x) => x.meta.asked_by === "user"))}${sec("你已回答，等待统一消化", grp("answered"))}${sec("agent 已消化", grp("digested"))}${sec("已解决", grp("resolved"))}
+      ${askPanel}
+      ${sec("等你放行（访客提问）", grp("open").filter((x) => x.meta.asked_by === "guest" && !x.meta.approved))}${sec("等你回答", grp("open").filter((x) => x.meta.asked_by === "agent"))}${sec("等 agent 回答", grp("open").filter((x) => x.meta.asked_by === "user" || (x.meta.asked_by === "guest" && x.meta.approved)))}${sec("你已回答，等待统一消化", grp("answered"))}${sec("agent 已消化", grp("digested"))}${sec("已解决", grp("resolved"))}
       ${list.length ? "" : "<p class='muted'>还没有讨论。agent 在遇到需要你裁决的问题时会在这里提问。</p>"}`;
     if ($("#digest-now")) $("#digest-now").onclick = async () => { const r = await api("/api/digest", {}); toast(r.id ? "已开始统一消化" : "消化已在队列里"); pages.discussion(); };
     $("#ask").onclick = async () => {
       const title = $("#qt").value.trim(), text = $("#qb").value.trim(); if (!title || !text) return toast("标题和内容都要填");
+      if (isGuest()) {
+        const name = $("#gname").value.trim(); if (!name) return toast("请留下你的名字");
+        const r = await api("/api/guest/discussion", { name, title, text }); toast("已提交，等课题负责人放行"); location.hash = "#/discussion/" + r.id; return;
+      }
       const r = await api("/api/discussion", { title, text }); location.hash = "#/discussion/" + r.id;
     };
   };
 
   pages.thread = async (id) => {
     const d = await api(`/api/discussion/${encodeURIComponent(id)}`); const m = d.meta;
+    const guestQ = m.asked_by === "guest";
+    const approveBox = guestQ && m.status === "open" && !m.approved
+      ? `<div class="panel attn"><b>访客 ${esc(m.author || "")} 的提问，等你放行</b> <span class="small muted">放行后 agent 下次运行就回答；回答只写进这条讨论，不改 wiki 或 lab。</span> <button class="primary" id="approve-q">放行，让 agent 回答</button></div>` : "";
     main.innerHTML = `<p><a href="#/discussion">← 讨论</a></p><h1>${esc(d.title)}</h1>
-      <div class="meta">${chip(m.status)}<span>${m.asked_by === "user" ? "你问 agent" : "agent 问你"}</span>${m.lab ? `<a href="#/labs/${esc(m.lab)}">相关任务 ${esc(m.lab)}</a>` : ""}${m.idea ? `<a href="#/ideas/${esc(m.idea)}">相关问题</a>` : ""}<span>创建：${esc(m.created || "")}</span></div>
-      <div class="panel" id="body"></div>
+      <div class="meta">${chip(m.status)}<span>${m.asked_by === "user" ? "你问 agent" : guestQ ? `访客 ${esc(m.author || "")} 问 agent${m.approved ? "（已放行）" : "（等放行）"}` : "agent 问你"}</span>${m.lab ? `<a href="#/labs/${esc(m.lab)}">相关任务 ${esc(m.lab)}</a>` : ""}${m.idea ? `<a href="#/ideas/${esc(m.idea)}">相关问题</a>` : ""}<span>创建：${esc(m.created || "")}</span></div>
+      ${approveBox}<div class="panel" id="body"></div>
       <div class="panel"><b>${m.asked_by === "agent" ? "你的回答" : "补充"}</b><textarea id="ans" placeholder="写下你的裁决或想法。回答不会当场处理：agent 每五小时把这段时间的所有回答放在一起统一消化（讨论列表页可以手动“现在就消化”）。"></textarea>
         <div class="form-row"><button class="primary" id="send">提交回答</button>${m.status !== "resolved" ? `<button id="resolve">标记已解决</button>` : ""}</div></div>`;
     $("#body").appendChild(render(d.body, dirOf(d.path)));
     $("#send").onclick = async () => { const t = $("#ans").value.trim(); if (!t) return; await api(`/api/discussion/${encodeURIComponent(id)}/answer`, { text: t }); const dg = await api("/api/digest").catch(() => null); toast(dg && dg.next_digest_str ? `已提交，将在 ${dg.next_digest_str} 左右与其他回答一起消化` : "已提交"); pages.thread(id); refreshOverview(); };
     if ($("#resolve")) $("#resolve").onclick = async () => { await api(`/api/discussion/${encodeURIComponent(id)}/resolve`, {}); pages.thread(id); refreshOverview(); };
+    if ($("#approve-q")) $("#approve-q").onclick = async () => { await api(`/api/discussion/${encodeURIComponent(id)}/approve`, {}); toast("已放行，agent 下次运行回答"); pages.thread(id); refreshOverview(); };
     api("/api/seen", { kind: "discussion", id }).then(refreshOverview);
   };
 
@@ -419,10 +448,12 @@
     const isDesc = (n, anc) => { for (let p = n.parent; p; p = p.parent) if (p.id === anc.id) return true; return false; };
 
     main.innerHTML = `<div class="qtree" id="qtree">
-      <div class="qbar"><h1>问题树</h1><span class="legend" id="legend"></span><span class="spacer"></span>
+      <div class="qbar guest-ok"><h1>问题树</h1><span class="legend" id="legend"></span><span class="spacer"></span>
         <span class="zoom"><button id="z-out" title="缩小">−</button><span class="pct" id="z-pct">100%</span><button id="z-in" title="放大">＋</button><button id="z-fit" title="按宽度适应">适应</button><button id="z-100" title="实际大小">1:1</button></span>
         <button id="mode-all">全部展开</button><button id="mode-focus">只看选中分支</button></div>
-      <div class="capture"><textarea id="cap" placeholder="速记一个想法：模糊的也行，原话会被原样保存；agent 会整理挂到树上，不会改你的话。"></textarea><div><button class="primary" id="save">记下</button></div></div>
+      ${isGuest()
+        ? `<div class="capture guest-ok"><div class="hint">访客投稿：留下名字和想法，原话会原样保存；课题负责人放行后 agent 才会整理挂到问题树上。</div><input id="gname" placeholder="你的名字" style="max-width:220px;margin-bottom:6px"><textarea id="cap" placeholder="你的想法或问题：模糊的也行。"></textarea><div><button class="primary" id="save">投稿</button></div></div>`
+        : `<div class="capture"><textarea id="cap" placeholder="速记一个想法：模糊的也行，原话会被原样保存；agent 会整理挂到树上，不会改你的话。"></textarea><div><button class="primary" id="save">记下</button></div></div>`}
       ${INBOX.length ? `<div class="inbox"><b>未整理 (${INBOX.length})</b> ${INBOX.map((n) => `<a href="#/ideas/${esc(n.id)}">${esc(n.title)}</a>`).join("")}</div>` : ""}
       <div class="wrap" id="wrap">
         <div class="canvas-outer" id="outer"><div class="fit-note" id="fit-note"></div><div class="canvas-scale" id="scale"><div class="canvas" id="canvas"><svg id="links"></svg></div></div></div>
@@ -505,7 +536,14 @@
     $("#mode-focus").onclick = () => { MODE = "focus"; applyFocus(); if (SEL) SEL.open = true; draw(); };
     $("#outer").addEventListener("wheel", (e) => { if (e.ctrlKey || e.metaKey) { e.preventDefault(); setZoom(ZOOM * (e.deltaY < 0 ? 1.08 : 1 / 1.08)); } }, { passive: false });
     window.addEventListener("resize", draw);
-    $("#save").onclick = async () => { const t = $("#cap").value.trim(); if (!t) return; await api("/api/ideas", { text: t }); toast("已记下"); pages.ideas(); };
+    $("#save").onclick = async () => {
+      const t = $("#cap").value.trim(); if (!t) return;
+      if (isGuest()) {
+        const name = $("#gname").value.trim(); if (!name) return toast("请留下你的名字");
+        const r = await api("/api/guest/ideas", { name, text: t }); toast("已投稿，等课题负责人放行"); location.hash = "#/ideas/" + r.id; return;
+      }
+      await api("/api/ideas", { text: t }); toast("已记下"); pages.ideas();
+    };
     if (focusOn()) applyFocus();
     draw();
   };
@@ -517,8 +555,17 @@
       <div class="panel" id="body"></div>
       ${m.promoted_lab ? `<p>已升级为 <a href="#/labs/${esc(m.promoted_lab)}">${esc(m.promoted_lab)}</a></p>` : m.promote_requested ? `<p class="muted">已请求升级（${esc(m.promote_requested)}），agent 正在起草任务书。</p>` :
         `<div class="panel"><b>升级为 lab 任务</b><div class="form-row"><input id="note" placeholder="给任务书的补充说明（可空）；写「不用过目」则直接执行"></div><div class="form-row"><button class="primary" id="promote">让 agent 起草任务书</button></div></div>`}`;
+    if (slug.startsWith("inbox/") && m.source === "guest") {
+      const box = document.createElement("div");
+      box.className = "panel attn";
+      box.innerHTML = m.triage_approved || m.triaged
+        ? `<b>访客 ${esc(m.author || "")} 的投稿</b> <span class="small muted">已放行${m.triaged ? "，agent 已整理" : "，等 agent 整理"}</span>`
+        : `<b>访客 ${esc(m.author || "")} 的投稿，等你放行</b> <span class="small muted">放行后 agent 下次运行把它整理进问题树（原话不改）。</span> <button class="primary" id="approve-i">放行，交给 agent 整理</button>`;
+      $("#body").before(box);
+    }
     $("#body").appendChild(render(d.body, dirOf(d.path)));
     if ($("#promote")) $("#promote").onclick = async () => { await api(`/api/ideas/${slug}/promote`, { note: $("#note").value }); toast("已请求"); pages.idea(slug); };
+    if ($("#approve-i")) $("#approve-i").onclick = async () => { await api(`/api/ideas/${slug}/triage`, {}); toast("已放行，agent 下次运行整理"); pages.idea(slug); refreshOverview(); };
   };
 
   pages.runs = async (id) => {
