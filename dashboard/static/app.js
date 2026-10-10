@@ -452,7 +452,7 @@
         <span class="zoom"><button id="z-out" title="缩小">−</button><span class="pct" id="z-pct">100%</span><button id="z-in" title="放大">＋</button><button id="z-fit" title="按宽度适应">适应</button><button id="z-100" title="实际大小">1:1</button></span>
         <button id="mode-all">全部展开</button><button id="mode-focus">只看选中分支</button></div>
       ${isGuest()
-        ? `<div class="capture guest-ok"><div class="hint">访客投稿：留下名字和想法，原话会原样保存；课题负责人放行后 agent 才会整理挂到问题树上。</div><input id="gname" placeholder="你的名字" style="max-width:220px;margin-bottom:6px"><textarea id="cap" placeholder="你的想法或问题：模糊的也行。"></textarea><div><button class="primary" id="save">投稿</button></div></div>`
+        ? `<div class="capture guest guest-ok"><div class="hint">访客投稿：留下名字和想法，原话会原样保存；课题负责人放行后 agent 才会整理挂到问题树上。</div><input id="gname" placeholder="你的名字（必填）"><textarea id="cap" placeholder="你的想法或问题：模糊的也行。"></textarea><div><button class="primary" id="save">投稿</button></div></div>`
         : `<div class="capture"><textarea id="cap" placeholder="速记一个想法：模糊的也行，原话会被原样保存；agent 会整理挂到树上，不会改你的话。"></textarea><div><button class="primary" id="save">记下</button></div></div>`}
       ${INBOX.length ? `<div class="inbox"><b>未整理 (${INBOX.length})</b> ${INBOX.map((n) => `<a href="#/ideas/${esc(n.id)}">${esc(n.title)}</a>`).join("")}</div>` : ""}
       <div class="wrap" id="wrap">
