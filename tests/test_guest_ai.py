@@ -108,7 +108,8 @@ def test_llms_and_md_endpoints(project_dir: Path):
         assert outsider.get(bad).status_code in (403, 404), bad
     full = outsider.get("/llms-full.txt").text
     assert "═══ Wiki" in full and "<!-- STATUS.md -->" in full and "<!-- labs/01-first-task/report.md -->" in full
-    assert outsider.get("/").text.count("/llms.txt") >= 1
+    html = outsider.get("/", headers={"user-agent": "Mozilla/5.0 Safari/605.1.15", "accept": "text/html,*/*"}).text
+    assert html.count("/llms.txt") >= 1  # 网页壳里有 rel=alternate 与 noscript 的入口
 
 
 def test_root_serves_markdown_to_ai_and_html_to_browsers(project_dir: Path):
