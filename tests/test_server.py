@@ -88,6 +88,16 @@ def test_forwarded_ip_behind_local_proxy(project_dir: Path):
     assert local.get("/api/overview").json()["readonly"] is False  # 真正的本机请求没有转发头
 
 
+def test_funnel_requests_are_always_readonly(project_dir: Path):
+    """经 Tailscale Funnel 从公网进来的请求带 tailscale-funnel-request 头：不管 X-Forwarded-For 写什么，一律只读。"""
+    c = client(project_dir)
+    assert c.get("/api/overview").json()["readonly"] is False
+    h = {"tailscale-funnel-request": "?1", "x-forwarded-for": "100.64.0.1"}
+    assert c.get("/api/overview", headers=h).json()["readonly"] is True
+    assert c.post("/api/ideas", json={"text": "外人想写"}, headers=h).status_code == 403
+    assert c.post("/api/runs", json={"prompt": "rm -rf", "label": "x"}, headers=h).status_code == 403
+
+
 def test_lab_comment_triggers_revision(project_dir: Path):
     """任务页写意见：原话追加到任务书「用户意见」，comments_pending 置位，待办里出现 revise_brief；批准后不再出现。"""
     c = client(project_dir)

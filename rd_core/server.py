@@ -194,6 +194,9 @@ class SeenIn(BaseModel):
 def _can_write(request: Request, project: Project) -> bool:
     """只有 config.toml server.write_from 里的网段（默认本机 + Tailscale）能写；其他来源（校园网、公网）只读。
     拿不到合法 IP（测试客户端、unix socket）按本机处理。"""
+    # 经 Tailscale Funnel 从公网进来的请求带这个头（tailscaled 会覆盖客户端伪造的 X-Forwarded-For，但再加一道硬规则）：一律只读
+    if request.headers.get("tailscale-funnel-request"):
+        return False
     host = request.client.host if request.client else ""
     try:
         ip = ipaddress.ip_address(host)
