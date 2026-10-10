@@ -602,7 +602,8 @@ def create_app(project: Project) -> FastAPI:
         intro = ""
         if pm.exists():
             _, pb = fm.read(pm)
-            paras = [x.strip() for x in pb.split("\n\n") if x.strip() and not x.strip().startswith("#")]
+            # 第一段正文：跳过标题和引用块里的说明（"> 由 agent 整理于…"之类）
+            paras = [x.strip() for x in pb.split("\n\n") if x.strip() and not x.strip().startswith(("#", ">", "<!--"))]
             intro = " ".join(paras[0].split())[:300] if paras else ""
         lines = [f"# {name}", ""]
         if intro:
