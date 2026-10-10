@@ -8,6 +8,7 @@ import json
 import mimetypes
 import os
 import queue
+import re
 import threading
 import time
 from pathlib import Path
@@ -204,6 +205,24 @@ class SeenIn(BaseModel):
     id: str
 
 
+# 不跑 JavaScript 的来访者：AI 抓取器（ChatGPT-User、ClaudeBot、PerplexityBot…）、通用爬虫、命令行工具。
+# 浏览器的 Accept 里一定有 text/html 且 UA 不在这个表里；其余都当成要 markdown 的
+AI_UA_RE = re.compile(
+    r"gptbot|chatgpt|openai|claude|anthropic|perplexity|cohere|mistral|google-extended|googlebot|bingbot|duckassist|youbot|applebot"
+    r"|ccbot|bytespider|diffbot|amazonbot|meta-external|facebookexternalhit|crawler|spider|\bbot\b|python-requests|python-urllib|httpx|aiohttp"
+    r"|curl|wget|go-http-client|node-fetch|undici|axios|libwww|okhttp",
+    re.I,
+)
+
+
+def _wants_markdown(request: Request) -> bool:
+    accept = request.headers.get("accept", "")
+    ua = request.headers.get("user-agent", "")
+    if AI_UA_RE.search(ua):
+        return True
+    return "text/html" not in accept
+
+
 def _can_write(request: Request, project: Project) -> bool:
     """只有 config.toml server.write_from 里的网段（默认本机 + Tailscale）能写；其他来源（校园网、公网）只读。
     拿不到合法 IP（测试客户端、unix socket）按本机处理。"""
@@ -260,9 +279,40 @@ def create_app(project: Project) -> FastAPI:
         fwd = request.headers.get("x-forwarded-for", "")
         return fwd.split(",")[0].strip() if fwd else (request.client.host if request.client else "")
 
-    @app.get("/", response_class=HTMLResponse)
-    def index():
-        return (STATIC / "index.html").read_text(encoding="utf-8")
+    def _llms_text(request: Request) -> str:
+        base = _base(request)
+        name = config.load(project.root)["project"]["name"]
+        pm = project.root / "PROJECT.md"
+        intro = ""
+        if pm.exists():
+            _, pb = fm.read(pm)
+            # 第一段正文：跳过标题和引用块里的说明（"> 由 agent 整理于…"之类）
+            paras = [x.strip() for x in pb.split("\n\n") if x.strip() and not x.strip().startswith(("#", ">", "<!--"))]
+            intro = " ".join(paras[0].split())[:300] if paras else ""
+        lines = [f"# {name}", ""]
+        if intro:
+            lines += [f"> {intro}", ""]
+        lines += [
+            f"这是课题「{name}」的机器可读入口，所有页面都是 markdown 原文（UTF-8）。",
+            "读法：先读「课题状态」（研究问题、当前回答、正在做什么），再按需读 Wiki（我们对各概念的当前理解）、Lab（任务书、摘要、推导）、文献卡片、讨论（需要裁决的问题与回答）、问题树。",
+            f"全部内容合并成一个文件：{base}/llms-full.txt",
+            "",
+        ]
+        for sec, items in project.ai_pages():
+            if not items:
+                continue
+            lines.append(f"## {sec}")
+            lines += [f"- [{t['title']}]({base}/md/{quote(t['path'])})" for t in items]
+            lines.append("")
+        return "\n".join(lines)
+
+    @app.get("/")
+    def index(request: Request):
+        # 根地址按来访者分流：浏览器给网页壳（JS 应用）；AI 抓取器、curl 之类不跑 JS 的客户端直接给 llms.txt 的目录，
+        # 这样合作者把根地址丢给 AI 就能读，不必知道 /llms.txt
+        if _wants_markdown(request):
+            return PlainTextResponse(_llms_text(request), media_type="text/markdown; charset=utf-8")
+        return HTMLResponse((STATIC / "index.html").read_text(encoding="utf-8"))
 
     app.mount("/static", StaticFiles(directory=str(STATIC)), name="static")
 
@@ -596,31 +646,7 @@ def create_app(project: Project) -> FastAPI:
     # ---------- 给 AI 读的入口：把网址丢给任何 AI，它顺着 llms.txt 的链接就能读完全部内容 ----------
     @app.get("/llms.txt")
     def llms(request: Request):
-        base = _base(request)
-        name = config.load(project.root)["project"]["name"]
-        pm = project.root / "PROJECT.md"
-        intro = ""
-        if pm.exists():
-            _, pb = fm.read(pm)
-            # 第一段正文：跳过标题和引用块里的说明（"> 由 agent 整理于…"之类）
-            paras = [x.strip() for x in pb.split("\n\n") if x.strip() and not x.strip().startswith(("#", ">", "<!--"))]
-            intro = " ".join(paras[0].split())[:300] if paras else ""
-        lines = [f"# {name}", ""]
-        if intro:
-            lines += [f"> {intro}", ""]
-        lines += [
-            f"这是课题「{name}」的机器可读入口，所有页面都是 markdown 原文（UTF-8）。",
-            "读法：先读「课题状态」（研究问题、当前回答、正在做什么），再按需读 Wiki（我们对各概念的当前理解）、Lab（任务书、摘要、推导）、文献卡片、讨论（需要裁决的问题与回答）、问题树。",
-            f"全部内容合并成一个文件：{base}/llms-full.txt",
-            "",
-        ]
-        for sec, items in project.ai_pages():
-            if not items:
-                continue
-            lines.append(f"## {sec}")
-            lines += [f"- [{t['title']}]({base}/md/{quote(t['path'])})" for t in items]
-            lines.append("")
-        return PlainTextResponse("\n".join(lines), media_type="text/markdown; charset=utf-8")
+        return PlainTextResponse(_llms_text(request), media_type="text/markdown; charset=utf-8")
 
     @app.get("/llms-full.txt")
     def llms_full(request: Request):

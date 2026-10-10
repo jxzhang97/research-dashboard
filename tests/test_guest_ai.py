@@ -109,3 +109,20 @@ def test_llms_and_md_endpoints(project_dir: Path):
     full = outsider.get("/llms-full.txt").text
     assert "═══ Wiki" in full and "<!-- STATUS.md -->" in full and "<!-- labs/01-first-task/report.md -->" in full
     assert outsider.get("/").text.count("/llms.txt") >= 1
+
+
+def test_root_serves_markdown_to_ai_and_html_to_browsers(project_dir: Path):
+    """合作者把根地址直接丢给 AI 也行：不跑 JS 的来访者在根地址拿到 llms.txt 的目录，浏览器拿到网页壳。"""
+    _, outsider = _clients(project_dir)
+    browser = {"user-agent": "Mozilla/5.0 (Macintosh) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130 Safari/537.36",
+               "accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"}
+    r = outsider.get("/", headers=browser)
+    assert r.headers["content-type"].startswith("text/html") and "<script" in r.text
+    for ua in ("Mozilla/5.0 AppleWebKit/537.36 (KHTML, like Gecko); compatible; ChatGPT-User/1.0; +https://openai.com/bot",
+               "Mozilla/5.0 (compatible; ClaudeBot/1.0; +claudebot@anthropic.com)", "PerplexityBot/1.0", "curl/8.4.0"):
+        r = outsider.get("/", headers={"user-agent": ua, "accept": "text/html,*/*"})
+        assert r.headers["content-type"].startswith("text/markdown"), ua
+        assert r.text.startswith("# demo") and "/md/STATUS.md" in r.text
+    # 没说要 html 的（通用 HTTP 客户端）也给 markdown
+    r = outsider.get("/", headers={"user-agent": "SomeTool/1.0", "accept": "*/*"})
+    assert r.headers["content-type"].startswith("text/markdown")
