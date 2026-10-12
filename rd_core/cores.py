@@ -60,7 +60,13 @@ def memory_pressure() -> dict | None:
         swap = subprocess.check_output(["sysctl", "-n", "vm.swapusage"], text=True, stderr=subprocess.DEVNULL, timeout=5)
         used = float(swap.split("used =")[1].split("M")[0]) / 1024
         total = (_sysctl("hw.memsize") or 0) / 2**30
-        return {"ram_gb": round(total, 1), "compressor_gb": round(comp * page / 2**30, 1), "swap_used_gb": round(used, 1)}
+        free_pct = None
+        try:  # macOS 自己的"可用内存百分比"（算上可回收的），比压缩区大小更能说明现在还能不能再开作业
+            mp = subprocess.check_output(["memory_pressure"], text=True, stderr=subprocess.DEVNULL, timeout=5)
+            free_pct = int(next(ln for ln in mp.splitlines() if "free percentage" in ln).split(":")[1].strip().rstrip("%"))
+        except (subprocess.CalledProcessError, FileNotFoundError, subprocess.TimeoutExpired, ValueError, StopIteration):
+            pass
+        return {"ram_gb": round(total, 1), "compressor_gb": round(comp * page / 2**30, 1), "swap_used_gb": round(used, 1), "free_pct": free_pct}
     except (subprocess.CalledProcessError, FileNotFoundError, subprocess.TimeoutExpired, ValueError, IndexError, StopIteration):
         return None
 
@@ -181,8 +187,10 @@ def status(project: Path | None = None, probe: bool = True, cache_seconds: float
             warn.append(f"核在打架：{len(procs)} 个数值进程共 {threads} 个线程在跑，超过 {total} 个性能核。减少并行数（WORKERS）或每个进程的线程数（Julia -t、OPENBLAS/MKL/OMP_NUM_THREADS）。")
         if cpu and cpu["sys"] >= 25 and (load >= total * 0.5 or threads >= total):
             warn.append(f"CPU 的 system 占比 {cpu['sys']:.0f}%（user {cpu['user']:.0f}%）：这么高多半是线程超额争抢（自旋、调度）或内存压缩/交换在吃 CPU，不是在算数。先查上面的线程数和下面的内存。")
-        if mem and mem["ram_gb"] and (mem["compressor_gb"] > 0.35 * mem["ram_gb"] or mem["swap_used_gb"] > 8):
-            warn.append(f"内存吃紧：压缩区 {mem['compressor_gb']} GB、交换区已用 {mem['swap_used_gb']} GB（物理内存 {mem['ram_gb']} GB）。再加并行只会更慢；减少同时跑的作业数。")
+        if mem and mem["ram_gb"]:
+            tight = (mem["free_pct"] is not None and mem["free_pct"] < 25) or (mem["free_pct"] is None and (mem["compressor_gb"] > 0.35 * mem["ram_gb"] or mem["swap_used_gb"] > 8))
+            if tight:
+                warn.append(f"内存吃紧：可用 {mem['free_pct']}%，压缩区 {mem['compressor_gb']} GB、交换区已用 {mem['swap_used_gb']} GB（物理内存 {mem['ram_gb']} GB）。再加并行只会更慢；减少同时跑的作业数。")
         if warn:
             free = 0
             st["free"] = 0
