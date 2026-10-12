@@ -97,6 +97,7 @@
 
 - 任务书的 `machine` 字段指定在哪跑，没写就是 studio。只在用户明确说时用笔记本或集群。
 - **并行不设固定预算，按当时空闲决定**：跑数值前先执行 `rd free-cores <课题目录>`，它会报告性能核数、当前负载、**本机所有课题**已登记的作业，以及"现在最多再用几个核"。按它说的来，并显式设线程数（`OMP_NUM_THREADS`、`MKL_NUM_THREADS`、`OPENBLAS_NUM_THREADS`、Julia `-t`、Mathematica `$ProcessorCount` 相关设置），然后 `rd jobs claim <课题目录> --cores N --label "<lab id>" --pid <长寿命批量进程>` 登记，跑完 `rd jobs release --id <jid>`。登记表是机器级的（`~/.rd/jobs.json`），别的课题的数值也在里面，所以不同课题不会互相抢核。
+- **不要让核打架**（oversubscription）：同时在跑的线程数不能超过 `rd free-cores` 给的核数——并行作业数 × 每个作业的线程数才是真实占用，Julia 的 `-t N` 和 BLAS 线程（`OPENBLAS_NUM_THREADS` / `MKL_NUM_THREADS` / `OMP_NUM_THREADS`）会叠加，所以多进程并行时 BLAS 线程一律显式设 1，只有单进程才给 BLAS 多线程；DMRG 这类作业按内存算并行数，不只按核数。**批量启动一两分钟后再跑一次 `rd free-cores`**：它会报 CPU 的 user / system 占比、正在跑的线程总数和内存压缩/交换，并直接给出警告。**system 占比持续超过 25%** 几乎都不是在算数，而是线程超额争抢（自旋、调度）或内存压缩/交换在吃 CPU，这时要停下来检查：`rd free-cores` 列出的每个数值进程的线程数之和是否超过性能核数、压缩区和交换区是否在涨；确认打架就停掉批量、减少 WORKERS 或线程数再重启，不要让它"慢慢跑完"。别的课题的作业也算在内。
 - 同一台机器上可能同时有好几个课题的 dashboard 和 agent。规矩：每个课题自己的 agent 串行；全机同时最多 `~/.rd/machine.toml` 里 `max_agents` 个 agent（默认 2），超出的排队；不要跨课题写文件。
 - 中间数据和大文件放 `config.toml` 的 `data_root`（studio 上 `~/doc_unsyn/<课题名>/<lab id>/`），项目里只留图、汇总结果和 `DATA.md`（机器、路径、内容、日期、怎么重新生成）。
 - 代码能复用的放 `src/`，一次性的留在 lab 文件夹。

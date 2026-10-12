@@ -61,7 +61,7 @@ created: 2026-10-02
 1. `status: running`，记 log。
 2. 开工前做一次三方对照：任务书 ↔ PROJECT.md/notation ↔ 你打算走的路线。有分歧按 rd-discussion 提问（无人值守时写 discussion 并把 status 改 `waiting_answer`，结束）。
 3. 推导、分析、方法说明都进 `notes.md`，按 rd-notes skill，在同一上下文里写（谁推导谁写）。
-4. 数值：先 `rd free-cores <课题目录>`，按建议设线程数并 `rd jobs claim … --pid <批量进程>`；大数据写到 `data_root/<lab id>/`，跑完 `rd jobs release`。脚本放本 lab 文件夹，可复用的提到 `src/`。
+4. 数值：先 `rd free-cores <课题目录>`，按建议设并行数与线程数（并行数 × 每作业线程数 ≤ 建议核数；多进程并行时 BLAS 线程设 1；DMRG 按内存定并行数）并 `rd jobs claim … --pid <批量进程>`；**启动后一两分钟再跑一次 `rd free-cores`**，看它的警告：system 占比高、活跃线程超过核数、内存压缩/交换上涨，都说明核在打架，停批量、调小再重启，不要硬跑；大数据写到 `data_root/<lab id>/`，跑完 `rd jobs release`。脚本放本 lab 文件夹，可复用的提到 `src/`。
 5. 中途的小结论随时写进 `report.md`（草稿状态，首屏可以先只有「问题」和「当前回答（初步）」），避免运行中断什么都没留下。
 6. **续跑单 `resume.md`**：每到一个里程碑（批量启动、厚层齐、审计启动、交接单写完、每次 commit）就更新 `labs/NN-slug/resume.md`，运行结束前必须更新一次。它是写给下一次运行的你的，只回答四件事：做完了什么（指向文件，不复述内容）；还差什么（按顺序）；在等哪个外部进程（数值批量的 pid 与完成标记、Codex 审计/写作的记录目录名）；下一步具体跑哪条命令、看哪个文件。半页以内。模板：
 

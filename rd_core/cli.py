@@ -204,6 +204,17 @@ def cmd_free_cores(args):
         print(st["advice"])
         for j in st["jobs"]:
             print(f"  - [{j.get('project', '')}] {j['label']}: {j['cores']} 核 (pid {j.get('pid')})")
+        cpu, mem = st.get("cpu"), st.get("mem")
+        if cpu:
+            print(f"  CPU: user {cpu['user']:.0f}% · sys {cpu['sys']:.0f}% · idle {cpu['idle']:.0f}%" + ("   ← system 占比高，疑似打架" if cpu["sys"] >= 25 else ""))
+        if mem:
+            print(f"  内存: {mem['ram_gb']} GB，压缩区 {mem['compressor_gb']} GB，交换区已用 {mem['swap_used_gb']} GB")
+        if st.get("procs"):
+            print(f"  数值进程 {len(st['procs'])} 个，正在跑的线程共 {st.get('running_threads')}（性能核 {st['perf_cores']}）：")
+            for pr in st["procs"][:12]:
+                print(f"    pid {pr['pid']:>6}  cpu {pr['cpu']:>5}%  线程 {pr['running_threads']:>2}  内存 {pr['rss_gb']:>4} GB  {pr['cmd']}")
+        for w in st.get("warnings", []):
+            print(f"  ⚠ {w}")
 
 
 def cmd_jobs(args):

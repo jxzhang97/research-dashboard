@@ -62,3 +62,15 @@ def test_write_port_edits_config(project_dir: Path):
 def test_machine_settings_default_file(rd_home: Path):
     ms = registry.machine_settings()
     assert ms["max_agents"] == 2 and (rd_home / "machine.toml").exists()
+
+
+def test_free_cores_probe_fields(project_dir: Path):
+    """rd free-cores 除了核数还报 CPU 的 system 占比、内存压缩/交换、数值进程的活跃线程，并给打架警告。"""
+    st = cores.status(project_dir, probe=False)
+    assert "warnings" in st and "cpu" not in st
+    st = cores.status(project_dir, probe=True, cache_seconds=0)
+    assert isinstance(st["warnings"], list) and isinstance(st["procs"], list) and "running_threads" in st
+    if st["cpu"]:
+        assert set(st["cpu"]) == {"user", "sys", "idle"}
+    if st["mem"]:
+        assert st["mem"]["ram_gb"] > 0
