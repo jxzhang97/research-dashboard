@@ -162,4 +162,4 @@ rd finish <课题目录> <lab id> [--check]  # 收尾门槛：当前版本有通
 - **续跑单**：lab 每到一个里程碑和每次运行结束前更新 `labs/NN-slug/resume.md`（做完了什么、还差什么、在等哪个进程、下一步具体命令），半页以内，模板见 rd-lab B.6。
 - **自动续跑**：lab 状态 `running` 但没有活着的运行（上次被额度、超时打断或在等外部进程时结束），调度器会派 `resume_lab` 运行；续跑接着做、不重做、不整体重读 notes（rd-lab D 节）；该 lab 的 Codex 作业还活着时调度器先等它。连续三次续跑失败改 `blocked`。运行结束时 lab 状态只能是 `done` / `waiting_answer` / `awaiting_review` / `blocked`，或仍在等外部进程的 `running`。
 - **额度**：运行输出里出现 Claude 的 limit 提示（"hit your session limit · resets …"），调度器记下重置时刻，到时之前不派任何任务；所以每到里程碑就 commit 并更新续跑单，被打断时损失只有最后一小段。
-- **同一个 lab 不会被派两次**：已有排队或运行中的记录时，批准、tick、文件监视都不再派。
+- **同一个 lab 不会被派两次**：已有排队或运行中的记录时，批准、tick、文件监视都不再派。调度器靠运行记录的标签后缀 `:<lab id>` 认出一次运行属于哪个 lab；手工派给某个 lab 的运行（`rd run` 或网页的「立刻执行」）标签请写成 `manual:<lab id>`，否则它会以为该 lab 没人管而派续跑。

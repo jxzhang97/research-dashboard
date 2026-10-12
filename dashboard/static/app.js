@@ -588,7 +588,7 @@
     const q = d.queue;
     main.innerHTML = `<h1>任务</h1>
       <div class="panel"><b>立刻执行</b><textarea id="prompt" placeholder="直接告诉 agent 要做什么（在课题目录里无人值守运行，遵守 AGENTS.md）"></textarea>
-        <div class="form-row"><input id="label" placeholder="标签（可空）"><input id="model" list="models" placeholder="模型（空 = ${esc((OVERVIEW && OVERVIEW.models && OVERVIEW.models.read) || "默认")}）"><datalist id="models"><option value="claude-fable-5-1"><option value="claude-opus-5-5"><option value="claude-sonnet-5-5"></datalist>
+        <div class="form-row"><input id="label" placeholder="标签（针对某个 lab 的写 manual:<lab id>）"><input id="model" list="models" placeholder="模型（空 = ${esc((OVERVIEW && OVERVIEW.models && OVERVIEW.models.read) || "默认")}）"><datalist id="models"><option value="claude-fable-5-1"><option value="claude-opus-5-5"><option value="claude-sonnet-5-5"></datalist>
           <select id="effort"><option value="">effort（空 = ${esc((OVERVIEW && OVERVIEW.models && OVERVIEW.models.effort) || "默认")}）</option><option>max</option><option>xhigh</option><option>high</option><option>medium</option><option>low</option></select><button class="primary" id="go">运行</button><button id="tick">处理所有待办</button></div></div>
       <div class="panel"><b>状态</b> · ${q.current ? `正在运行 <a href="#/runs/${q.current.id}">${esc(q.current.label)}</a>` : "空闲"}${q.pending.length ? ` · 排队 ${q.pending.map((p) => esc(p.label)).join(", ")}` : ""}
         ${cores ? `<br><span class="small muted">${esc(cores.advice)}</span>` : ""}</div>

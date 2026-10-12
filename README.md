@@ -39,7 +39,7 @@ rd init ~/Documents/Project/<课题名> --name <课题名>
 
 ```bash
 rd serve <课题目录>                   # 打开 http://localhost:8010
-rd run <课题目录> -p "读一下 xxx"      # 命令行直接派一件事
+rd run <课题目录> -p "读一下 xxx"      # 命令行直接派一件事（针对某个 lab 的加 --label manual:<lab id>，调度器才知道它在忙）
 rd tick <课题目录>                    # 处理所有待办
 rd arxiv-scan <课题目录> --dry-run    # 看看今天会抓到什么
 rd free-cores <课题目录>              # 现在能用几个核
