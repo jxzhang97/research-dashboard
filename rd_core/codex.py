@@ -5,12 +5,18 @@
 把 codex 放进独立会话，agent 退出后它照跑，结果落在记录目录里，续跑运行接着处理。
 
 记录目录：<课题根>/.dashboard/auditing/<名>/ 或 writing/<名>/，内含
-  prompt.md、prompt.filled.md、job.json（pid、模型、图）、run_info.txt（开始行 / 结束行）、
-  codex_output.txt（完整输出）、last_message.txt（最后回复）、worker.log。
+  prompt.md、prompt.filled.md、job.json（pid、模型、图、声明的输出 expected、源文件哈希 source_hashes）、
+  run_info.txt（开始行 / 结束行）、codex_output.txt（完整输出）、last_message.txt（最后回复）、worker.log、
+  outcome.json（结束后：state、code、输出文件哈希、审核报告的 verdict）。
+
+--expect / --source：启动时声明这次作业应产出哪些文件、依据哪些源文件。结束时输出缺失算失败（exit 10），
+源文件在作业期间被改过也算失败（exit 11，审核的是旧版本）。`rd finish` 据此判断"当前版本的文件是否有独立通过的审核"，
+源文件再改动，旧的通过报告自动过期。
 """
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import re
@@ -21,9 +27,11 @@ import time
 from datetime import datetime
 from pathlib import Path
 
-from . import config
+from . import config, fm
 
-KINDS = {"audit": ("auditor", "auditing"), "write": ("writer", "writing")}
+# kind → (config.toml 里的小节, 记录目录名)。consistency = 薄层写完后的科学一致性检查，也由 [auditor] 做
+KINDS = {"audit": ("auditor", "auditing"), "consistency": ("auditor", "auditing"), "write": ("writer", "writing")}
+REVIEW_KINDS = {"audit": "derivation", "consistency": "consistency"}  # 作业种类 → 报告 frontmatter 的 kind（code 审计也走 audit）
 BUNDLED = Path("/Applications/ChatGPT.app/Contents/Resources/codex-cli/bin/codex")
 LEGACY_BUNDLED = Path("/Applications/ChatGPT.app/Contents/Resources/codex-cli/CodexCLI.app/Contents/MacOS/codex")
 # 0.16x 的独立二进制在工具执行不可用时不报错，只在输出里留 codex 自己的诊断行（行首是 "warning: Code Mode is unavailable"
@@ -37,6 +45,8 @@ PLACEHOLDER_RE = re.compile(r"{{[A-Z_]+}}")
 STILL_RUNNING = 7
 DIED = 9
 FAIL_CLOSED = 6
+MISSING_OUTPUT = 10   # 声明的输出文件没产出（或为空）
+STALE_SOURCE = 11     # 作业期间源文件被改了：审的是旧版本
 
 
 # ---------- 找 codex ----------
@@ -147,12 +157,66 @@ def infer_lab(prompt_path: Path, prompt_text: str) -> str:
     return m.group(1) if m else ""
 
 
+def _relative(root: Path, path: str | Path) -> str:
+    """项目内的相对路径（绝对或相对都接受）；越界就报 ValueError。"""
+    p = Path(path)
+    p = (root / p).resolve() if not p.is_absolute() else p.resolve()
+    try:
+        return str(p.relative_to(root.resolve()))
+    except ValueError:
+        raise ValueError(f"输出/源文件必须在课题目录内: {path}")
+
+
+def _hash(root: Path, paths) -> dict[str, str | None]:
+    """{相对路径: sha256}；文件不存在为 None。"""
+    out = {}
+    for rel in paths:
+        f = root / rel
+        out[rel] = hashlib.sha256(f.read_bytes()).hexdigest() if f.is_file() else None
+    return out
+
+
+def _review_verdicts(root: Path, expected: list[str]) -> dict:
+    """审核类作业结束时记下每份报告 frontmatter 的 kind / verdict / counts / handled，
+    之后报告被手改也能看出来（finish 对比这份记录与当前 frontmatter）。"""
+    out = {}
+    for rel in expected:
+        try:
+            meta, _ = fm.read(root / rel)
+        except (OSError, ValueError):
+            continue
+        out[rel] = {k: meta.get(k) for k in ("kind", "verdict", "counts", "handled")}
+    return out
+
+
+def _outcome(rec: Path) -> dict:
+    p = rec / "outcome.json"
+    if not p.exists():
+        return {}
+    try:
+        return json.loads(p.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        return {}
+
+
 # ---------- 启动 ----------
-def start(root: Path, kind: str, prompt: Path, name: str, images: list[Path] | None = None, lab: str = "") -> dict:
-    """组好记录目录，派一个独立会话的 worker 去跑 codex exec，立刻返回。"""
+def start(root: Path, kind: str, prompt: Path, name: str, images: list[Path] | None = None, lab: str = "",
+          expected: list[str] | None = None, sources: list[str] | None = None) -> dict:
+    """组好记录目录，派一个独立会话的 worker 去跑 codex exec，立刻返回。
+    expected：这次作业应产出的文件（相对课题根）；sources：它依据的源文件，启动时记哈希。"""
     if kind not in KINDS:
         return {"ok": False, "code": 1, "error": f"kind 只能是 {'/'.join(KINDS)}"}
     root = Path(root).resolve()
+    if not re.fullmatch(r"[A-Za-z0-9_.\-\u4e00-\u9fff]+", name or "") or name in {".", ".."}:
+        return {"ok": False, "code": 1, "error": f"记录目录名不合法: {name!r}"}
+    try:
+        expected = [_relative(root, p) for p in (expected or [])]
+        sources = [_relative(root, p) for p in (sources or [])]
+    except ValueError as e:
+        return {"ok": False, "code": 1, "error": str(e)}
+    missing_src = [p for p in sources if not (root / p).is_file()]
+    if missing_src:
+        return {"ok": False, "code": 4, "error": f"声明的源文件不存在: {missing_src}"}
     rec = rec_dir(root, kind, name)
     prev = status(root, kind, name) if rec.exists() else None
     if prev and prev["state"] == "running":
@@ -197,10 +261,12 @@ def start(root: Path, kind: str, prompt: Path, name: str, images: list[Path] | N
 
     lab = lab or infer_lab(prompt, text)
     head = (f"codex-cli {version(codex)} | start {_now()} | model {model} | reasoning_effort {effort} | sandbox workspace-write"
-            f" | images: {len(imgs)} | prompt: {prompt.name} | bin: {codex}")
+            f" | images: {len(imgs)} | prompt: {prompt.name} | bin: {codex}"
+            f" | expect: {len(expected)} | sources: {len(sources)}")
     info.write_text(head + ("\n警告: " + warn if warn else "") + "\n", encoding="utf-8")
     job = {"kind": kind, "name": name, "lab": lab, "codex": str(codex), "model": model, "effort": effort,
-           "images": imgs, "root": str(root), "started": _now(), "started_ts": time.time(), "pid": None}
+           "images": imgs, "root": str(root), "started": _now(), "started_ts": time.time(), "pid": None,
+           "expected": expected, "source_hashes": _hash(root, sources)}
     (rec / "job.json").write_text(json.dumps(job, ensure_ascii=False, indent=1), encoding="utf-8")
     log = (rec / "worker.log").open("ab")
     env = dict(os.environ)
@@ -241,6 +307,15 @@ def worker(root: Path, kind: str, name: str) -> int:
     fail_closed = bool(FAIL_CLOSED_RE.search(text))
     if fail_closed and rc == 0:
         rc = FAIL_CLOSED
+    detail = ""
+    expected = job.get("expected") or []
+    source_hashes = job.get("source_hashes") or {}
+    if rc == 0 and expected:
+        missing = [p for p in expected if not (root / p).is_file() or (root / p).stat().st_size == 0]
+        if missing:
+            rc, detail = MISSING_OUTPUT, f"声明的输出没产出或为空: {missing}"
+    if rc == 0 and source_hashes and _hash(root, source_hashes) != source_hashes:
+        rc, detail = STALE_SOURCE, "作业期间源文件被改过，这份结果对应的是旧版本；改完后重新启动"
     tokens = ""
     m = re.search(r"^tokens used\s*\n?\s*([^\n]*)", text, re.M | re.I)
     if m:
@@ -248,8 +323,16 @@ def worker(root: Path, kind: str, name: str) -> int:
     line = f"exit {rc} | end {_now()} | duration {int(time.time() - t0)} s | tokens: {tokens}"
     if fail_closed:
         line += " | codex 工具执行不可用（缺 codex-code-mode-host，fail closed），这次的输出无效"
+    if detail:
+        line += " | " + detail
     with (rec / "run_info.txt").open("a", encoding="utf-8") as f:
         f.write(line + "\n")
+    outcome = {"state": "done" if rc == 0 else "failed", "code": rc, "detail": detail, "ended": _now(),
+               "duration_s": int(time.time() - t0), "tokens": tokens,
+               "output_hashes": _hash(root, expected), "source_hashes": source_hashes}
+    if rc == 0 and kind in REVIEW_KINDS:
+        outcome["review_verdicts"] = _review_verdicts(root, expected)
+    (rec / "outcome.json").write_text(json.dumps(outcome, ensure_ascii=False, indent=1), encoding="utf-8")
     return rc
 
 
@@ -262,7 +345,10 @@ def status(root: Path, kind: str, name: str) -> dict:
         return {"state": "missing", "code": 1, "rec": str(rec), "name": name, "kind": kind}
     job = _job(rec)
     out = {"rec": str(rec), "name": name, "kind": kind, "lab": job.get("lab", ""), "pid": job.get("pid"),
-           "started": job.get("started"), "elapsed_s": int(time.time() - job["started_ts"]) if job.get("started_ts") else None}
+           "started": job.get("started"), "elapsed_s": int(time.time() - job["started_ts"]) if job.get("started_ts") else None,
+           "expected": job.get("expected") or [], "source_hashes": job.get("source_hashes") or {}}
+    if out["source_hashes"]:
+        out["stale"] = _hash(root, out["source_hashes"]) != out["source_hashes"]  # 作业之后源文件又改过
     op = rec / "codex_output.txt"
     out["output_bytes"] = op.stat().st_size if op.exists() else 0
     ex = _exit_line(rec)
@@ -284,7 +370,42 @@ def status(root: Path, kind: str, name: str) -> dict:
     out["detail"] = ex
     out["code"] = code
     out["state"] = "done" if code == 0 else ("died" if code == DIED else "failed")
+    oc = _outcome(rec)
+    if oc.get("review_verdicts") is not None:
+        out["review_verdicts"] = oc["review_verdicts"]
     return out
+
+
+def _all_recs(root: Path):
+    """所有作业记录目录 (kind, rec)。audit 与 consistency 共用 auditing/ 目录，按 job.json 里的 kind 区分，不重复。"""
+    root = Path(root)
+    seen: set[Path] = set()
+    for kind, (_, sub) in KINDS.items():
+        d = root / ".dashboard" / sub
+        if not d.exists() or d in seen:
+            continue
+        seen.add(d)
+        for rec in sorted(d.iterdir()):
+            job = _job(rec)
+            if not job:
+                continue
+            yield (job.get("kind") if job.get("kind") in KINDS else kind), rec
+
+
+def done_jobs(root: Path):
+    """本课题所有成功结束（exit 0）的 codex 作业：(job, outcome)。
+    旧作业（没有 outcome.json、没有 expected 声明）也返回，但 outcome 里没有输出哈希与 verdict，finish 不会把它们当证据。"""
+    for kind, rec in _all_recs(root):
+        job = _job(rec)
+        job.setdefault("kind", kind)
+        oc = _outcome(rec)
+        if not oc:
+            ex = _exit_line(rec)
+            if not ex or not ex.startswith("exit 0"):
+                continue
+            oc = {"state": "done", "code": 0}
+        if oc.get("state") == "done":
+            yield job, oc
 
 
 def wait(root: Path, kind: str, name: str, max_seconds: int = 100, poll: int = 10) -> dict:
@@ -300,19 +421,12 @@ def wait(root: Path, kind: str, name: str, max_seconds: int = 100, poll: int = 1
 
 
 def live_jobs(root: Path) -> list[dict]:
-    """本课题所有还在跑的 codex 作业（审计 + 写作）。"""
-    root = Path(root)
+    """本课题所有还在跑的 codex 作业（审计、一致性检查、写作）。"""
     out = []
-    for kind, (_, sub) in KINDS.items():
-        d = root / ".dashboard" / sub
-        if not d.exists():
-            continue
-        for rec in sorted(d.iterdir()):
-            if not (rec / "job.json").exists():
-                continue
-            st = status(root, kind, rec.name)
-            if st["state"] == "running":
-                out.append(st)
+    for kind, rec in _all_recs(root):
+        st = status(root, kind, rec.name)
+        if st["state"] == "running":
+            out.append(st)
     return out
 
 
@@ -327,7 +441,8 @@ def _print(st: dict) -> None:
 def cli(args) -> int:
     root = Path(args.path).expanduser().resolve()
     if args.action == "start":
-        res = start(root, args.kind, Path(args.prompt).expanduser(), args.name, [Path(i) for i in (args.image or [])], lab=args.lab or "")
+        res = start(root, args.kind, Path(args.prompt).expanduser(), args.name, [Path(i) for i in (args.image or [])], lab=args.lab or "",
+                    expected=args.expect or [], sources=args.source or [])
         if not res["ok"]:
             print(json.dumps(res, ensure_ascii=False))
             return int(res["code"])
@@ -353,7 +468,7 @@ def cli(args) -> int:
 
 
 def add_parser(sub) -> None:
-    p = sub.add_parser("codex", help="Codex 作业（审计 / 写作）：start 脱离父进程启动，wait 前台等待，status 查询，list 列出在跑的")
+    p = sub.add_parser("codex", help="Codex 作业（审计 / 一致性检查 / 写作）：start 脱离父进程启动，wait 前台等待，status 查询，list 列出在跑的")
     p.add_argument("action", choices=["start", "wait", "status", "list"])
     p.add_argument("path", help="课题目录")
     p.add_argument("--kind", choices=list(KINDS), default="audit")
@@ -361,6 +476,8 @@ def add_parser(sub) -> None:
     p.add_argument("--prompt", help="提示词文件（start）")
     p.add_argument("--image", action="append", help="附图（start，可多次）")
     p.add_argument("--lab", help="所属 lab id（start，缺省从提示词推断）")
+    p.add_argument("--expect", action="append", help="这次作业应产出的文件，相对课题根（start，可多次）；结束时缺失算失败，rd finish 据此找证据")
+    p.add_argument("--source", action="append", help="这次作业依据的源文件（start，可多次）；记哈希，作业后被改过就算过期")
     p.add_argument("--sync", action="store_true", help="start 后一直等到结束（交互会话用）")
     p.add_argument("--max-seconds", default=100, help="wait 最多等几秒，到了返回 7（还在跑）")
     p.add_argument("--poll", default=10)
@@ -370,5 +487,5 @@ def add_parser(sub) -> None:
 if __name__ == "__main__":  # python -m rd_core.codex worker <root> <kind> <name>
     if len(sys.argv) >= 5 and sys.argv[1] == "worker":
         sys.exit(worker(Path(sys.argv[2]), sys.argv[3], sys.argv[4]))
-    print("用法: python -m rd_core.codex worker <课题根> <audit|write> <记录目录名>", file=sys.stderr)
+    print("用法: python -m rd_core.codex worker <课题根> <audit|consistency|write> <记录目录名>", file=sys.stderr)
     sys.exit(2)

@@ -79,7 +79,7 @@ rd scheduler status <课题目录>
 1. 你在 `ideas/inbox/` 或网页速记一个想法 → agent 整理挂到想法树（原话不改）。
 2. 你点"升级为 lab" → agent 起草任务书 → 你过目：批准，或在任务页写意见（agent 按意见改任务书、在意见下回复，再请你看）；事先说不用过目的直接执行。
 3. 执行中遇到要你裁决的问题 → 写进讨论区，任务标 `waiting_answer` → 你在网页回答。回答**不当场消化**：每五小时（`schedule.digest_minutes`）把这段时间所有已回答的讨论放进一次运行统一消化，互相关联的裁决一起考虑；讨论页可以"现在就消化"。
-4. 任务收尾：notes.md 与 fig/ 齐 → 交接单 handoff.md → 薄层写作步交给 Codex（report.md、wiki 页、问题的当前回答、STATUS.md）→ 机械检查 → 卡片两三句、index、日志、git commit。PDF 与英文版按需导出。
+4. 任务收尾：notes.md、fig/ 与 sources/reading-map.md 齐 → 推导审计（Codex），处理发现后对当前版本复核到通过 → 交接单 handoff.md → 薄层写作步交给 Codex（report.md、wiki 页、问题的当前回答、STATUS.md，每个输出 `--expect` 声明）→ 机械检查 → 薄层一致性检查（Codex）到通过 → 卡片两三句、index、日志 → `rd finish` 核对当前版本的审核报告与 doctor 后才标 done → git commit。PDF 与英文版按需导出。
 5. 每天 arXiv 候选进"文献"页等你审批；批准的被下载、精读、建卡。
 
 ## 多个课题同时跑
@@ -93,9 +93,13 @@ rd scheduler status <课题目录>
 
 dashboard 右上角可以在本机的课题之间切换。
 
-## 审计
+## 审计与收尾门槛
 
-每个 lab 的推导在收尾时自动交给另一个模型（`[auditor]`，Codex `gpt-6-astra`）独立审计；代码审计在 lab 页点按钮。报告在 `labs/NN/audit/`，发现只分三档：`typo`、`不严谨`、`改变结论`，并明确不吹毛求疵。前两档由研究 agent 直接改（吹毛求疵的可以不予理会，但要写明），第三档开讨论让你裁决、不写薄层。lab 页、wiki 页、STATUS.md 上都有审计标记。见 `skills/rd-audit`。
+三种审计都交给另一个模型（`[auditor]`，Codex `gpt-6-astra`）独立做：**推导审计**在厚层齐后自动做；**薄层一致性检查**在 Codex 写完 report、wiki、idea 当前回答、STATUS 之后自动做，逐句对照 notes 查夸大与丢条件；**代码审计**在 lab 页点按钮。报告在 `labs/NN/audit/`，发现只分三档：`typo`、`不严谨`、`改变结论`，并明确不吹毛求疵。
+
+审计作业启动时记下所审文件的哈希，源文件之后再改，报告就显示"已过期"；研究 agent 处理完发现必须对当前版本**复核**到通过。`改变结论` 的发现若修正方向唯一（符号、漏项、精度说过头之类），agent 直接改并复核，再开一个讨论把修正列清单请你过目（lab 上显示"审计修正待过目"），不阻塞收尾；方向不唯一或 agent 不同意审计的才停下等你裁决。
+
+`rd finish <课题目录> <lab>` 是收尾门槛：当前版本有通过的推导审核与一致性报告、report.md 由写作作业产出、doctor 无问题，才把 lab 标为 done；agent 不能手改状态。lab 页、wiki 页、STATUS.md 上都有审计标记，lab 页还列出"收尾门槛还差什么"。见 `skills/rd-audit`、`skills/rd-lab`。
 
 ## 把网址给别人看
 

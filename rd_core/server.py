@@ -326,7 +326,8 @@ def create_app(project: Project) -> FastAPI:
             "readonly_show_controls": bool(cfg["server"].get("readonly_show_controls", True)),
             "guest_submissions": bool(cfg["server"].get("guest_submissions", False)),
             "ai_entry": f"{_base(request)}/llms.txt",
-            "project": cfg["project"], "models": cfg["models"], "attention": project.attention(), "log": project.log_entries(20),
+            "project": cfg["project"], "models": cfg["models"], "writer": cfg["writer"], "auditor": cfg["auditor"],
+            "attention": project.attention(), "log": project.log_entries(20),
             "queue": rq.snapshot(), "runs": project.runs(8), "host": config.hostname(), "digest": digest_status(project),
             "project_md": pm.read_text(encoding="utf-8") if pm.exists() else "",
             "status": project.status_doc(),
@@ -421,13 +422,13 @@ def create_app(project: Project) -> FastAPI:
         from .tick import AUDIT_PROMPTS
         key = f"audit_{kind}"
         if key not in AUDIT_PROMPTS:
-            raise HTTPException(400, "kind 只能是 derivation 或 code")
+            raise HTTPException(400, "kind 只能是 derivation、code 或 consistency")
         try:
             project.lab(lab_id)
         except FileNotFoundError:
             raise HTTPException(404)
         rid = rq.submit(AUDIT_PROMPTS[key].format(id=lab_id), kind=key, label=f"{key}:{lab_id}")
-        project.append_log("用户", f"要求对 {lab_id} 做{'推导' if kind == 'derivation' else '代码'}审计", f".dashboard/runs/{rid}/log.txt")
+        project.append_log("用户", f"要求对 {lab_id} 做{dict(derivation='推导', code='代码', consistency='薄层一致性')[kind]}审计", f".dashboard/runs/{rid}/log.txt")
         return {"id": rid}
 
     @app.post("/api/labs/{lab_id}/status/{status}")

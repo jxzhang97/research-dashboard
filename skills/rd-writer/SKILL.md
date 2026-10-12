@@ -1,11 +1,11 @@
 ---
 name: rd-writer
-description: 薄层写作步（research-dashboard 课题目录内使用）：把面向读者的页面——lab 的 report.md、wiki 概念页、idea 节点的「当前回答」、STATUS.md——交给 Codex（config.toml 的 [writer]）按交接单写；研究 agent 负责写交接单、组提示词、调用 codex-write.sh、做机械检查，不核对也不改写 Codex 的文字。当 lab 收尾、讨论消化、文献入库后需要写或改写任何薄层页面时使用。
+description: 薄层写作步（research-dashboard 课题目录内使用）：把面向读者的页面——lab 的 report.md、wiki 概念页、idea 节点的「当前回答」、STATUS.md——交给 Codex（config.toml 的 [writer]）按交接单写；研究 agent 负责写交接单、组提示词、调用 codex-write.sh（每个输出用 --expect 声明）、做机械检查，不核对也不改写 Codex 的文字；科学一致性由随后的 consistency 审计（rd-audit）把关。当 lab 收尾、讨论消化、文献入库后需要写或改写任何薄层页面时使用。
 ---
 
 # rd-writer：薄层交给 Codex
 
-**分工**：研究 agent（Claude）做研究、写厚层（notes.md、代码、数据）、写交接单；**薄层一律由 Codex 写**，研究 agent 只做机械检查，不核对科学限定、不润色文字。科学限定靠交接单里的"不能说过头"清单把关，写得够具体就够用。
+**分工**：研究 agent（Claude）做研究、写厚层（notes.md、代码、数据）、写交接单；**薄层一律由 Codex 写**，研究 agent 只做机械检查，不核对科学限定、不润色文字。科学限定先靠交接单里的"不能说过头"清单，写完后再由独立的**薄层一致性检查**（rd-audit §3c，`--kind consistency`）逐句对照厚层把关；检查出的问题回到交接单、让写作者重写，研究 agent 仍不动文字。
 
 ## 1. 交接单（研究 agent 写）
 
@@ -28,6 +28,7 @@ description: 薄层写作步（research-dashboard 课题目录内使用）：把
 4. **哪些话不能说过头**，逐条（例如：不能说"相变"；有限尺寸的峰不能说成非解析；某参数线的结论不能推广；每个数字带 $L$ 与参数；不替用户决定待裁决的事）。
 5. 材料在哪：notes 节号、表、每张图的**角色**（问题设定 / 主结果 / 机制 / 可靠性）和各面板画的是什么、颜色与标记代表什么（写作者要看图写图注，这里先把图例说清）。
 6. 要写哪些文件、各用什么模板（report.md 模板见 rd-lab；wiki 模板见 rd-wiki；idea 只改「当前回答」；STATUS 只改相关行）。每页给出读者的问题顺序，以及哪些定义、方法和证明留在后面的专节或 notes；局部修改还要标清必须保留的区域。
+7. 审计状态：推导审计报告路径与一句总评（写进 report 的 `audits:`、wiki 的 `audited_by:`、STATUS 行末标记）；若 `brief.md` 有 `pending_review`（改变结论的修正按唯一方向改了、复核通过、等用户过目），写明在 report「边界」和 STATUS 对应行加一句"审计修正待过目，见 [[讨论 id]]"，并列出哪几处结论是这样改出来的。
 
 ## 2. 提示词（从模板填）
 
@@ -38,15 +39,18 @@ description: 薄层写作步（research-dashboard 课题目录内使用）：把
 ## 3. 调用
 
 ```bash
-# 启动：立刻返回，写作在独立会话里跑（不随本次 agent 运行结束而死）
-~/doc_unsyn/research-dashboard/skills/rd-writer/codex-write.sh <课题根目录> <提示词文件> <记录目录名> [图1.png 图2.png …]
-# 等待：前台阻塞最多 540 秒；退出码 0 完成、7 还在跑（再调一次）、6 Codex 工具执行 fail closed、9 进程消失
-~/doc_unsyn/research-dashboard/skills/rd-writer/codex-write.sh --wait <课题根目录> <记录目录名> 540
+W=~/doc_unsyn/research-dashboard/skills/rd-writer/codex-write.sh
+# 启动：立刻返回，写作在独立会话里跑（不随本次 agent 运行结束而死）。
+# 每个要写的文件都用 --expect 声明（相对课题根）：结束时缺失或为空算失败（退出码 10），rd finish 据此确认薄层是写作作业产出的；
+# --source 记交接单与 notes 的哈希（可选）。不带 -- 的尾随参数当附图。
+$W <课题根目录> <提示词文件> <记录目录名> fig/main.png --expect labs/NN-slug/report.md --expect wiki/<页>.md --source labs/NN-slug/handoff.md
+# 等待：前台阻塞最多 540 秒；退出码 0 完成、7 还在跑（再调一次）、6 Codex 工具执行 fail closed、9 进程消失、10 声明的输出没产出
+$W --wait <课题根目录> <记录目录名> 540
 # 只看状态
-~/doc_unsyn/research-dashboard/skills/rd-writer/codex-write.sh --status <课题根目录> <记录目录名>
+$W --status <课题根目录> <记录目录名>
 ```
 
-脚本做的事（底层是 `rd codex start/wait/status`）：从 `config.toml` 的 `[writer]` 读模型与强度；自动挑可用的 codex（优先 ChatGPT.app 自带的、旁边有 `codex-code-mode-host` 的；没有 host 的独立二进制会 fail closed，输出里出现这句就判失败）；`codex exec -C <根> -m <model> -c model_reasoning_effort=<effort> -s workspace-write -i <图>… -o last_message.txt "<提示词>" < /dev/null`；把提示词、完整输出、最后回复、`job.json`（pid）和 `run_info.txt`（模型、强度、起止时间、耗时、退出码）存到 `.dashboard/writing/<记录目录名>/`。也可用环境变量 `CODEX_BIN` 指定可执行文件。
+脚本做的事（底层是 `rd codex start/wait/status`）：从 `config.toml` 的 `[writer]` 读模型与强度；自动挑可用的 codex（优先 ChatGPT.app 自带的、旁边有 `codex-code-mode-host` 的；没有 host 的独立二进制会 fail closed，输出里出现这句就判失败）；`codex exec -C <根> -m <model> -c model_reasoning_effort=<effort> -s workspace-write -i <图>… -o last_message.txt "<提示词>" < /dev/null`；把提示词、完整输出、最后回复、`job.json`（pid、声明的输出、源文件哈希）、`run_info.txt`（模型、强度、起止时间、耗时、退出码）和 `outcome.json`（结束状态、输出哈希）存到 `.dashboard/writing/<记录目录名>/`。也可用环境变量 `CODEX_BIN` 指定可执行文件。
 
 **等的规矩**：不要用 run_in_background 启动、不要靠"等通知"（本次运行一结束它们就被清掉）；用 `--wait`，Bash timeout 设 600000，循环到退出码不是 7。几份页面可以一起启动（各自一个记录目录名），再逐个 `--wait`。退出码 9 或 6 就换个记录目录名重启一次。万一必须在写作结束前退出，先把记录目录名写进 `labs/NN-slug/resume.md` 续跑单，系统会派续跑运行接着做机械检查。
 
@@ -61,6 +65,10 @@ description: 薄层写作步（research-dashboard 课题目录内使用）：把
 - 记 log：写了哪些文件、记录目录名、耗时。
 
 不做：逐句核对科学限定、改写措辞、补数字。发现交接单漏了限定导致写过头：改交接单，再让 Codex 重写那一段，不要自己改文字。
+
+## 4b. 薄层一致性检查（写完全部目标后，按 rd-audit §3c）
+
+机械检查通过后，把本 lab 全部薄层输出交给审计者做 `consistency` 检查：`codex-audit.sh … --kind consistency`，`--source` 列 notes.md、handoff.md、report.md、本 lab 写的每个 wiki/idea 文件、STATUS.md，`--expect` 报告路径。它逐句对照厚层查夸大、丢条件、记号错、图注不符、违反"不能说过头"清单。发现回到交接单、让写作者重写对应页，再做一次检查直到 pass；`rd finish` 只认覆盖当前文件版本的通过报告。非 lab 的 wiki/STATUS 改写（讨论消化、文献入库后）同样做一次，`--source` 列对应的证据文件。
 
 ## 5. Codex 不可用时
 

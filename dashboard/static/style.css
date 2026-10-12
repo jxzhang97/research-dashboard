@@ -194,6 +194,8 @@ button.small { font-size: 12px; padding: 2px 8px; }
 .audit-banner { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; padding: 10px 14px; border-radius: 10px; margin-bottom: 12px; background: var(--panel); border: 1px solid var(--line); }
 .audit-banner.major { border-color: var(--danger); } .audit-banner.minor { border-color: var(--warn); } .audit-banner.pass { border-color: var(--ok); }
 .chip.audit.typo { background: var(--code-bg); color: var(--muted); }
+.chip.audit.stale { background: var(--code-bg); color: var(--muted); text-decoration: line-through; }
+.chip.pending-review { background: var(--warn-bg); color: var(--warn); text-decoration: none; }
 .findings { margin: 10px 0; }
 .finding { border: 1px solid var(--line); border-left: 4px solid var(--muted); border-radius: 8px; padding: 10px 14px; margin: 12px 0; }
 .finding.major { border-left-color: var(--danger); } .finding.minor { border-left-color: var(--warn); }

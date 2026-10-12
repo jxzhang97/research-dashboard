@@ -1,4 +1,4 @@
-"""`rd` 命令行。子命令：install / init / update / serve / run / tick / arxiv-scan / free-cores / jobs / scheduler / doctor"""
+"""`rd` 命令行。子命令：install / init / update / serve / run / tick / arxiv-scan / free-cores / jobs / scheduler / doctor / finish / codex"""
 
 from __future__ import annotations
 
@@ -239,32 +239,29 @@ def cmd_scheduler(args):
         print(line)
 
 
-# ---------- doctor ----------
+# ---------- doctor / finish ----------
 def cmd_doctor(args):
-    proj = _project(args.path)
-    problems = []
-    table = proj.link_table()
-    for d in proj.wiki_pages() + proj.cards():
-        for t in d.extra.get("links", []):
-            if t not in table:
-                problems.append(f"断链 [[{t}]] in {d.path}")
-    for d in proj.cards():
-        for sec in ("## 与本课题的联系", "## 内容总结"):
-            if sec not in d.body:
-                problems.append(f"卡片缺少「{sec[3:]}」: {d.path}")
-        if d.meta.get("read_depth") not in ("abstract", "skim", "full"):
-            problems.append(f"卡片 read_depth 未填或非法: {d.path}")
-    for d in proj.labs():
-        if d.meta.get("status") == "done" and not d.extra.get("has_report"):
-            problems.append(f"lab 已完成但没有 report.md: {d.path}")
-    for d in proj.ideas():
-        p = d.meta.get("parent")
-        if p and p not in {x.id for x in proj.ideas()}:
-            problems.append(f"idea parent 不存在: {d.path} → {p}")
+    from .workflow import doctor_problems
+    problems = doctor_problems(_project(args.path))
     if problems:
         print("\n".join(problems))
         sys.exit(1)
     print("没有发现问题")
+
+
+def cmd_finish(args):
+    """收尾门槛：当前版本有独立通过的推导审核与薄层一致性检查、薄层由写作作业产出、doctor 无问题，才标 done。"""
+    from .workflow import completion_errors, finish
+    root = Path(args.path).expanduser().resolve()
+    if args.check:
+        errs = completion_errors(root, args.lab)
+        print(json.dumps({"lab": args.lab, "ok": not errs, "errors": errs}, ensure_ascii=False, indent=1))
+        sys.exit(0 if not errs else 1)
+    try:
+        print(json.dumps(finish(root, args.lab), ensure_ascii=False))
+    except RuntimeError as e:
+        print(json.dumps({"lab": args.lab, "ok": False, "errors": str(e).split("\n")}, ensure_ascii=False, indent=1))
+        sys.exit(1)
 
 
 def main(argv=None):
@@ -284,6 +281,7 @@ def main(argv=None):
     p = sub.add_parser("projects", help="本机登记的课题、端口和运行状态"); p.set_defaults(fn=cmd_projects)
     p = sub.add_parser("scheduler", help="launchd 定时任务"); p.add_argument("action", choices=["install", "uninstall", "status"]); p.add_argument("path"); p.set_defaults(fn=cmd_scheduler)
     p = sub.add_parser("doctor", help="检查断链、缺节、状态"); p.add_argument("path"); p.set_defaults(fn=cmd_doctor)
+    p = sub.add_parser("finish", help="收尾门槛：核对当前版本的推导审核、薄层一致性检查与 doctor，通过才把 lab 标为 done"); p.add_argument("path"); p.add_argument("lab"); p.add_argument("--check", action="store_true", help="只检查不改状态"); p.set_defaults(fn=cmd_finish)
     from .codex import add_parser as _codex_parser
     _codex_parser(sub)
 

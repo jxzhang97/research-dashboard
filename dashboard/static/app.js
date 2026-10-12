@@ -13,16 +13,26 @@
   const KIND_ZH = { route: "路线", method: "方法" };
   const zh = (s) => STATUS_ZH[s] || s || "";
   const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
-  // 审计标记：{derivation: {verdict,counts,...}, code: {...}}（见 rd-audit skill）
-  const AUDIT_KIND_ZH = { derivation: "推导审计", code: "代码审计" };
+  // 审计标记：{derivation: {verdict,counts,stale,pending,...}, code: {...}, consistency: {...}}（见 rd-audit skill）
+  const AUDIT_KIND_ZH = { derivation: "推导审计", code: "代码审计", consistency: "薄层一致性" };
+  // 待处理 = 没标 handled 且确有发现；通过且零发现的报告不用"处理"
+  const auditPending = (v) => v.pending != null ? !!v.pending : (!v.handled && ((v.verdict || "pass") !== "pass" || Object.values(v.counts || {}).some((n) => Number(n) > 0)));
   const auditChip = (a) => {
     if (!a) return "";
     return Object.entries(a).map(([k, v]) => {
       const c = v.counts || {}; let cls = "pass", txt = "✅";
       if (v.verdict === "major") { cls = "major"; txt = `❌ 改变结论 ${c["改变结论"] || ""}`; }
       else if (v.verdict === "minor") { cls = "minor"; txt = `⚠️ 不严谨 ${c["不严谨"] || ""}`; }
-      return `<a class="chip audit ${cls}" href="${docRoute(v.path)}" title="${esc(v.date)} ${esc(v.model)}${v.handled ? "" : " · 发现未处理"}">${AUDIT_KIND_ZH[k] || k} ${txt}${v.handled ? "" : " ·待处理"}</a>`;
+      if (v.stale) { cls = "stale"; txt = "已过期"; }
+      const tip = `${esc(v.date)} ${esc(v.model)}${v.stale ? " · 审核后源文件又改过，要重审" : auditPending(v) ? " · 发现未处理" : ""}`;
+      return `<a class="chip audit ${cls}" href="${docRoute(v.path)}" title="${tip}">${AUDIT_KIND_ZH[k] || k} ${txt}${!v.stale && auditPending(v) ? " ·待处理" : ""}</a>`;
     }).join(" ");
+  };
+  // 审计修正按唯一方向改完并复核通过、正等用户过目：任务书 frontmatter pending_review 指向讨论
+  const reviewChip = (m) => {
+    const pr = m && m.pending_review; if (!pr) return "";
+    const ids = Array.isArray(pr) ? pr : [pr];
+    return ids.map((d) => `<a class="chip pending-review" href="#/discussion/${esc(d)}" title="改变结论的审计发现已按唯一方向修正并复核通过；不认可就在讨论里说">审计修正待过目</a>`).join(" ");
   };
   const chip = (s, extra = "") => `<span class="chip ${esc(s)} ${extra}">${esc(zh(s))}</span>`;
   const kindChip = (k) => KIND_ZH[k] ? `<span class="chip kind">${KIND_ZH[k]}</span>` : "";
@@ -300,7 +310,7 @@
     if (id) return pages.lab(id);
     const list = await api("/api/labs");
     const rows = list.map((x) => `<li class="lab-row"><span class="t"><a href="#/labs/${esc(x.id)}"><b>${esc(x.short || x.title)}</b></a> <span class="small muted">${esc(x.id)}</span>
-        ${x.answer ? answerHtml(x.answer) : x.question ? answerHtml("问题：" + x.question, "answer muted") : ""}</span>${chip(x.meta.status)}${x.stale_run ? `<span class="chip blocked" title="上次运行已结束但任务没收尾；系统会自动派续跑（额度用尽时等重置）">运行中断·等续跑</span>` : ""}${auditChip(x.audit)}${x.meta.machine ? `<span class="chip">${esc(x.meta.machine)}</span>` : ""}<span class="small muted">${esc(x.updated)}</span></li>`).join("");
+        ${x.answer ? answerHtml(x.answer) : x.question ? answerHtml("问题：" + x.question, "answer muted") : ""}</span>${chip(x.meta.status)}${x.stale_run ? `<span class="chip blocked" title="上次运行已结束但任务没收尾；系统会自动派续跑（额度用尽时等重置）">运行中断·等续跑</span>` : ""}${reviewChip(x.meta)}${auditChip(x.audit)}${x.meta.machine ? `<span class="chip">${esc(x.meta.machine)}</span>` : ""}<span class="small muted">${esc(x.updated)}</span></li>`).join("");
     main.innerHTML = `<h1>Lab</h1><p class="muted small">每个任务一个文件夹：任务书 brief.md、摘要 report.md（首屏：问题 / 当前回答 / 为什么信 / 边界）、推导与分析 notes.md、数据去向 DATA.md。想法页里可以把问题升级成 lab。</p><div class="panel"><ul class="list">${rows || "<li class='muted'>还没有任务</li>"}</ul></div>`;
     renderAnswers();
   };
@@ -308,17 +318,18 @@
   pages.lab = async (id) => {
     const d = await api(`/api/labs/${encodeURIComponent(id)}`); const m = d.meta; const st = m.status;
     const labDir = dirOf(d.path);
-    const auditLine = `${auditChip(d.audit) || "<span class='muted'>还没审计</span>"} <button id="audit-der" class="small">推导审计</button> <button id="audit-code" class="small">代码审计</button>${(d.audits || []).length ? ` <span class="small muted">历史：${d.audits.map((a) => `<a href="${docRoute(a.path)}">${esc(a.date)} ${esc(AUDIT_KIND_ZH[a.kind] || a.kind)}</a>`).join(" · ")}</span>` : ""}`;
+    const auditLine = `${auditChip(d.audit) || "<span class='muted'>还没审计</span>"} <button id="audit-der" class="small">推导审计</button> <button id="audit-code" class="small">代码审计</button> <button id="audit-consistency" class="small">薄层一致性</button>${(d.audits || []).length ? ` <span class="small muted">历史：${d.audits.map((a) => `<a href="${docRoute(a.path)}">${esc(a.date)} ${esc(AUDIT_KIND_ZH[a.kind] || a.kind)}${a.stale ? "（已过期）" : ""}</a>`).join(" · ")}</span>` : ""}`;
+    const pendingPanel = (d.completion_pending || []).length && st !== "done" ? `<div class="panel small"><b>收尾门槛（rd finish）还差</b><ul>${d.completion_pending.map((e) => `<li>${esc(e)}</li>`).join("")}</ul></div>` : "";
     const pdfs = (d.pdfs || []).map((p) => `<a class="btn" href="/api/file?path=${encodeURIComponent(labDir + "/" + p)}" target="_blank">📄 ${esc(p)}</a>`).join(" ");
     const notesBtn = d.notes && /\.md$/i.test(d.notes) ? `<a class="btn primary" href="${docRoute(joinPath(labDir, d.notes))}">📖 推导与分析 ${esc(d.notes)}</a>` : "";
     const handoff = (d.files || []).some((f) => f.name === "handoff.md") ? `<a class="btn" href="${docRoute(labDir + "/handoff.md")}">交接单</a>` : "";
     const files = (d.files || []).map((f) => /\.md$/i.test(f.name) ? `<li><a href="${docRoute(f.path)}">${esc(f.name)}</a> <span class="muted small">${(f.size / 1024).toFixed(1)} KB</span></li>` : `<li><a href="/api/file?path=${encodeURIComponent(f.path)}" target="_blank">${esc(f.name)}</a> <span class="muted small">${(f.size / 1024).toFixed(1)} KB</span></li>`).join("");
     const short = d.short && d.short !== d.title ? d.short : d.title;
     main.innerHTML = `<p><a href="#/labs">← Lab</a></p><h1>${esc(short)}</h1>${short !== d.title ? `<p class="subtitle muted">${esc(d.title)}</p>` : ""}
-      <div class="meta">${chip(st)}${d.stale_run ? `<span class="chip blocked" title="上次运行已结束但任务没收尾；系统会自动派续跑（额度用尽时等重置）">运行中断·等续跑</span>` : ""}${d.has_resume ? `<a href="${docRoute(labDir + "/resume.md")}">续跑单</a>` : ""}<span>${esc(id)}</span>${m.idea ? `<a href="#/ideas/${esc(m.idea)}">来自问题：${esc(m.idea)}</a>` : ""}${(m.discussions || []).map((x) => `<a href="#/discussion/${esc(x)}">讨论 ${esc(x)}</a>`).join("")}${m.machine ? `<span>机器：${esc(m.machine)}</span>` : ""}<span>更新：${esc(d.updated)}</span></div>
+      <div class="meta">${chip(st)}${d.stale_run ? `<span class="chip blocked" title="上次运行已结束但任务没收尾；系统会自动派续跑（额度用尽时等重置）">运行中断·等续跑</span>` : ""}${reviewChip(m)}${d.has_resume ? `<a href="${docRoute(labDir + "/resume.md")}">续跑单</a>` : ""}<span>${esc(id)}</span>${m.idea ? `<a href="#/ideas/${esc(m.idea)}">来自问题：${esc(m.idea)}</a>` : ""}${(m.discussions || []).map((x) => `<a href="#/discussion/${esc(x)}">讨论 ${esc(x)}</a>`).join("")}${m.machine ? `<span>机器：${esc(m.machine)}</span>` : ""}<span>更新：${esc(d.updated)}</span></div>
       <p>${st === "awaiting_review" ? `<button class="primary" id="approve">批准，开始执行</button> ` : ""}
          ${["running", "approved"].includes(st) ? "" : `<button id="park">搁置</button> `}${st === "parked" ? `<button id="unpark">恢复为待过目</button>` : ""} ${notesBtn} ${pdfs} ${handoff}</p>
-      <p class="small">审计：${auditLine}</p>
+      <p class="small">审计：${auditLine}</p>${pendingPanel}
       ${d.report ? `<div class="panel" id="report"></div>` : `<div class="panel muted">还没有报告摘要（report.md）。</div>`}
       ${(d.images || []).length ? `<details class="panel" ${d.report ? "" : "open"}><summary>全部图 (${d.images.length})</summary><div class="gallery">${d.images.map((im) => `<figure class="fig"><a href="/api/file?path=${encodeURIComponent(im.path)}" target="_blank"><img src="/api/file?path=${encodeURIComponent(im.path)}" alt="${esc(im.caption || im.name)}" loading="lazy"></a><figcaption>${esc(im.caption || im.name)}</figcaption></figure>`).join("")}</div></details>` : `<p class="muted small">这个 lab 还没有图（agent 应把图放在 fig/ 并嵌进 report.md）。</p>`}
       <details class="panel" ${["awaiting_review", "draft", "parked"].includes(st) ? "open" : ""}><summary>任务书 brief.md${m.comments_pending ? " · 有你的意见待 agent 处理" : ""}</summary><div id="brief"></div></details>
@@ -333,9 +344,10 @@
     if ($("#park")) $("#park").onclick = async () => { await api(`/api/labs/${encodeURIComponent(id)}/status/parked`, {}); pages.lab(id); };
     if ($("#comment")) $("#comment").onclick = async () => { const t = $("#cmt").value.trim(); if (!t) return toast("先写意见"); await api(`/api/labs/${encodeURIComponent(id)}/comment`, { text: t }); toast(["awaiting_review", "draft", "parked"].includes(st) ? "已记下，agent 开始按意见修改任务书" : "已记下，agent 下次运行会读到"); pages.lab(id); refreshOverview(); };
     if ($("#unpark")) $("#unpark").onclick = async () => { await api(`/api/labs/${encodeURIComponent(id)}/status/awaiting_review`, {}); pages.lab(id); };
-    const auditGo = (kind) => async () => { const r = await api(`/api/labs/${encodeURIComponent(id)}/audit/${kind}`, {}); toast(kind === "code" ? "已加入队列：代码审计（Codex）" : "已加入队列：推导审计（Codex）"); location.hash = "#/runs/" + r.id; };
+    const auditGo = (kind) => async () => { const r = await api(`/api/labs/${encodeURIComponent(id)}/audit/${kind}`, {}); toast(`已加入队列：${AUDIT_KIND_ZH[kind]}（${(OVERVIEW && OVERVIEW.auditor && OVERVIEW.auditor.model) || "Codex"}）`); location.hash = "#/runs/" + r.id; };
     if ($("#audit-der")) $("#audit-der").onclick = auditGo("derivation");
     if ($("#audit-code")) $("#audit-code").onclick = auditGo("code");
+    if ($("#audit-consistency")) $("#audit-consistency").onclick = auditGo("consistency");
     api("/api/seen", { kind: "lab", id }).then(refreshOverview);
   };
 
@@ -356,13 +368,14 @@
     const title = d.meta.title || (d.body.match(/^#\s+(.+)$/m) || [])[1] || parts[parts.length - 1];
     const sib = (d.siblings || []).map((s) => `<a href="${docRoute(dirOf(path) ? dirOf(path) + "/" + s : s)}">${esc(s)}</a>`).join("");
     let auditBanner = "";
-    if ((d.meta.kind === "derivation" || d.meta.kind === "code") && path.includes("/audit/")) {
+    if (["derivation", "code", "consistency"].includes(d.meta.kind) && path.includes("/audit/")) {
       const c = d.meta.counts || {}; const v = d.meta.verdict || "pass";
       const vtxt = v === "major" ? "❌ 有改变结论的发现" : v === "minor" ? "⚠️ 有不严谨之处" : "✅ 通过";
-      auditBanner = `<div class="audit-banner ${esc(v)}"><b>${esc(vtxt)}</b>
+      const pend = auditPending(d.meta);
+      auditBanner = `<div class="audit-banner ${esc(v)}"><b>${esc(AUDIT_KIND_ZH[d.meta.kind] || d.meta.kind)} · ${esc(vtxt)}</b>
         <span class="chip audit major">改变结论 ${c["改变结论"] ?? 0}</span><span class="chip audit minor">不严谨 ${c["不严谨"] ?? 0}</span><span class="chip audit typo">typo ${c["typo"] ?? 0}</span>
         <span class="small muted">${esc(d.meta.model || "")} · ${esc(String(d.meta.date || ""))} · commit ${esc(String(d.meta.commit || ""))}</span>
-        <span class="chip ${d.meta.handled ? "done" : "open"}">${d.meta.handled ? "发现已处理" : "发现待处理"}</span>
+        <span class="chip ${pend ? "open" : "done"}">${pend ? "发现待处理" : d.meta.handled ? "发现已处理" : "无待处理发现"}</span>
         ${d.meta.lab ? `<a href="#/labs/${esc(d.meta.lab)}">← 回到 lab</a>` : ""}</div>`;
     }
     main.innerHTML = `<p class="crumbs small">${crumbs.join(" / ")}</p><h1>${esc(title)}</h1>

@@ -127,6 +127,8 @@ def test_audit_reports_and_button(project_dir: Path):
     assert d["audit"]["derivation"]["verdict"] == "minor" and d["audit"]["derivation"]["counts"]["不严谨"] == 2
     assert [a["kind"] for a in d["audits"]] == ["derivation"]
     assert c.get("/api/labs").json()[0]["audit"]["derivation"]["handled"] is True
+    r = c.post("/api/labs/01-first-task/audit/consistency")
+    assert r.status_code == 200 and r.json()["id"]
     r = c.post("/api/labs/01-first-task/audit/code")
     assert r.status_code == 200 and r.json()["id"]
     assert c.post("/api/labs/01-first-task/audit/style").status_code == 400

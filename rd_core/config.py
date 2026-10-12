@@ -39,7 +39,8 @@ DEFAULTS: dict = {
         "backend": "codex",
         "model": "gpt-6-astra",
         "reasoning_effort": "xhigh",
-        "auto_derivation": True,
+        "auto_derivation": True,    # 厚层齐后自动做推导审计；发现处理完还要对当前版本复核到 pass
+        "auto_consistency": True,   # 薄层写完后自动做科学一致性检查；rd finish 要求它覆盖当前版本并 pass
     },
     "agent": {
         "backend": "claude",  # 目前自动运行只支持 claude；codex 的交互会话靠 AGENTS.md + skills

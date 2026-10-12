@@ -30,9 +30,12 @@ PROMPTS = {
     ),
     "run_lab": (
         "任务书 labs/{id}/brief.md（「{title}」）已被批准。请按 rd-lab skill 执行：先把 status 改为 running，"
-        "按任务书做事，推导与讲解写 notes.md（rd-notes skill，中文 markdown，PDF 和英文版按需），数值前先运行 `rd free-cores` 并登记作业，"
-        "大数据放 data_root 并留 DATA.md。收尾按 rd-lab C 节：厚层齐 → 写 handoff.md → 按 rd-writer skill 把薄层交给 Codex 写"
-        "（report.md、受影响的 wiki 页、idea 当前回答、STATUS.md），只做机械检查不改它的文字 → 卡片两三句、index、log.md，status 改为 done；"
+        "按任务书做事，推导与讲解写 notes.md（rd-notes skill，中文 markdown，PDF 和英文版按需），文献定位写 sources/reading-map.md，"
+        "数值前先运行 `rd free-cores` 并登记作业，大数据放 data_root 并留 DATA.md。收尾按 rd-lab C 节：厚层齐 → 推导审计（codex-audit.sh，--source notes.md、--expect 报告）→ 逐条处理 →"
+        "对当前版本复核到 pass（改变结论的修正方向唯一就自己改并复核，开讨论请用户过目、brief 记 pending_review，不停下；方向不唯一才 waiting_answer）→"
+        " 写 handoff.md → 按 rd-writer skill 把薄层交给 Codex 写（每个输出用 --expect 声明：report.md、受影响的 wiki 页、idea 当前回答、STATUS.md），只做机械检查不改它的文字 →"
+        " 薄层一致性检查（codex-audit.sh --kind consistency，--source 覆盖 notes、handoff、全部薄层输出）到 pass → 卡片两三句、index、log.md →"
+        " `~/doc_unsyn/research-dashboard/rd finish . {id}` 通过才算 done（它会核对当前版本的审核报告与 doctor；不要自己改 status: done）；"
         "遇到必须由用户裁决的问题，按无人值守规则写讨论并把 status 改为 waiting_answer。"
     ),
     "revise_brief": (
@@ -63,7 +66,8 @@ PROMPTS = {
         "log.md 末尾与本 lab 相关的几条，看 handoff.md 与 audit/ 是否存在，查 .dashboard/auditing 与 .dashboard/writing 里本 lab 记录的 run_info.txt 有无 exit 行"
         "（codex-audit.sh --status / codex-write.sh --status），由此判断停在哪一步：厚层未齐 / 等数值 / 审计被杀或进行中 / 审计报告已出未处理 / 交接单未写 / 薄层未写 / 只差回写与 commit。"
         "从那一步继续，做过的不重做，不要整体重读 notes.md（需要时只读相关小节）。Codex 审计或写作还活着就用 --wait 在前台等；死了没结果就重新启动。"
-        "数值批量还在跑就核对进度、更新续跑单后结束运行。收尾按 rd-lab C 节；结束前更新 resume.md；"
+        "数值批量还在跑就核对进度、更新续跑单后结束运行。收尾按 rd-lab C 节（审计发现处理后对当前版本复核到 pass；薄层用 --expect 声明；"
+        "一致性检查到 pass；最后 `~/doc_unsyn/research-dashboard/rd finish . {id}`，通过才算 done）；`rd finish --check . {id}` 能列出还差什么。结束前更新 resume.md；"
         "lab 状态只能停在 done / waiting_answer / awaiting_review / blocked，或仍在等外部进程的 running。"
     ),
 }
@@ -190,16 +194,22 @@ def run_pending(project: Project, only: str | None = None, dry_run: bool = False
     return results
 
 
-# 用户在 lab 页点的审计按钮（推导 / 代码）；自动的推导审计在 rd-lab 收尾里做，不走这里
+# 用户在 lab 页点的审计按钮（推导 / 代码 / 薄层一致性）；自动的推导审计与一致性检查在 rd-lab 收尾里做，不走这里
 AUDIT_PROMPTS = {
     "audit_derivation": (
         "用户在 dashboard 点了 labs/{id}/ 的「推导审计」。请按 rd-audit skill 执行：组提示词（kind=derivation，对象 notes.md 及其引用的 wiki 页，"
         "上下文含 notation、引用的卡片与原文、用户 notes）→ codex-audit.sh 启动，用 --wait 在前台等到结束（不要放后台）→ 读报告 → 逐条处理（typo 和非吹毛求疵的不严谨直接改并重跑验证；"
-        "改变结论开讨论并把 brief.md 状态改 awaiting_review，不要自己改结论）→ 在 report.md 的 audits、相关 wiki 页的 audited_by、STATUS.md 挂标记 → 记 log → git commit。"
+        "改变结论按 rd-audit §3：修正方向唯一就自己改并对当前版本复核到 pass，开讨论请用户过目、brief 记 pending_review；方向不唯一或你不同意审计才开讨论并把状态改 waiting_answer）"
+        "→ 在 report.md 的 audits、相关 wiki 页的 audited_by、STATUS.md 挂标记 → 记 log → git commit。"
+    ),
+    "audit_consistency": (
+        "用户在 dashboard 点了 labs/{id}/ 的「薄层一致性」。请按 rd-audit skill 执行：组提示词（kind=consistency，对象是本 lab 的 report.md、它写的 wiki 页、idea 当前回答、STATUS.md，"
+        "对照 notes.md、handoff.md、notation 与证据）→ codex-audit.sh 以 --kind consistency 启动，--source 列 notes、handoff、全部薄层文件，--expect 报告路径，用 --wait 在前台等到结束（不要放后台）"
+        "→ 读报告 → 发现回写交接单后让写作者（rd-writer）重写对应页，不自己改薄层文字 → 源文件变了就重新做一次一致性检查到 pass → 记 log → git commit。"
     ),
     "audit_code": (
         "用户在 dashboard 点了 labs/{id}/ 的「代码审计」。请按 rd-audit skill 执行：组提示词（kind=code，对象是脚本、results/、DATA.md、画图脚本；"
         "先 `rd free-cores` 并把那句话填进 CORES）→ codex-audit.sh 启动，用 --wait 在前台等到结束（不要放后台）→ 读报告 → 逐条处理（typo 和非吹毛求疵的不严谨直接改代码并重跑受影响的小尺寸检查；"
-        "改变结论开讨论并把 brief.md 状态改 awaiting_review，不要自己改结论或结果）→ 在 report.md 的 audits、STATUS.md 挂标记 → 记 log → git commit。"
+        "改变结论按 rd-audit §3 处理：方向唯一就改并复核，方向不唯一开讨论并把状态改 waiting_answer，不要自己改结论或结果）→ 在 report.md 的 audits、STATUS.md 挂标记 → 记 log → git commit。"
     ),
 }

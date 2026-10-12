@@ -175,3 +175,89 @@ def test_shell_wrappers_route_to_rd(project_dir: Path, tmp_path: Path, monkeypat
     r = subprocess.run([str(root / "skills" / "rd-writer" / "codex-write.sh")], capture_output=True, text=True, env=env, cwd=root)
     assert r.returncode == 0 and "--wait" in r.stdout
     assert sys.executable  # 用到的 python 在 rd 包装里是 .venv 的；这里只确认脚本可执行
+
+
+# ---------- --expect / --source：输出声明、源文件哈希、outcome.json ----------
+FAKE_WRITES_REPORT = r'''
+case "$1" in
+  login) echo "Logged in using ChatGPT"; exit 0;;
+  --version) echo "codex-cli 0.160.0"; exit 0;;
+  exec)
+    out=""; while [ $# -gt 0 ]; do [ "$1" = "-o" ] && { out="$2"; shift; }; shift; done
+    mkdir -p labs/01-first-task/audit
+    printf -- '---\nkind: derivation\nverdict: pass\ncounts: {typo: 0, 不严谨: 0, 改变结论: 0}\nhandled: false\n---\n# 审\n' > labs/01-first-task/audit/r.md
+    [ -n "${FAKE_TOUCH_SOURCE:-}" ] && echo "改了" >> labs/01-first-task/notes.md
+    echo "tokens used"; echo "9"; echo "报告已生成" > "$out"; exit 0;;
+esac
+'''
+
+
+def test_expect_and_source_recorded_and_checked(project_dir: Path, tmp_path: Path, monkeypatch):
+    fake = _fake_codex(tmp_path / "ex", FAKE_WRITES_REPORT)
+    (project_dir / "labs" / "01-first-task" / "notes.md").write_text("推导\n", encoding="utf-8")
+    monkeypatch.setenv("CODEX_BIN", str(fake))
+    prompt = project_dir / "labs" / "01-first-task" / "audit" / "p.md"
+    prompt.parent.mkdir(parents=True, exist_ok=True)
+    prompt.write_text("审 {{MODEL}}", encoding="utf-8")
+    # 源文件不存在 → 拒绝启动
+    res = codex.start(project_dir, "audit", prompt, "t-nosrc", sources=["labs/01-first-task/nope.md"], expected=["labs/01-first-task/audit/r.md"])
+    assert not res["ok"] and res["code"] == 4
+    # 越界的输出路径 → 拒绝
+    res = codex.start(project_dir, "audit", prompt, "t-out", expected=["../x.md"])
+    assert not res["ok"]
+    res = codex.start(project_dir, "audit", prompt, "t-ex", sources=["labs/01-first-task/notes.md"], expected=["labs/01-first-task/audit/r.md"])
+    assert res["ok"], res
+    job = json.loads((Path(res["rec"]) / "job.json").read_text(encoding="utf-8"))
+    assert job["expected"] == ["labs/01-first-task/audit/r.md"] and list(job["source_hashes"]) == ["labs/01-first-task/notes.md"]
+    st = codex.wait(project_dir, "audit", "t-ex", max_seconds=30, poll=1)
+    assert st["state"] == "done", st
+    oc = json.loads((Path(res["rec"]) / "outcome.json").read_text(encoding="utf-8"))
+    assert oc["state"] == "done" and oc["review_verdicts"]["labs/01-first-task/audit/r.md"]["verdict"] == "pass"
+    assert st["stale"] is False
+    # 之后改了源文件 → status 报 stale，done_jobs 仍列出这份作业（finish 会按哈希判过期）
+    (project_dir / "labs" / "01-first-task" / "notes.md").write_text("推导（改过）\n", encoding="utf-8")
+    assert codex.status(project_dir, "audit", "t-ex")["stale"] is True
+    assert any(j["name"] == "t-ex" for j, _ in codex.done_jobs(project_dir))
+
+
+def test_missing_output_and_touched_source_fail(project_dir: Path, tmp_path: Path, monkeypatch):
+    fake = _fake_codex(tmp_path / "ex2", FAKE_WRITES_REPORT)
+    (project_dir / "labs" / "01-first-task" / "notes.md").write_text("推导\n", encoding="utf-8")
+    monkeypatch.setenv("CODEX_BIN", str(fake))
+    prompt = project_dir / "p.md"
+    prompt.write_text("审", encoding="utf-8")
+    # 声明的输出没产出 → 10
+    res = codex.start(project_dir, "consistency", prompt, "t-miss", expected=["labs/01-first-task/audit/never.md"])
+    assert res["ok"] and "auditing" in res["rec"]
+    st = codex.wait(project_dir, "consistency", "t-miss", max_seconds=30, poll=1)
+    assert st["state"] == "failed" and st["code"] == codex.MISSING_OUTPUT, st
+    # 审核期间源文件被改 → 11
+    monkeypatch.setenv("FAKE_TOUCH_SOURCE", "1")
+    res = codex.start(project_dir, "audit", prompt, "t-touch", sources=["labs/01-first-task/notes.md"], expected=["labs/01-first-task/audit/r.md"])
+    st = codex.wait(project_dir, "audit", "t-touch", max_seconds=30, poll=1)
+    assert st["state"] == "failed" and st["code"] == codex.STALE_SOURCE, st
+    assert not any(j["name"] in ("t-miss", "t-touch") for j, _ in codex.done_jobs(project_dir))
+
+
+def test_wrappers_pass_through_kind_expect_source(project_dir: Path, tmp_path: Path, monkeypatch):
+    fake = _fake_codex(tmp_path / "wr", FAKE_WRITES_REPORT)
+    (project_dir / "labs" / "01-first-task" / "notes.md").write_text("推导\n", encoding="utf-8")
+    prompt = project_dir / "p.md"
+    prompt.write_text("审", encoding="utf-8")
+    root = Path(__file__).resolve().parent.parent
+    env = {**os.environ, "CODEX_BIN": str(fake), "RD_HOME": os.environ.get("RD_HOME", "")}
+    r = subprocess.run([str(root / "skills" / "rd-audit" / "codex-audit.sh"), str(project_dir), str(prompt), "t-cons",
+                        "--kind", "consistency", "--source", "labs/01-first-task/notes.md", "--expect", "labs/01-first-task/audit/r.md"],
+                       capture_output=True, text=True, env=env, cwd=root)
+    assert r.returncode == 0, r.stdout + r.stderr
+    job = json.loads((codex.rec_dir(project_dir, "consistency", "t-cons") / "job.json").read_text(encoding="utf-8"))
+    assert job["kind"] == "consistency" and job["expected"] == ["labs/01-first-task/audit/r.md"]
+    codex.wait(project_dir, "consistency", "t-cons", max_seconds=30, poll=1)
+    img = tmp_path / "fig.png"
+    img.write_bytes(b"png")
+    r = subprocess.run([str(root / "skills" / "rd-writer" / "codex-write.sh"), str(project_dir), str(prompt), "t-w", str(img),
+                        "--expect", "labs/01-first-task/audit/r.md"], capture_output=True, text=True, env=env, cwd=root)
+    assert r.returncode == 0, r.stdout + r.stderr
+    job = json.loads((codex.rec_dir(project_dir, "write", "t-w") / "job.json").read_text(encoding="utf-8"))
+    assert job["images"] == [str(img.resolve())] and job["expected"] == ["labs/01-first-task/audit/r.md"]
+    codex.wait(project_dir, "write", "t-w", max_seconds=30, poll=1)

@@ -1,6 +1,6 @@
 ---
 name: rd-lab
-description: 课题 lab 任务的起草、执行与收尾（research-dashboard 课题目录内使用）。当要把一个 idea 升级成任务书、执行一个已批准的 labs/NN-slug/brief.md、写 notes.md 与 report.md、做薄层写作步（交接单 → Codex 写 → 机械检查，见 rd-writer）、或做任务收尾回写（STATUS、wiki、idea、卡片、log）时使用。
+description: 课题 lab 任务的起草、执行与收尾（research-dashboard 课题目录内使用）。当要把一个 idea 升级成任务书、执行一个已批准的 labs/NN-slug/brief.md、写 notes.md 与 sources/reading-map.md、做推导审计与复核、做薄层写作步（交接单 → Codex 写 → 机械检查 → 一致性检查，见 rd-writer、rd-audit）、或做任务收尾回写（STATUS、wiki、idea、卡片、log、rd finish）时使用。
 ---
 
 # rd-lab：任务从起草到收尾
@@ -68,26 +68,32 @@ created: 2026-10-02
    ```markdown
    ---
    updated: 2026-10-08 12:00
-   stage: 厚层未齐 | 等数值 | 审计进行中 | 审计待处理 | 交接单未写 | 薄层未写 | 回写未完
+   stage: 厚层未齐 | 等数值 | 审计进行中 | 审计待处理 | 复核进行中 | 交接单未写 | 薄层未写 | 一致性进行中 | 一致性待处理 | 回写未完 | 待 finish
    waiting_on: 无 | 批量 pid 12345（results/batch.log 出现 BATCH_ALL_DONE） | codex audit 2026-10-08-lab02-derivation-3
    ---
    ## 已完成
    - notes §0–§5 已写并 commit（a1b2c3d）；fig/main.png 已出
    ## 未完成（按顺序）
-   1. 等审计报告 → 逐条处理 → 2. handoff.md → 3. 薄层三份 → 4. 卡片回写、index、log、done
+   1. 等审计报告 → 逐条处理 → 复核到 pass → 2. handoff.md → 3. 薄层三份（--expect）→ 4. 一致性检查到 pass → 5. 卡片回写、index、log、rd finish
    ## 下一步
    - `codex-audit.sh --wait . 2026-10-08-lab02-derivation-3 540`，报告在 audit/2026-10-08-gpt-6-astra-derivation.md
    ```
 7. **后台进程**：Codex 审计/写作只用 `codex-audit.sh` / `codex-write.sh` 启动并用 `--wait` 前台等（它们自己脱离父进程）；数值批量用 `nohup … &` 启动、`rd jobs claim` 登记 pid、留完成标记文件。**不要用 Claude Code 的 run_in_background 跑任何必须活过本次运行的东西**，本次运行一结束它们就被清掉。
-8. 运行结束时状态只能是 `done` / `waiting_answer` / `awaiting_review` / `blocked`，或仍在等外部进程的 `running`（续跑单写清在等什么）。`running` 且没有活着的运行的 lab，系统会自动派续跑（D 节）。
+8. 运行结束时状态只能是 `done` / `waiting_answer` / `awaiting_review` / `blocked`，或仍在等外部进程的 `running`（续跑单写清在等什么）。`running` 且没有活着的运行的 lab，系统会自动派续跑（D 节）。`done` 只能由 `rd finish` 写（C5），不要手改。
+9. **文献定位页 `sources/reading-map.md`**：lab 读了哪些原文就记在这里，边读边记（模板见 rd-reference §「阅读范围」）：每份 PDF 的真实身份（标题、版本、页数）、精读到哪几页哪些式号、公开附录从哪个 URL 哪个版本取得、**哪些没拿到或被拒绝访问**（403、不在 arXiv）并写明"未读、未冒充读过"。审计者和写作者据它判断引用边界；卡片只链接它，不重复。
 
 ## C. 收尾
 
 ### C1. 厚层齐
-- `notes.md`、`fig/`（关键图至少一张结果图加一张问题设定示意图）、`results/`、`DATA.md`（有大数据时：机器、绝对路径、内容、日期、重新生成命令）。
+- `notes.md`、`fig/`（关键图至少一张结果图加一张问题设定示意图）、`results/`、`DATA.md`（有大数据时：机器、绝对路径、内容、日期、重新生成命令）、`sources/reading-map.md`（B.9：读了什么、没拿到什么）。
 
-### C1b. 推导审计（自动，按 rd-audit skill）
-厚层齐了、交接单还没写之前，把 `notes.md`（和它引用的 wiki 页）交给 Codex 独立审计：组提示词 → `codex-audit.sh` 启动 → `--wait` 在前台等到结束（不放后台，见 B.7）→ 读报告 → 逐条处理（`typo`、非吹毛求疵的 `不严谨` 直接改并重跑验证脚本；`改变结论` 开讨论、`status: awaiting_review`、**停在这里不写薄层**）→ `report.md` frontmatter 记 `audits:`。`[auditor]` 的 `auto_derivation = false` 时跳过。代码审计不自动做，用户在 lab 页点按钮才做。
+### C1b. 推导审计与复核（自动，按 rd-audit skill）
+厚层齐了、交接单还没写之前，把 `notes.md`（和它引用的 wiki 页、验证脚本）交给 Codex 独立审计：组提示词 → `codex-audit.sh` 启动（`--source notes.md …`、`--expect` 报告路径）→ `--wait` 在前台等到结束（不放后台，见 B.7）→ 读报告 → 逐条处理（rd-audit §3）：
+- `typo`、非吹毛求疵的 `不严谨`：直接改并重跑验证脚本。
+- `改变结论` 且修正方向唯一：自己改、重跑脚本，开一个"n 处修正请过目"的讨论，`brief.md` frontmatter 写 `pending_review: <讨论 id>`，**不停下**。
+- `改变结论` 且方向不唯一、或你不同意审计：开讨论，`status: waiting_answer`，停在这里不写薄层。
+
+改过被审的源文件就必须**复核**（rd-audit §3b）：再启动一次审计（`-v2`），直到报告 `verdict: pass`；`rd finish` 只认覆盖当前版本的通过报告。`[auditor]` 的 `auto_derivation = false` 时跳过。代码审计不自动做，用户在 lab 页点按钮才做。
 
 ### C2. 交接单 `handoff.md`
 给写作步用，写作者没看过任何一次运行。开头先按 rd-writer §1 填每个目标页“读者要带走的三句话”（发现 / 解释 / 边界），确定正文要回答的问题顺序；机制未知就写未知。随后给读者背景、用户原话、结论的证据强度（**已证明 / 数值支持 / 解释与猜测**，带适用范围）、**哪些话不能说过头**、材料位置（notes 节号、表、图及角色）、目标文件与模板。注明哪些方法和完整推导留在 notes，避免把材料清单直接变成正文。
@@ -99,20 +105,26 @@ created: 2026-10-02
 - 来源 idea 的「当前回答」与 frontmatter `verdict:`（只改这两处，原话不动）；
 - `STATUS.md` 里对应问题的那一行和「进行中 / 等你决定」。
 
-多个目标可以分几次调用（每次一两个文件，图随提示词附上），可以一起启动、再逐个 `--wait`（见 rd-writer §3；不放后台）。写完后研究 agent **只做机械检查**：目标文件在、没碰别的文件、图和链接能打开、`rd doctor` 无断链；不核对、不改写它的文字。Codex 不可用时记 log，薄层留到下次。
+多个目标可以分几次调用（每次一两个文件，图随提示词附上，**每个输出文件都用 `--expect` 声明**），可以一起启动、再逐个 `--wait`（见 rd-writer §3；不放后台）。写完后研究 agent **只做机械检查**：目标文件在、没碰别的文件、图和链接能打开、`rd doctor` 无断链；不核对、不改写它的文字。Codex 不可用时记 log，薄层留到下次。有 `pending_review` 的 lab，交接单要让写作者在 report「边界」和 STATUS 行写"审计修正待过目，见 [[讨论]]"。
+
+### C3b. 薄层一致性检查（自动，按 rd-audit §3c）
+薄层全部写完、机械检查通过后，`codex-audit.sh … --kind consistency`，`--source` 覆盖 notes.md、handoff.md、report.md、本 lab 写的每个 wiki/idea 文件、STATUS.md，`--expect` 报告路径；`--wait` 前台等。发现回到交接单、让写作者重写对应页（研究 agent 不改薄层文字），改过就再检查一次，直到 `verdict: pass`。`[auditor]` 的 `auto_consistency = false` 时跳过。
 
 ### C4. 其余回写（每样一句话加链接）
 - 卡片「与本课题的联系」：本 lab 用到的每张卡片加两三句，不抄数字。
 - `wiki/index.md`：新页加一行。
 - 新问题 → discussion。
-- `log.md` 追加；`brief.md` 的 `status: done`；git commit。
+- `log.md` 追加。
+
+### C5. 收尾门槛 `rd finish`
+`~/doc_unsyn/research-dashboard/rd finish <课题根> <lab id>`：核对当前版本有通过的推导审核（C1b）与一致性报告（C3b）、report.md 由写作作业以 `--expect` 产出、doctor 无问题，通过才把 `brief.md` 的 `status` 改为 done 并记 log；然后 git commit。不通过时它逐条列出还差什么（`rd finish --check` 只看不改）：补齐再跑，**不要手改 status: done**。还在等用户过目的 `pending_review` 不阻塞 finish。
 
 ## D. 续跑（上一次运行中断之后）
 
 调度器发现某个 lab 是 `running` 但没有活着的运行（上次运行被额度用尽、超时打断，或自己在等数值/Codex 时结束了），就派一次 `resume_lab` 运行。续跑的原则是**接着做，不重做，不重读**：
 
 1. 先读 `resume.md`（没有就读 `brief.md`、`report.md`、log 末尾本 lab 的几条、看 `handoff.md` 与 `audit/` 在不在），再用 `codex-audit.sh --status` / `codex-write.sh --status` 看 `.dashboard/auditing`、`.dashboard/writing` 里本 lab 的记录：有结束行就是跑完了，没结束行且 pid 不在就是被杀了。
-2. 判断停在哪一步（厚层未齐 / 等数值 / 审计被杀或进行中 / 审计报告已出未处理 / 交接单未写 / 薄层未写 / 只差回写与 commit），从那一步继续。`notes.md` 只读与下一步直接相关的小节，不整体重读；已 commit 的东西不重算。
+2. 判断停在哪一步（厚层未齐 / 等数值 / 审计被杀或进行中 / 审计报告已出未处理 / 复核未做或进行中 / 交接单未写 / 薄层未写 / 一致性未做或未处理 / 只差回写与 finish），从那一步继续；`rd finish --check <根> <lab>` 能直接列出收尾门槛还差什么。`notes.md` 只读与下一步直接相关的小节，不整体重读；已 commit 的东西不重算。
 3. Codex 作业还活着就 `--wait`；死了没结果就换个记录目录名重启。数值批量还在跑就核对进度、更新续跑单、结束运行（调度器会再派）。
 4. 收尾仍按 C 节；结束前更新 `resume.md`。连续三次续跑失败，调度器会把 lab 改成 `blocked` 让用户看。
 
@@ -124,6 +136,7 @@ title: <短标题>
 status: done
 notes: notes.md
 updated: 2026-10-02
+audits: [audit/<日期>-<模型>-derivation-v2.md]   # 通过的那份（复核报告）；写作者按交接单填
 ---
 
 # <短标题>

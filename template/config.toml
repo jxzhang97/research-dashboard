@@ -23,11 +23,13 @@ model = "gpt-6-astra"
 reasoning_effort = "xhigh"
 
 [auditor]
-# 审计步（推导审计每个 lab 收尾自动做；代码审计在 dashboard 点按钮）交给 Codex；见 rd-audit skill
+# 审计步交给 Codex；见 rd-audit skill。推导审计每个 lab 厚层齐后自动做，发现处理完要对当前版本复核到 pass；
+# 薄层写完后自动做科学一致性检查；代码审计在 dashboard 点按钮。`rd finish` 只认覆盖当前文件版本的通过报告
 backend = "codex"
 model = "gpt-6-astra"
 reasoning_effort = "xhigh"
-auto_derivation = true      # lab 收尾时自动做推导审计
+auto_derivation = true      # 厚层齐后自动做推导审计（含修改后的复核）
+auto_consistency = true     # 薄层写完后自动做科学一致性检查
 
 [agent]
 backend = "claude"

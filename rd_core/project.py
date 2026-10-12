@@ -324,18 +324,39 @@ class Project:
         for d in docs:
             d.extra["stale_run"] = d.meta.get("status") == "running" and self._run_for_lab(live, d.id) is None
 
-    # ---------- 审计报告（labs/NN/audit/*.md，见 rd-audit skill） ----------
-    def _audits(self, d: Path) -> list[dict]:
+    # ---------- 审计报告（labs/NN/audit/ 下任意层级的 *.md，见 rd-audit skill） ----------
+    def _audit_evidence(self) -> dict[str, dict]:
+        """报告路径 → 产出它的作业启动时记下的源文件哈希；源文件之后改过，这份报告就"过期"。"""
+        from .codex import done_jobs
+        ev: dict[str, dict] = {}
+        try:
+            for job, _ in done_jobs(self.root):
+                for target in job.get("expected") or []:
+                    if job.get("source_hashes"):
+                        ev[target] = job["source_hashes"]
+        except OSError:
+            pass
+        return ev
+
+    def _audits(self, d: Path, evidence: dict | None = None) -> list[dict]:
+        from .codex import _hash
         out = []
-        for p in sorted((d / "audit").glob("*.md")) if (d / "audit").exists() else []:
-            if p.name.startswith("prompt"):
+        for p in sorted((d / "audit").rglob("*.md")) if (d / "audit").exists() else []:
+            rel_in = p.relative_to(d / "audit").parts
+            if p.name.startswith("prompt") or "scratch" in rel_in[:-1]:
                 continue
             meta, _ = fm.read(p)
             if not meta.get("kind"):
                 continue
-            out.append({"path": self.rel(p), "name": p.name, "kind": meta.get("kind"), "verdict": meta.get("verdict", "pass"),
-                        "counts": meta.get("counts") or {}, "date": str(meta.get("date", "")), "model": meta.get("model", ""),
-                        "handled": bool(meta.get("handled", False)), "title": meta.get("title", p.stem)})
+            rel = self.rel(p)
+            hashes = (evidence if evidence is not None else self._audit_evidence()).get(rel)
+            counts = meta.get("counts") or {}
+            pending = (not meta.get("handled")) and (meta.get("verdict", "pass") != "pass" or any(int(v or 0) for v in counts.values()))
+            out.append({"path": rel, "name": str(p.relative_to(d / "audit")), "kind": meta.get("kind"), "verdict": meta.get("verdict", "pass"),
+                        "counts": counts, "date": str(meta.get("date", "")), "model": meta.get("model", ""),
+                        "handled": bool(meta.get("handled", False)), "pending": pending,
+                        "stale": bool(hashes) and _hash(self.root, hashes) != hashes, "title": meta.get("title", p.stem)})
+        out.sort(key=lambda a: (a["date"], a["path"]))
         return out
 
     @staticmethod
@@ -356,7 +377,7 @@ class Project:
         pdfs = sorted(str(p.relative_to(d)) for p in d.rglob("*.pdf")
                       if not any(part.startswith(".") or part in ("results", "writing-test") for part in p.relative_to(d).parts))
         doc.extra["pdfs"] = pdfs[:20]
-        doc.extra["audit"] = self._audit_summary(self._audits(d))
+        doc.extra["audit"] = self._audit_summary(self._audits(d, self._audit_evidence()))
         doc.extra["question"] = doc.extra["answer"] = ""
         doc.extra["notes"] = ""
         if doc.extra["has_report"]:
@@ -402,6 +423,15 @@ class Project:
         doc.extra["files"] = files[:500]
         doc.extra["images"] = images[:200]  # lab 页的图画廊：fig/ 里的图都能看到，图注来自 report.md / notes.md 的 alt 文字
         doc.extra["audits"] = self._audits(d)
+        # 收尾门槛（rd finish）现在还差什么；done 的 lab 不再重算
+        if doc.extra["has_report"] and doc.meta.get("status") != "done":
+            from .workflow import completion_errors
+            try:
+                doc.extra["completion_pending"] = completion_errors(self.root, d.name, self)
+            except Exception as e:  # noqa: BLE001
+                doc.extra["completion_pending"] = [f"收尾检查出错: {e!r}"]
+        else:
+            doc.extra["completion_pending"] = []
         return doc
 
     def next_lab_id(self, title: str) -> str:
@@ -660,6 +690,9 @@ class Project:
                 items.append({"kind": "lab", "id": d.id, "title": title, "why": "任务卡在一个问题上，见讨论", "time": d.mtime})
             elif st in ("done", "blocked") and self.is_unread("lab", d.id, d.mtime):
                 items.append({"kind": "lab", "id": d.id, "title": title, "why": "任务" + ("完成" if st == "done" else "受阻") + "，未查看", "time": d.mtime})
+            pr = d.meta.get("pending_review")
+            if pr and not any(it["kind"] == "discussion" and it["id"] in (pr if isinstance(pr, list) else [pr]) for it in items):
+                items.append({"kind": "lab", "id": d.id, "title": title, "why": "审计修正已按唯一方向改并复核通过，等你过目", "time": d.mtime})
         items.sort(key=lambda x: -x["time"])
         counts: dict[str, int] = {}
         for it in items:

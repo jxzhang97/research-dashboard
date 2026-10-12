@@ -36,7 +36,7 @@
 **两层内容，两种写法：**
 
 - **厚层**（`notes.md`、代码、数据、验证脚本）：由做推导或跑数值的那个 agent 在同一上下文里写，按 `rd-notes` skill（问题链、无跳步、落盘验证），可以长，可以密。
-- **薄层**（`report.md`、wiki 页、idea 节点的「当前回答」、`STATUS.md`）：**单独一步，交给 Codex 写**（`config.toml` 的 `[writer]`，默认 `gpt-6-astra`、reasoning effort xhigh、ChatGPT 账号登录），流程见 `rd-writer` skill：研究 agent 写交接单（`labs/NN-slug/handoff.md`：这次回答了什么、改变了什么认识、哪些话不能说过头、材料在哪、每张图的角色），用 `codex-write.sh` 调 Codex，写完**只做机械检查**（文件在指定位置、没碰别的文件、图和链接能打开、`rd doctor` 无断链），**不核对、不改写它的文字**；科学限定靠交接单的"不能说过头"清单把关。Codex 不可用（没装、没登录）时记 log、把薄层留到下次，不用别的模型代写。
+- **薄层**（`report.md`、wiki 页、idea 节点的「当前回答」、`STATUS.md`）：**单独一步，交给 Codex 写**（`config.toml` 的 `[writer]`，默认 `gpt-6-astra`、reasoning effort xhigh、ChatGPT 账号登录），流程见 `rd-writer` skill：研究 agent 写交接单（`labs/NN-slug/handoff.md`：这次回答了什么、改变了什么认识、哪些话不能说过头、材料在哪、每张图的角色），用 `codex-write.sh` 调 Codex（每个输出用 `--expect` 声明），写完**只做机械检查**（文件在指定位置、没碰别的文件、图和链接能打开、`rd doctor` 无断链），**不核对、不改写它的文字**；然后交给审计者做一次**薄层科学一致性检查**（`rd-audit` 的 `consistency`，逐句对照 notes、交接单与图，查夸大、丢条件、记号错），发现回到交接单让写作者重写，直到通过。流程状态（审核是否通过、finish 是否执行）不写进薄层正文，只在 frontmatter 和"边界"里留一句审计结论或链接。Codex 不可用（没装、没登录）时记 log、把薄层留到下次，不用别的模型代写。
 
 **薄层首屏固定四段**，顺序不变：
 
@@ -106,11 +106,13 @@
 1. **想法**：用户写在 `ideas/inbox/` 或 dashboard 速记。agent 按 `rd-idea` skill 整理进问题树，原话不动。
 2. **任务书**：用户请求升级（或 agent 判断该动手并征得同意）时，按 `rd-lab` skill 起草 `labs/NN-slug/brief.md`，用户原话原样保留，结合本文件和 PROJECT.md 写出目标、步骤、交付物、机器。状态 `awaiting_review`。**用户说了不用过目的，直接 `approved` 并开始。** 用户可以在 dashboard 的任务页对任务书写意见（追加到任务书的「## 用户意见」，原话不动）；系统会派一次 `revise_brief` 运行，agent 按意见修改任务书、在每条意见下回复，状态保持 `awaiting_review` 等用户再看。
 3. **执行**：状态改 `running`，按任务书做；推导和讲解进 `notes.md`（`rd-notes`）；数值按第 5 节；中途的小结论随时写进 `report.md` 草稿。
-4. **收尾**（缺一不可，但每样只写一次）：
-   - 厚层齐：`notes.md`、`fig/`、`DATA.md`、`results/`；
-   - 交接单 `handoff.md`，然后**薄层写作步**（第 2 节，`rd-writer`，Codex）：`report.md`、受影响的 wiki 页、来源 idea 的「当前回答」、`STATUS.md`；主 agent 只做机械检查；
-   - 卡片「与本课题的联系」加两三句；wiki `index.md` 加新页链接；
-   - 有新问题就写 discussion；`log.md` 追加；状态改 `done`；git commit。
+4. **收尾**（缺一不可，但每样只写一次；细节见 rd-lab C 节）：
+   - 厚层齐：`notes.md`、`fig/`、`DATA.md`、`results/`、`sources/reading-map.md`（读了什么、没拿到什么）；
+   - 推导审计（`rd-audit`）：逐条处理发现；改过源文件就对当前版本**复核**到 `pass`；
+   - 交接单 `handoff.md`，然后**薄层写作步**（第 2 节，`rd-writer`，Codex，每个输出 `--expect`）：`report.md`、受影响的 wiki 页、来源 idea 的「当前回答」、`STATUS.md`；主 agent 只做机械检查；
+   - **薄层一致性检查**（`rd-audit` consistency）到 `pass`；
+   - 卡片「与本课题的联系」加两三句；wiki `index.md` 加新页链接；有新问题就写 discussion；`log.md` 追加；
+   - `~/doc_unsyn/research-dashboard/rd finish <课题根> <lab id>`：它核对当前版本的两份通过报告、薄层来自写作作业、doctor 干净，通过才把状态改 `done`（**不要手改 done**）；git commit。
 
 ## 7. 什么时候、怎么向用户提问
 
@@ -129,7 +131,7 @@
 
 ## 9. 状态与格式速查
 
-- lab：`draft → awaiting_review → approved → running → done`；旁路 `waiting_answer`、`blocked`、`parked`。
+- lab：`draft → awaiting_review → approved → running → done`；旁路 `waiting_answer`、`blocked`、`parked`。`done` 只由 `rd finish` 写。任务书 frontmatter `pending_review: <讨论 id>` 表示"改变结论的审计发现已按唯一方向修正并复核通过，等用户过目"，不阻塞收尾。
 - discussion：`open → answered → digested → resolved`；`asked_by: agent | user`。
 - idea：`seed / exploring / lab / resolved / parked / dropped`；inbox 里未整理的没有状态。节点可选 `kind: question | route | method`，默认 question。
 - inbox 候选：`pending → approved → ingested`，或 `rejected`。
@@ -142,18 +144,21 @@ rd free-cores <课题目录>                 # 现在能用几个核
 rd jobs claim <课题目录> --cores N --label X --pid P / rd jobs release <课题目录> --id J
 rd doctor <课题目录>                     # 断链、卡片缺节、状态异常
 rd tick <课题目录>                       # 处理所有待办（回答、审批、升级）
+rd finish <课题目录> <lab id> [--check]  # 收尾门槛：当前版本有通过的推导审核与一致性报告、薄层来自写作作业、doctor 干净，才标 done
 ```
+`rd` 在 `~/doc_unsyn/research-dashboard/rd`（可能不在 PATH，用绝对路径）。
 
 ## 11. 审计
 
-- 每个 lab 的推导（`notes.md`）在收尾时由另一个模型（`config.toml` 的 `[auditor]`，Codex）独立审计一次；代码审计只在用户点按钮时做。流程和报告格式见 rd-audit skill，报告在 `labs/NN/audit/`。
-- 发现分三档。`typo` 和 `不严谨` 由你直接改，改完在报告「处理」一节记一行；`改变结论` 不自己改，开讨论让用户裁决，lab 状态 `awaiting_review`，并且不写薄层。
+- 三种审计都由另一个模型（`config.toml` 的 `[auditor]`，Codex）独立做，流程和报告格式见 rd-audit skill，报告在 `labs/NN/audit/`：**推导审计**（厚层齐后自动）、**代码审计**（用户点按钮）、**薄层一致性检查**（薄层写完后自动，逐句对照厚层）。
+- 审计作业启动时用 `--source` 声明审的文件、`--expect` 声明报告；源文件之后再改，报告就过期。**处理完发现改过源文件，就要对当前版本复核到 `verdict: pass`**；`handled: true` 只表示作者处理了，不表示审计者认可。`rd finish` 只认覆盖当前版本的通过报告。
+- 发现分三档。`typo` 和 `不严谨` 由你直接改，改完在报告「处理」一节记一行。`改变结论` 分两种：**修正方向唯一**的（符号、漏项、精度说过头、论证降为假设、范围收窄）由你直接改、重跑验证、复核，再开一个讨论把全部修正列清单请用户过目，任务书 frontmatter 写 `pending_review: <讨论 id>`，照常写薄层、收尾，不阻塞；**方向不唯一**或你不同意审计的，不自己改，开讨论让用户裁决，lab 状态 `waiting_answer`，不写薄层。
 - **什么算不严谨、什么算吹毛求疵**：不严谨 = 读者照 notes 自己重推会在这一步卡住或得出不同的适用范围（假设没交代、极限交换没检查、范围没标、记号没定义、收敛没展示）。吹毛求疵 = 换种写法更清楚、可以多加一句、记号偏好、教科书通常省略的中间步、与结论无关的细节。判据只有一条：不改，读者会被误导或结论会错吗？答不上来的发现可以不予理会，但要在「处理」里写一句为什么。
-- 审计标记要挂到看得见的地方：`report.md` 的 `audits:`、wiki 页的 `audited_by:`、`STATUS.md` 问题行末尾。
+- 审计标记要挂到看得见的地方：`report.md` 的 `audits:`、wiki 页的 `audited_by:`、`STATUS.md` 问题行末尾；有 `pending_review` 的在 report「边界」和 STATUS 行写"审计修正待过目，见 [[讨论]]"。
 
 ## 12. 后台进程、续跑与额度
 
-- **无人值守运行是一次性进程**：它一结束，用 Claude Code 后台任务（run_in_background）起的进程一起被清掉，"等通知"永远等不到。Codex 审计/写作只用 `codex-audit.sh` / `codex-write.sh` 启动（它们自己脱离父进程、记 pid），用 `--wait` 在前台等（单次最多 540 秒，Bash timeout 600000，循环到退出码不是 7）；数值批量用 `nohup … &` 启动、`rd jobs claim` 登记 pid、留完成标记文件。
+- **无人值守运行是一次性进程**：它一结束，用 Claude Code 后台任务（run_in_background）起的进程一起被清掉，"等通知"永远等不到。Codex 审计/一致性检查/写作只用 `codex-audit.sh` / `codex-write.sh` 启动（它们自己脱离父进程、记 pid、记源文件哈希），用 `--wait` 在前台等（单次最多 540 秒，Bash timeout 600000，循环到退出码不是 7）；等的时候不要改被审的源文件；数值批量用 `nohup … &` 启动、`rd jobs claim` 登记 pid、留完成标记文件。
 - **续跑单**：lab 每到一个里程碑和每次运行结束前更新 `labs/NN-slug/resume.md`（做完了什么、还差什么、在等哪个进程、下一步具体命令），半页以内，模板见 rd-lab B.6。
 - **自动续跑**：lab 状态 `running` 但没有活着的运行（上次被额度、超时打断或在等外部进程时结束），调度器会派 `resume_lab` 运行；续跑接着做、不重做、不整体重读 notes（rd-lab D 节）；该 lab 的 Codex 作业还活着时调度器先等它。连续三次续跑失败改 `blocked`。运行结束时 lab 状态只能是 `done` / `waiting_answer` / `awaiting_review` / `blocked`，或仍在等外部进程的 `running`。
 - **额度**：运行输出里出现 Claude 的 limit 提示（"hit your session limit · resets …"），调度器记下重置时刻，到时之前不派任何任务；所以每到里程碑就 commit 并更新续跑单，被打断时损失只有最后一小段。
