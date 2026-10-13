@@ -154,6 +154,19 @@
     if (window.renderMathInElement) {
       renderMathInElement(div, { delimiters: [{ left: "$$", right: "$$", display: true }, { left: "\\[", right: "\\]", display: true }, { left: "\\(", right: "\\)", display: false }, { left: "$", right: "$", display: false }], throwOnError: false });
     }
+    if (translation?.state === "current" && typeof translation.original_body === "string") {
+      // Parse quoted/list headings too, using the same math protection as the source view.
+      const original = protectMath(translation.original_body);
+      const tokens = md.parse(wikilinks(original.src), {});
+      const texts = [];
+      tokens.forEach((token, i) => {
+        if (token.type !== "heading_open" || !/^h[1-4]$/.test(token.tag)) return;
+        const scratch = document.createElement("div");
+        scratch.innerHTML = restoreMath(md.renderInline(tokens[i + 1].content), original.store);
+        texts.push(scratch.textContent);
+      });
+      translation = { ...translation, source_heading_texts: texts };
+    }
     return reader.decorate(div, translation, render, slugId, md);
   }
   // 长文的目录：h2/h3 超过 3 个才显示

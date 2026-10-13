@@ -140,7 +140,10 @@
     if (entry) {
       result.title = entry.title;
       if (doc.meta) result.meta = { ...doc.meta, ...entry.fields, title: entry.title };
-      if ("body" in doc) result.body = entry.body;
+      if ("body" in doc) {
+        result.translation.original_body = doc.body;
+        result.body = entry.body;
+      }
     }
     return result;
   }
@@ -246,11 +249,14 @@
     banner._refreshTranslation = () => notice(banner, translation.path, render, translation.body);
     banner._refreshTranslation(); div.prepend(banner);
     if (translation.state === "current") {
-      const headings = [...div.querySelectorAll("h1,h2,h3,h4,h5,h6")]; const used = {};
-      (translation.source_headings || []).forEach((source, i) => {
-        if (!headings[i]) return;
+      const headings = [...div.querySelectorAll("h1,h2,h3,h4")]; const used = {};
+      const sources = translation.source_heading_texts || (translation.source_headings || []).map((source) => {
         const scratch = document.createElement("div"); scratch.innerHTML = md.renderInline(source);
-        let id = slugId(scratch.textContent); if (used[id]) id = `${id}-${++used[id]}`; else used[id] = 1;
+        return scratch.textContent;
+      });
+      sources.forEach((source, i) => {
+        if (!headings[i]) return;
+        let id = slugId(source); if (used[id]) id = `${id}-${++used[id]}`; else used[id] = 1;
         if (headings.some((h) => h.id === id)) return;
         const alias = document.createElement("span"); alias.id = id; alias.className = "translation-anchor";
         headings[i].before(alias);
