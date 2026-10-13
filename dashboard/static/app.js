@@ -630,7 +630,7 @@
   pages.runs = async (id) => {
     if (id) return pages.run(id);
     const [d, cores] = await Promise.all([api("/api/runs"), api("/api/cores").catch(() => null)]);
-    const rows = d.runs.map((r) => `<li><span class="t"><a href="#/runs/${esc(r.id)}"><b>${esc(r.label || r.kind)}</b></a> <span class="small muted">${esc(r.kind)} · ${esc(r.model || "")}</span></span>${chip(r.status)}<span class="small muted">${esc(r.started || "")}</span></li>`).join("");
+    const rows = d.runs.map((r) => `<li><span class="t"><a href="#/runs/${esc(r.id)}"><b>${esc(r.label || r.kind)}</b></a> <span class="small muted">${esc(r.display_kind || r.kind)} · ${esc(r.model || "")}</span></span>${chip(r.status)}<span class="small muted">${esc(r.started || "")}</span></li>`).join("");
     const q = d.queue;
     main.innerHTML = `<h1>任务</h1>
       <div class="panel"><b>立刻执行</b><textarea id="prompt" placeholder="直接告诉 agent 要做什么（在课题目录里无人值守运行，遵守 AGENTS.md）"></textarea>
@@ -650,7 +650,7 @@
   pages.run = async (id) => {
     const r = await api(`/api/runs/${encodeURIComponent(id)}`);
     main.innerHTML = `<p><a href="#/runs">← 任务</a></p><h1>${esc(r.label || r.kind)}</h1>
-      <div class="meta"><span id="st">${chip(r.status)}</span><span>${esc(r.kind)}</span><span>${esc(r.model || "")}</span><span>${esc(r.started || "")}${r.ended ? " → " + esc(r.ended) : ""}</span>${r.cost_usd != null ? `<span>$${r.cost_usd.toFixed(2)}</span>` : ""}
+      <div class="meta"><span id="st">${chip(r.status)}</span><span>${esc(r.display_kind || r.kind)}</span><span>${esc(r.model || "")}</span><span>${esc(r.started || "")}${r.ended ? " → " + esc(r.ended) : ""}</span>${r.cost_usd != null ? `<span>$${r.cost_usd.toFixed(2)}</span>` : ""}
         ${["running", "queued"].includes(r.status) ? `<button class="danger" id="stop">停止</button>` : ""}</div>
       <details><summary>提示词</summary><pre class="log">${esc(r.prompt || "")}</pre></details>
       <h2>日志</h2><div class="log" id="log">${esc(r.log || "")}</div>`;

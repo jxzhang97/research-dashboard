@@ -68,8 +68,25 @@
     "studio（一、二期）+ pod（三期 L=9）":"studio (phases 1–2) + pod (phase 3, L=9)",
     "薄层写作尚未通过独立写作作业完成（codex-write.sh 启动时要用 --expect 声明每个输出文件，含 report.md）":"The reader-facing pages have not yet been completed through an independent writing job. Each output, including report.md, must be registered with --expect.",
     "审计修正清单，过目即可，不卡任务：认可就回答“认可”，不认可指出哪一处":"Audit corrections for review. Confirm acceptance or identify the correction you disagree with.",
+    "立刻执行":"Start a task", "运行":"Run", "处理所有待办":"Process pending tasks", "状态":"Status",
+    "空闲":"Idle", "停止":"Stop", "提示词":"Task instructions", "日志":"Log", "默认":"default",
+    "还没有运行记录":"No task history yet", "已请求停止":"Stop requested", "队列里已有待办处理":"Pending tasks are already queued",
+    "直接告诉 agent 要做什么（在课题目录里无人值守运行，遵守 AGENTS.md）":"Describe the task. The research agent will work independently in the project folder, following AGENTS.md.",
+    "标签（针对某个 lab 的写 manual:<lab id>）":"Label (manual:<lab id> for a lab)",
   };
   const substitutions = [
+    [/^模型（空 = 默认）$/, "Model (project default)"], [/^effort（空 = 默认）$/, "Reasoning effort (project default)"],
+    [/^模型（空 = (.+)）$/, "Model (default: $1)"], [/^effort（空 = (.+)）$/, "Reasoning effort (default: $1)"],
+    [/^· 正在运行$/, "· Running"], [/^· 空闲$/, "· Idle"], [/^· 排队 /, "· Queued: "],
+    [/^已加入队列，待办 (\d+) 项$/, "Queued. Pending tasks: $1"], [/^出错了：/, "Error: "],
+    [/^本机 (\d+) 个性能核，当前负载 ([\d.]+)，所有课题已登记 (\d+) 核/, "Local performance cores: $1; current load: $2; cores reserved by jobs across all projects: $3"],
+    [/（其中别的课题 (\d+) 核）/, " ($1 for other projects)"],
+    [/，留 (\d+) 核；现在最多再用 (\d+) 核。/, "; system reserve: $1 cores. Maximum additional cores available now: $2."],
+    [/另有 (\d+) 个集群作业（(\d+) 核，不占本机）。/, "Cluster jobs: $1 ($2 cores; no local cores used)."],
+    [/核在打架：(\d+) 个数值进程共 (\d+) 个线程在跑，超过 (\d+) 个性能核。减少并行数（WORKERS）或每个进程的线程数（Julia -t、OPENBLAS\/MKL\/OMP_NUM_THREADS）。/, "CPU oversubscription: $1 numerical processes have $2 running threads, exceeding $3 performance cores. Reduce parallel workers (WORKERS) or threads per process (Julia -t, OPENBLAS/MKL/OMP_NUM_THREADS)."],
+    [/CPU 的 system 占比 ([\d.]+)%（user ([\d.]+)%）：这么高多半是线程超额争抢（自旋、调度）或内存压缩\/交换在吃 CPU，不是在算数。先查上面的线程数和下面的内存。/, "CPU time: $1% system, $2% user. High system usage often indicates thread contention or memory compression/swapping. Check thread counts and memory usage before adding jobs."],
+    [/内存吃紧：可用 ([\w.]+)%，压缩区 ([\d.]+) GB、交换区已用 ([\d.]+) GB（物理内存 ([\d.]+) GB）。再加并行只会更慢；减少同时跑的作业数。/, "Memory pressure: $1% available; $2 GB compressed; $3 GB swap used; $4 GB physical memory. Reduce concurrent jobs."],
+    [/Memory pressure: None% available;/, "Memory pressure: available-memory percentage unknown;"],
     [/^← 讨论$/, "← Discussions"], [/^← 文献$/, "← References"], [/^← 任务$/, "← Activity"],
     [/^创建：/, "Created: "], [/^更新：/, "Updated: "], [/^课题状态 · 更新 /, "Project overview · Updated "],
     [/^相关任务 /, "Related task "], [/^来自问题：/, "Related question: "], [/^机器：/, "Machine: "],
@@ -118,12 +135,12 @@
   }
   function translateUI(root = document.body) {
     if (!english()) return;
-    const skip = (el) => !el || el.closest(".md, pre, code, textarea, script, style, .translation-info");
+    const skip = (el) => !el || el.closest(".md, .log, pre, code, textarea, script, style, .translation-info");
     const walk = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
     const nodes = []; while (walk.nextNode()) nodes.push(walk.currentNode);
     for (const node of nodes) if (!skip(node.parentElement)) { const value = t(node.nodeValue); if (value !== node.nodeValue) node.nodeValue = value; }
     root.querySelectorAll("[placeholder], [title]").forEach((el) => {
-      if (el.closest(".md, .translation-info")) return;
+      if (el.closest(".md, .log, .translation-info")) return;
       for (const attr of ["placeholder", "title"]) if (el.hasAttribute(attr)) {
         const value = t(el.getAttribute(attr)); if (value !== el.getAttribute(attr)) el.setAttribute(attr, value);
       }
@@ -187,9 +204,39 @@
     if (doc.children) result.children = doc.children.map(question);
     return result;
   }
+  function activity(run) {
+    const kinds = {
+      manual: "Manual task", tick: "Process pending tasks", digest: "Review answered discussions",
+      digest_answers: "Incorporate discussion answers", arxiv_reason: "Screen arXiv candidates",
+      triage_idea: "Organize an idea", run_lab: "Run research task", resume_lab: "Resume research task",
+      revise_brief: "Revise research plan", promote_idea: "Draft research plan", ingest_reference: "Add reference to library",
+      answer_user_question: "Answer a question", audit_derivation: "Derivation review", audit_code: "Code review",
+      audit_consistency: "Summary consistency review",
+    };
+    let label = run.label || run.kind || "";
+    const answers = label.match(/^digest:(\d+)条回答$/);
+    if (answers) label = `Incorporate ${answers[1]} discussion ${answers[1] === "1" ? "answer" : "answers"}`;
+    else if (kinds[label]) label = kinds[label];
+    else if (label === "arxiv-reason") label = kinds.arxiv_reason;
+    else {
+      const split = label.indexOf(":"), kind = label.slice(0, split), id = label.slice(split + 1);
+      if (split > 0 && kinds[kind]) {
+        const source = kind === "triage_idea" || kind === "promote_idea" ? `ideas/${id}.md` :
+          kind === "answer_user_question" ? `discussion/${id}.md` : `labs/${id}/report.md`;
+        // Historical submission slugs can contain Chinese; show their date when no translated title exists.
+        const title = catalog.documents[source]?.title || (/[\u4e00-\u9fff]/.test(id) ? id.match(/\d{4}-\d{2}-\d{2}/)?.[0] || "Original submission" : id);
+        label = `${kinds[kind]}: ${title}`;
+      }
+    }
+    return { ...run, label, display_kind: kinds[run.kind] || run.kind };
+  }
   function overlay(path, data) {
     if (!english()) return data;
     const pathname = path.split("?")[0];
+    if (pathname === "/api/runs") return { ...data, runs: data.runs.map(activity), queue: {
+      ...data.queue, current: data.queue.current ? activity(data.queue.current) : null, pending: data.queue.pending.map(activity),
+    } };
+    if (pathname.startsWith("/api/runs/")) return activity(data);
     if (pathname === "/api/overview") {
       const result = { ...data };
       if (data.status) result.status = translated(data.status, "STATUS.md");
