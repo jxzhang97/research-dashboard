@@ -122,4 +122,31 @@ def catalog(project) -> dict:
                     captions[path] = {"text": entry["text"], "state": "stale" if stale else "current", "source_text": source if stale else None}
             except (OSError, ValueError, KeyError, TypeError, PermissionError):
                 errors.append(str(name))
-    return {"enabled": True, "language": "en", "documents": documents, "captions": captions, "errors": errors}
+    images = {}
+    for name in manifest.get("images", []):
+        try:
+            batch_path = (directory / name).resolve()
+            if not batch_path.is_relative_to(directory.resolve()) or batch_path.suffix != ".json":
+                raise ValueError("Invalid image translation batch path")
+            batch = json.loads(batch_path.read_text(encoding="utf-8"))
+            if batch.get("language") != "en" or batch.get("schema_version") != 1:
+                raise ValueError("Unsupported image translation format")
+            for path, entry in batch["images"].items():
+                source = project.safe_path(path)
+                target = project.safe_path(entry["path"])
+                if not target.is_relative_to((directory / "images").resolve()):
+                    raise ValueError("Image translation must be in translations/en/images")
+                if any(p.suffix.lower() not in (".png", ".svg", ".jpg", ".jpeg", ".webp") for p in (source, target)):
+                    raise ValueError("Invalid translated image type")
+                if not source.is_file() or not target.is_file():
+                    continue
+                current_hash = hashlib.sha256(source.read_bytes()).hexdigest()
+                images[path] = {
+                    "path": entry["path"], "source_sha256": entry["source_sha256"],
+                    "current_sha256": current_hash,
+                    "asset_sha256": hashlib.sha256(target.read_bytes()).hexdigest(),
+                    "state": "current" if current_hash == entry["source_sha256"] else "stale",
+                }
+        except (OSError, ValueError, KeyError, TypeError, PermissionError):
+            errors.append(str(name))
+    return {"enabled": True, "language": "en", "documents": documents, "captions": captions, "images": images, "errors": errors}

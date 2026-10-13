@@ -61,6 +61,54 @@ def test_missing_or_invalid_batch_does_not_break_chinese(project_dir):
     assert catalog(Project(project_dir))["documents"] == {}
 
 
+def test_figure_variants_preserve_original_and_track_source_updates(project_dir):
+    install(project_dir)
+    source = project_dir / "wiki/fig/diagram.png"
+    target = project_dir / "translations/en/images/wiki/fig/diagram.png"
+    for path in (source, target):
+        path.parent.mkdir(parents=True, exist_ok=True)
+    source.write_bytes(b"original scientific figure")
+    target.write_bytes(b"English rendering of the same data")
+    directory = project_dir / "translations/en"
+    manifest = json.loads((directory / "manifest.json").read_text())
+    manifest["images"] = ["images.json"]
+    (directory / "manifest.json").write_text(json.dumps(manifest))
+    (directory / "images.json").write_text(json.dumps({
+        "schema_version": 1, "language": "en", "images": {"wiki/fig/diagram.png": {
+            "path": "translations/en/images/wiki/fig/diagram.png",
+            "source_sha256": hashlib.sha256(source.read_bytes()).hexdigest(),
+        }},
+    }))
+    project = Project(project_dir)
+    entry = catalog(project)["images"]["wiki/fig/diagram.png"]
+    assert entry["state"] == "current"
+    assert entry["asset_sha256"] == hashlib.sha256(target.read_bytes()).hexdigest()
+    client = TestClient(create_app(project))
+    assert client.get("/api/file", params={"path": "wiki/fig/diagram.png"}).content == source.read_bytes()
+    assert client.get("/api/file", params={"path": entry["path"]}).content == target.read_bytes()
+    source.write_bytes(b"updated Chinese figure")
+    changed = catalog(project)["images"]["wiki/fig/diagram.png"]
+    assert changed["state"] == "stale"
+    assert target.read_bytes() == b"English rendering of the same data"
+    target.unlink()
+    assert catalog(project)["images"] == {}
+
+
+def test_figure_manifest_cannot_redirect_to_unrelated_project_files(project_dir):
+    install(project_dir)
+    directory = project_dir / "translations/en"
+    (directory / "manifest.json").write_text(json.dumps({"enabled": True, "batches": ["content.json"], "images": ["images.json"]}))
+    (directory / "images.json").write_text(json.dumps({
+        "schema_version": 1, "language": "en", "images": {"wiki/fig/diagram.png": {
+            "path": "config.toml", "source_sha256": "untrusted",
+        }},
+    }))
+    result = catalog(Project(project_dir))
+    assert result["images"] == {}
+    assert result["documents"]
+    assert result["errors"] == ["images.json"]
+
+
 def test_question_verdict_freshness_preserves_live_workflow(project_dir):
     install(project_dir)
     path = "ideas/test-question.md"

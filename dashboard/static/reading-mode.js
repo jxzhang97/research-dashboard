@@ -311,6 +311,42 @@
     }
     return div;
   }
+  function translateImages(root = document.body) {
+    if (!english()) return;
+    root.querySelectorAll('img[src*="/api/file?"]').forEach((img) => {
+      if (img.closest('.translation-info')) return; // Latest-original previews stay original.
+      const current = new URL(img.src, location.href);
+      const source = img.dataset.originalImage || current.searchParams.get('path');
+      const entry = catalog.images?.[source];
+      if (!entry) {
+        if (img.dataset.originalImage) {
+          const previous = img.src;
+          img.src = '/api/file?path=' + encodeURIComponent(source);
+          const link = img.closest('a');
+          if (link?.href === previous) link.href = img.src;
+          (img.closest('figure') || img.parentElement).querySelector('.image-translation-status')?.remove();
+          delete img.dataset.originalImage;
+        }
+        return;
+      }
+      img.dataset.originalImage = source;
+      const destination = new URL('/api/file', location.href);
+      destination.searchParams.set('path', entry.path);
+      destination.searchParams.set('v', entry.asset_sha256.slice(0, 16));
+      const previous = img.src;
+      if (previous !== destination.href) img.src = destination.href;
+      const link = img.closest('a');
+      if (link && (link.href === previous || new URL(link.href).searchParams.get('path') === source)) link.href = destination.href;
+      const figure = img.closest('figure') || img.parentElement;
+      let warning = figure.querySelector('.image-translation-status');
+      if (entry.state === 'stale' && !warning) {
+        warning = document.createElement('div'); warning.className = 'translation-info stale image-translation-status';
+        warning.append('English figure needs updating. ');
+        const original = document.createElement('a'); original.href = '/api/file?path=' + encodeURIComponent(source); original.target = '_blank';
+        original.textContent = 'View the latest original'; warning.append(original); figure.append(warning);
+      } else if (entry.state !== 'stale' && warning) warning.remove();
+    });
+  }
   async function refresh() {
     if (loading) return loading;
     loading = (async () => {
@@ -333,13 +369,14 @@
       document.body.classList.toggle("english-reading", !!english());
       document.querySelectorAll(".translation-info").forEach((node) => node._refreshTranslation?.());
       translateUI();
+      translateImages();
     })().finally(() => { loading = null; });
     return loading;
   }
   let scheduled = false;
   new MutationObserver(() => {
     if (!english() || scheduled) return;
-    scheduled = true; queueMicrotask(() => { scheduled = false; translateUI(); });
+    scheduled = true; queueMicrotask(() => { scheduled = false; translateUI(); translateImages(); });
   }).observe(document.body, { childList: true, subtree: true, characterData: true });
   window.ReadingMode = { english, t, refresh, overlay, decorate, info };
 })();
