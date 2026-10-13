@@ -142,3 +142,15 @@ def test_shared_pages_do_not_expire_reports_after_done(project_dir: Path):
     fm.update(project_dir / BASE / "brief.md", status="running")
     assert any("STATUS.md" in e for e in workflow.completion_errors(project_dir, LAB))
     assert Project(project_dir).lab(LAB).extra["audit"]["consistency"]["stale"] is True
+
+
+def test_recheck_reports_order_after_first_version(project_dir: Path):
+    """同一天的 -v2 复核报告排在首版之后，lab 的审计标记取复核版。"""
+    base = project_dir / BASE / "audit"
+    report(project_dir, BASE + "audit/2026-10-12-gpt-6-astra-consistency.md", "consistency", "minor", {"typo": 0, "不严谨": 1, "改变结论": 0}, handled=True)
+    report(project_dir, BASE + "audit/2026-10-12-gpt-6-astra-consistency-v2.md", "consistency")
+    for n in ("2026-10-12-gpt-6-astra-consistency.md", "2026-10-12-gpt-6-astra-consistency-v2.md"):
+        fm.update(base / n, date="2026-10-12")
+    d = Project(project_dir).lab(LAB)
+    assert [a["name"] for a in d.extra["audits"]] == ["2026-10-12-gpt-6-astra-consistency.md", "2026-10-12-gpt-6-astra-consistency-v2.md"]
+    assert d.extra["audit"]["consistency"]["verdict"] == "pass"

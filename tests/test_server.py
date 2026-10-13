@@ -106,7 +106,9 @@ def test_lab_comment_triggers_revision(project_dir: Path):
     brief = (project_dir / "labs" / "01-first-task" / "brief.md").read_text()
     assert "## 用户意见" in brief and "第 2 步太贵，先做小尺寸" in brief
     kinds = {(w["kind"], w["id"]) for w in c.get("/api/pending").json()["ready"]}
-    assert ("revise_brief", "01-first-task") in kinds
+    # 写意见会立刻派一次 tick；后台线程若已把 revise_brief 排进队列，待办里就不再列它（去重），否则还列着
+    queued = any(str(r.get("label", "")) == "revise_brief:01-first-task" for r in Project(project_dir).runs())
+    assert ("revise_brief", "01-first-task") in kinds or queued
     c.post("/api/labs/01-first-task/approve")
     kinds = {w["kind"] for w in c.get("/api/pending").json()["ready"]}
     assert "revise_brief" not in kinds

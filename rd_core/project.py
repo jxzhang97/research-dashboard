@@ -357,7 +357,11 @@ class Project:
                         "counts": counts, "date": str(meta.get("date", "")), "model": meta.get("model", ""),
                         "handled": bool(meta.get("handled", False)), "pending": pending,
                         "stale": bool(hashes) and bool(stale_sources(self.root, hashes, ignore)), "title": meta.get("title", p.stem)})
-        out.sort(key=lambda a: (a["date"], a["path"]))
+        # 同一天的复核报告按 -v2、-v3 … 排在前一版之后，_audit_summary 取每种审计最新的一份
+        def ver(a):
+            m = re.search(r"-v(\d+)(?:\.md|/)", a["path"]) or re.search(r"v(\d+)", a["name"])
+            return int(m.group(1)) if m else 1
+        out.sort(key=lambda a: (a["date"], ver(a), a["path"]))
         return out
 
     @staticmethod
