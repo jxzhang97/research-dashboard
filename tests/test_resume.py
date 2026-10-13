@@ -210,3 +210,53 @@ def test_resume_waits_for_live_codex_job(project_dir: Path, monkeypatch):
     assert ready == [] and deferred[0]["last_status"] == "codex"
     monkeypatch.setattr(codex, "live_jobs", lambda root: [])
     assert tick.actionable(pr)[0][0]["kind"] == "resume_lab"
+
+
+def test_resume_waits_for_registered_numerics(project_dir: Path):
+    """等数值的 lab：登记的作业还活着就不派续跑；有一个结束就立刻派并说明；没登记作业的按 resume_minutes 节奏。"""
+    import os
+    import subprocess
+
+    from rd_core import config, cores
+    from rd_core.tick import PROMPTS, actionable, run_pending
+
+    pr = Project(project_dir)
+    lab = "01-first-task"
+    _lab(project_dir, "running")
+    cfg = config.load(project_dir)
+    # 没登记作业、上次续跑刚正常结束 → 按 resume_minutes 等，不再 15 秒一派；resume_minutes=0 则立刻可派
+    pr.record_attempt("resume_lab", lab, "done")
+    ready, deferred = actionable(pr, cfg)
+    assert ready == [] and deferred[0]["last_status"] == "waiting" and deferred[0]["retry_in_s"] > 0
+    cfg["schedule"]["resume_minutes"] = 0
+    assert actionable(pr, cfg)[0][0]["kind"] == "resume_lab"
+    # 登记两个活作业（标签以 lab id 开头）→ 等数值；别的课题、别的 lab（同前缀）的作业不算
+    a = cores.claim(project_dir, 1, f"{lab} phase1", pid=os.getpid())
+    sleeper = subprocess.Popen(["sleep", "300"])
+    try:
+        b = cores.claim(project_dir, 1, f"{lab} phase2", pid=sleeper.pid)
+        cores.claim(None, 1, f"{lab} elsewhere", pid=os.getpid())
+        cores.claim(project_dir, 1, f"{lab}-b other lab", pid=os.getpid())
+        assert {j["id"] for j in cores.lab_jobs(project_dir, lab)} == {a, b}
+        ready, deferred = actionable(pr, cfg)
+        assert ready == [] and deferred[0]["last_status"] == "numerics" and "phase1" in deferred[0]["reason"]
+        assert set(pr.lab_jobs_snapshot(lab)) == {a, b}  # 没有基线时以现在活着的为基线
+        # 其中一个跑完 → 立刻叫醒（哪怕另一个还活着），提示里说明是哪一个
+        sleeper.kill()
+        sleeper.wait()
+        ready, _ = actionable(pr, cfg)
+        assert ready and ready[0]["kind"] == "resume_lab" and "phase2" in ready[0]["wake_note"]
+        assert "phase2" in PROMPTS["resume_lab"].format(**ready[0])
+        # 派一次（conftest 的假 claude）→ 基线更新为现在活着的 → 又回到等数值
+        res = run_pending(pr)
+        assert any(r.get("kind") == "resume_lab" and r.get("status") == "done" for r in res)
+        assert set(pr.lab_jobs_snapshot(lab)) == {a}
+        ready, deferred = actionable(pr, cfg)
+        assert ready == [] and deferred[0]["last_status"] == "numerics"
+        # 全部结束 → 立刻可派
+        cores.release(a)
+        assert actionable(pr, cfg)[0][0]["kind"] == "resume_lab"
+    finally:
+        if sleeper.poll() is None:
+            sleeper.kill()
+            sleeper.wait()

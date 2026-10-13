@@ -78,7 +78,7 @@ created: 2026-10-02
    ## 下一步
    - `codex-audit.sh --wait . 2026-10-08-lab02-derivation-3 540`，报告在 audit/2026-10-08-gpt-6-astra-derivation.md
    ```
-7. **后台进程**：Codex 审计/写作只用 `codex-audit.sh` / `codex-write.sh` 启动并用 `--wait` 前台等（它们自己脱离父进程）；数值批量用 `nohup … &` 启动、`rd jobs claim` 登记 pid、留完成标记文件。**不要用 Claude Code 的 run_in_background 跑任何必须活过本次运行的东西**，本次运行一结束它们就被清掉。
+7. **后台进程**：Codex 审计/写作只用 `codex-audit.sh` / `codex-write.sh` 启动并用 `--wait` 前台等（它们自己脱离父进程）；数值批量用 `nohup … &` 启动、`rd jobs claim <根> --cores N --label "<lab id> <说明>" --pid <pid>` 登记（标签以 lab id 开头，调度器靠它决定什么时候叫醒续跑）、留完成标记文件。**不要用 Claude Code 的 run_in_background 跑任何必须活过本次运行的东西**，本次运行一结束它们就被清掉。
 8. 运行结束时状态只能是 `done` / `waiting_answer` / `awaiting_review` / `blocked`，或仍在等外部进程的 `running`（续跑单写清在等什么）。`running` 且没有活着的运行的 lab，系统会自动派续跑（D 节）。`done` 只能由 `rd finish` 写（C5），不要手改。
 9. **文献定位页 `sources/reading-map.md`**：lab 读了哪些原文就记在这里，边读边记（模板见 rd-reference §「阅读范围」）：每份 PDF 的真实身份（标题、版本、页数）、精读到哪几页哪些式号、公开附录从哪个 URL 哪个版本取得、**哪些没拿到或被拒绝访问**（403、不在 arXiv）并写明"未读、未冒充读过"。审计者和写作者据它判断引用边界；卡片只链接它，不重复。
 
@@ -125,7 +125,7 @@ created: 2026-10-02
 
 1. 先读 `resume.md`（没有就读 `brief.md`、`report.md`、log 末尾本 lab 的几条、看 `handoff.md` 与 `audit/` 在不在），再用 `codex-audit.sh --status` / `codex-write.sh --status` 看 `.dashboard/auditing`、`.dashboard/writing` 里本 lab 的记录：有结束行就是跑完了，没结束行且 pid 不在就是被杀了。
 2. 判断停在哪一步（厚层未齐 / 等数值 / 审计被杀或进行中 / 审计报告已出未处理 / 复核未做或进行中 / 交接单未写 / 薄层未写 / 一致性未做或未处理 / 只差回写与 finish），从那一步继续；`rd finish --check <根> <lab>` 能直接列出收尾门槛还差什么。`notes.md` 只读与下一步直接相关的小节，不整体重读；已 commit 的东西不重算。
-3. Codex 作业还活着就 `--wait`；死了没结果就换个记录目录名重启。数值批量还在跑就核对进度、更新续跑单、结束运行（调度器会再派）。
+3. Codex 作业还活着就 `--wait`；死了没结果就换个记录目录名重启。数值批量还在跑就核对进度、更新续跑单、**立刻结束运行**（不要在前台空等：登记过的作业一结束调度器就会再派，运行期间你占着课题的 agent 锁）。
 4. 收尾仍按 C 节；结束前更新 `resume.md`。连续三次续跑失败，调度器会把 lab 改成 `blocked` 让用户看。
 
 ### report.md 模板

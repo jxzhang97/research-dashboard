@@ -1,12 +1,13 @@
 """把"待处理工作项"变成一次次 agent 运行。
 触发时机：dashboard 上的用户动作之后立刻；dashboard 的文件监视每 watch_seconds 发现新待办时立刻；
-launchd 每 tick_minutes 兜底一次（dashboard 没开时）。失败的项在 retry_minutes 内不重试。"""
+launchd 每 tick_minutes 兜底一次（dashboard 没开时）。失败的项在 retry_minutes 内不重试。
+等数值的 lab：rd jobs claim 登记的作业还活着就不派续跑，有一个结束就立刻派；没登记作业的最多每 resume_minutes 派一次。"""
 
 from __future__ import annotations
 
 import time
 
-from . import config, fm
+from . import config, cores, fm
 from .project import Project
 from .runner import Runner
 
@@ -62,11 +63,12 @@ PROMPTS = {
     ),
     "resume_lab": (
         "lab labs/{id}/（「{title}」）的任务书状态是 running，但没有活着的运行：上一次运行 {last_run_id}（{last_run_status}）已经结束，"
-        "它最后说：「{last_run_result}」。请按 rd-lab skill 的 D 节续跑。本提示是幂等的：先读 labs/{id}/resume.md（续跑单，若有）、brief.md、report.md、"
+        "它最后说：「{last_run_result}」。{wake_note}请按 rd-lab skill 的 D 节续跑。本提示是幂等的：先读 labs/{id}/resume.md（续跑单，若有）、brief.md、report.md、"
         "log.md 末尾与本 lab 相关的几条，看 handoff.md 与 audit/ 是否存在，查 .dashboard/auditing 与 .dashboard/writing 里本 lab 记录的 run_info.txt 有无 exit 行"
         "（codex-audit.sh --status / codex-write.sh --status），由此判断停在哪一步：厚层未齐 / 等数值 / 审计被杀或进行中 / 审计报告已出未处理 / 交接单未写 / 薄层未写 / 只差回写与 commit。"
         "从那一步继续，做过的不重做，不要整体重读 notes.md（需要时只读相关小节）。Codex 审计或写作还活着就用 --wait 在前台等；死了没结果就重新启动。"
-        "数值批量还在跑就核对进度、更新续跑单后结束运行。收尾按 rd-lab C 节（审计发现处理后对当前版本复核到 pass；薄层用 --expect 声明；"
+        "数值批量还在跑就核对进度、更新续跑单后立刻结束运行，不要在前台空等（运行期间你占着课题的 agent 锁；"
+        "用 `rd jobs claim --pid` 登记过的作业一结束，调度器就会再叫醒你）。收尾按 rd-lab C 节（审计发现处理后对当前版本复核到 pass；薄层用 --expect 声明；"
         "一致性检查到 pass；最后 `~/doc_unsyn/research-dashboard/rd finish . {id}`，通过才算 done）；`rd finish --check . {id}` 能列出还差什么。结束前更新 resume.md；"
         "lab 状态只能停在 done / waiting_answer / awaiting_review / blocked，或仍在等外部进程的 running。"
     ),
@@ -124,10 +126,13 @@ def model_for(cfg: dict, kind: str, path: str | None = None, project: Project | 
 
 
 def actionable(project: Project, cfg: dict | None = None, only: str | None = None) -> tuple[list[dict], list[dict]]:
-    """返回 (现在可以做的, 暂缓的)。暂缓的三种情况：刚失败还在退避期；Claude 额度用尽还没到重置时刻（last_status=limit）；
-    续跑的 lab 还有 Codex 审计/写作在跑（last_status=codex）。回答的消化不在这里，它走 run_digest 的 digest_minutes 节奏。"""
+    """返回 (现在可以做的, 暂缓的)。暂缓的情况：刚失败还在退避期；Claude 额度用尽还没到重置时刻（last_status=limit）；
+    续跑的 lab 还有 Codex 审计/写作在跑（last_status=codex）；续跑的 lab 登记的数值作业还活着且没有一个结束（last_status=numerics）；
+    续跑的 lab 没登记作业、上次续跑刚正常结束（last_status=waiting，按 resume_minutes 节奏）。
+    回答的消化不在这里，它走 run_digest 的 digest_minutes 节奏。"""
     cfg = cfg or config.load(project.root)
     retry = int(cfg["schedule"].get("retry_minutes", 30)) * 60
+    resume_gap = int(cfg["schedule"].get("resume_minutes", 60)) * 60
     work = [w for w in project.pending_work() if w["kind"] != "digest_answer"]
     if only:
         work = [w for w in work if w["kind"] == only]
@@ -152,6 +157,28 @@ def actionable(project: Project, cfg: dict | None = None, only: str | None = Non
             job = next((j for j in codex_live if j.get("lab") == w["id"]), None)
             if job:
                 deferred.append({**w, "last_status": "codex", "retry_in_s": 300, "reason": f"{job['kind']} {job['name']} 还在跑（pid {job.get('pid')}）"})
+                continue
+            # 等数值：登记表（rd jobs claim，标签以 lab id 开头）里本 lab 还有活着的作业就不叫醒；
+            # 上次看过的作业有一个结束了（里程碑）才派，并在提示里说明是哪一个
+            jobs = cores.lab_jobs(project.root, w["id"])
+            alive = {j["id"]: str(j.get("label", "")) for j in jobs}
+            seen = project.lab_jobs_snapshot(w["id"])
+            if seen is None and alive:
+                # 没有基线（旧记录、手工派的运行起的批量）：以现在活着的为基线，之后任何一个结束就叫醒
+                project.set_lab_jobs_snapshot(w["id"], alive)
+                seen = dict(alive)
+            finished = {k: v for k, v in (seen or {}).items() if k not in alive}
+            if alive and not finished:
+                names = "、".join(f"{j.get('label')}（pid {j.get('pid')}）" for j in jobs[:3]) + ("…" if len(jobs) > 3 else "")
+                deferred.append({**w, "last_status": "numerics", "retry_in_s": 300, "reason": f"等数值：{names}"})
+                continue
+            if finished:
+                w = {**w, "wake_note": "调度器叫醒你，是因为登记的数值作业结束了：" + "、".join(v or k for k, v in finished.items()) + "。"}
+            elif info and info.get("status") == "done" and time.time() - info["t"] < resume_gap:
+                # 上次续跑正常结束、lab 仍是 running、又没登记任何作业：按 resume_minutes 的节奏兜底，不要 15 秒一派
+                ago = int(time.time() - info["t"])
+                deferred.append({**w, "last_status": "waiting", "retry_in_s": int(resume_gap - ago),
+                                 "reason": f"上次续跑 {ago // 60} 分钟前正常结束、没有登记中的作业；按 schedule.resume_minutes 最多每 {resume_gap // 60} 分钟派一次"})
                 continue
         ready.append(w)
     return ready, deferred
@@ -190,6 +217,9 @@ def run_pending(project: Project, only: str | None = None, dry_run: bool = False
                 continue
         meta = Runner(project).run(prompt, kind=w["kind"], label=f"{w['kind']}:{w['id']}", model=model, effort=effort)
         project.record_attempt(w["kind"], w["id"], meta["status"])
+        if w["kind"] in ("run_lab", "resume_lab"):
+            # 这次运行结束时本 lab 登记的活作业，作为下次判断"有没有作业跑完"的基线
+            project.set_lab_jobs_snapshot(w["id"], {j["id"]: str(j.get("label", "")) for j in cores.lab_jobs(project.root, w["id"])})
         results.append(meta)
     return results
 

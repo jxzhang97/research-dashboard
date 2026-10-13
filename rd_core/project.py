@@ -675,6 +675,17 @@ class Project:
     def attempt_info(self, kind: str, id_: str) -> dict | None:
         return self.state().get("attempts", {}).get(f"{kind}:{id_}")
 
+    # 等数值的 lab：上次运行结束时它在登记表（rd jobs claim）里活着的作业 {作业 id: 标签}。
+    # 调度器拿现在活着的和它比：少了哪个，就是哪个批量跑完了，该叫醒 agent 了。
+    def lab_jobs_snapshot(self, lab_id: str) -> dict[str, str] | None:
+        v = self.state().get("lab_jobs", {}).get(lab_id)
+        return dict(v.get("jobs", {})) if v else None
+
+    def set_lab_jobs_snapshot(self, lab_id: str, jobs: dict[str, str]) -> None:
+        s = self.state()
+        s.setdefault("lab_jobs", {})[lab_id] = {"t": time.time(), "jobs": dict(jobs)}
+        self._save_state(s)
+
     # Claude 额度用尽：runner 看到 limit 提示就记下重置时刻，到时之前什么都不派
     def set_pause(self, until: float, reason: str = "") -> None:
         s = self.state()
@@ -882,7 +893,7 @@ class Project:
             elif st == "running" and not busy:
                 last = self.last_lab_run(d.id) or {}
                 add("resume_lab", d, last_run_id=last.get("id", "（没有记录）"), last_run_status=last.get("status", "?"),
-                    last_run_result=" ".join(str(last.get("result") or "（无）").split())[:400])
+                    last_run_result=" ".join(str(last.get("result") or "（无）").split())[:400], wake_note="")
             elif d.meta.get("comments_pending") and st in ("awaiting_review", "draft", "parked") and not busy:
                 add("revise_brief", d)
         for d in self.ideas():

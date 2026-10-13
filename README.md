@@ -88,7 +88,7 @@ rd scheduler status <课题目录>
 
 - `projects.json`：本机课题登记表，`rd init` / `rd serve` / `rd scheduler install` 自动维护，端口自动错开（8010、8011…），课题名不许重复。`rd projects` 查看。
 - `machine.toml`：`max_agents`（全机同时最多几个 agent，默认 2，超出排队）、`reserve_cores`（跑数值时留给系统的核）。
-- `jobs.json`：所有课题共用的数值作业登记，`rd free-cores` 看的是全机的占用。
+- `jobs.json`：所有课题共用的数值作业登记，`rd free-cores` 看的是全机的占用。调度器也靠它等数值：lab 登记的作业还活着就不派续跑，任何一个结束就叫醒 agent（没登记作业的最多每 `schedule.resume_minutes` 派一次）。
 - arXiv 扫描按课题名错开分钟，不会同时打 arXiv。
 
 dashboard 右上角可以在本机的课题之间切换。

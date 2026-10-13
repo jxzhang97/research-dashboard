@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import subprocess
 import time
 from pathlib import Path
@@ -145,7 +146,11 @@ def list_jobs(prune: bool = True) -> list[dict]:
 
 def claim(project: Path | None, cores: int, label: str, pid: int | None = None) -> str:
     jobs = list_jobs()
-    jid = f"{int(time.time())}-{os.getpid()}"
+    base = f"{int(time.time())}-{os.getpid()}"
+    jid, n, taken = base, 1, {j.get("id") for j in jobs}
+    while jid in taken:  # 同一进程同一秒内登记多个作业（测试、脚本循环）也要各有各的 id，否则调度器分不清哪个跑完了
+        n += 1
+        jid = f"{base}-{n}"
     jobs.append({"id": jid, "cores": int(cores), "label": label, "project": _project_name(project),
                  "pid": pid or os.getppid(), "t": time.time(), "host": hostname()})
     _jobs_path().write_text(json.dumps(jobs, ensure_ascii=False, indent=1), encoding="utf-8")
@@ -157,6 +162,14 @@ def release(jid: str) -> bool:
     kept = [j for j in jobs if j["id"] != jid]
     _jobs_path().write_text(json.dumps(kept, ensure_ascii=False, indent=1), encoding="utf-8")
     return len(kept) != len(jobs)
+
+
+def lab_jobs(project: Path | None, lab_id: str) -> list[dict]:
+    """登记表里属于某个 lab 的活作业：课题名一致，标签以 lab id 开头（AGENTS 第 12 节的约定：--label "<lab id> <说明>"）。
+    调度器靠它判断等数值的 lab 该不该续跑。"""
+    name = _project_name(project)
+    pat = re.compile(re.escape(lab_id) + r"(?![\w-])")
+    return [j for j in list_jobs() if j.get("project") == name and pat.match(str(j.get("label", "")))]
 
 
 def status(project: Path | None = None, probe: bool = True, cache_seconds: float = 10.0) -> dict:
