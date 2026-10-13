@@ -227,3 +227,9 @@ button.small { font-size: 12px; padding: 2px 8px; }
 .english-reading .qcard .verdict { height: 4.2em; -webkit-line-clamp: 3; }
 
 .english-reading .qcard .top { flex-wrap: wrap; }
+.english-reading .toc { display: block; }
+.english-reading #toc-top .toc { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 2px 20px; }
+.english-reading #toc-top .toc b { grid-column: 1 / -1; }
+.english-reading .two { grid-template-columns: 280px minmax(0, 1fr); }
+@media (max-width: 800px) { .english-reading .two { grid-template-columns: minmax(0, 1fr); } }
+@media (max-width: 600px) { .english-reading #toc-top .toc { grid-template-columns: minmax(0, 1fr); } }
