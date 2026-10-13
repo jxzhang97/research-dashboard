@@ -133,26 +133,58 @@ def _project_name(project: Path | None) -> str:
         return project.name
 
 
+def is_local(j: dict) -> bool:
+    """本机的作业（占本机的核）；集群作业有 slurm_id、host 是集群名。"""
+    return not j.get("slurm_id") and j.get("host") in (None, "", hostname())
+
+
+def _remote_alive(j: dict, cache: dict) -> bool:
+    """集群作业：squeue（缓存 5 分钟）里还在就算活着；查不到（ssh 失败且无缓存）当活着，不乱放。"""
+    from . import cluster
+    key = str(j.get("host"))
+    if key not in cache:
+        cache[key] = cluster.alive_ids(key, j.get("ssh"))
+    live = cache[key]
+    return True if live is None else cluster._is_alive(str(j["slurm_id"]), live)
+
+
 def list_jobs(prune: bool = True) -> list[dict]:
     p = _jobs_path()
     jobs = json.loads(p.read_text(encoding="utf-8")) if p.exists() else []
     if prune:
-        kept = [j for j in jobs if (j.get("pid") and _alive(int(j["pid"]))) or (not j.get("pid") and time.time() - j.get("t", 0) < 86400)]
+        remote: dict = {}
+        kept = []
+        for j in jobs:
+            if j.get("slurm_id"):
+                ok = _remote_alive(j, remote)
+            elif j.get("pid"):
+                ok = _alive(int(j["pid"])) if is_local(j) else True  # 别的机器登记的 pid 本机查不了
+            else:
+                ok = time.time() - j.get("t", 0) < 86400
+            if ok:
+                kept.append(j)
         if len(kept) != len(jobs):
             p.write_text(json.dumps(kept, ensure_ascii=False, indent=1), encoding="utf-8")
         jobs = kept
     return jobs
 
 
-def claim(project: Path | None, cores: int, label: str, pid: int | None = None) -> str:
+def claim(project: Path | None, cores: int, label: str, pid: int | None = None, host: str | None = None,
+          slurm_id: str | None = None, ssh: str | None = None) -> str:
+    """登记一个数值作业。本机作业给 pid（默认父进程）；集群作业给 host=集群名、slurm_id=Slurm 作业号（不记 pid），
+    调度器靠 squeue 判断它活没活着。"""
     jobs = list_jobs()
     base = f"{int(time.time())}-{os.getpid()}"
     jid, n, taken = base, 1, {j.get("id") for j in jobs}
     while jid in taken:  # 同一进程同一秒内登记多个作业（测试、脚本循环）也要各有各的 id，否则调度器分不清哪个跑完了
         n += 1
         jid = f"{base}-{n}"
-    jobs.append({"id": jid, "cores": int(cores), "label": label, "project": _project_name(project),
-                 "pid": pid or os.getppid(), "t": time.time(), "host": hostname()})
+    entry = {"id": jid, "cores": int(cores), "label": label, "project": _project_name(project), "t": time.time()}
+    if slurm_id:
+        entry.update({"pid": None, "host": host or "cluster", "slurm_id": str(slurm_id), **({"ssh": ssh} if ssh else {})})
+    else:
+        entry.update({"pid": pid or os.getppid(), "host": host or hostname()})
+    jobs.append(entry)
     _jobs_path().write_text(json.dumps(jobs, ensure_ascii=False, indent=1), encoding="utf-8")
     return jid
 
@@ -174,7 +206,9 @@ def lab_jobs(project: Path | None, lab_id: str) -> list[dict]:
 
 def status(project: Path | None = None, probe: bool = True, cache_seconds: float = 10.0) -> dict:
     """空闲核数 + 打架检测。probe=True 时采 CPU/内存/线程（约 1 秒，结果缓存 cache_seconds）。"""
-    jobs = list_jobs()
+    all_jobs = list_jobs()
+    jobs = [j for j in all_jobs if is_local(j)]          # 只有本机的作业占本机的核
+    remote = [j for j in all_jobs if not is_local(j)]    # 集群上的作业：列出来，不算进本机
     reserve = int(registry.machine_settings().get("reserve_cores", 2))
     claimed = sum(int(j.get("cores", 0)) for j in jobs)
     total = perf_cores()
@@ -184,7 +218,7 @@ def status(project: Path | None = None, probe: bool = True, cache_seconds: float
     others = [j for j in jobs if project and j.get("project") and j["project"] != _project_name(project)]
     st = {
         "host": hostname(), "perf_cores": total, "load_1min": round(load, 2), "claimed": claimed,
-        "reserve": reserve, "free": free, "jobs": jobs, "warnings": [],
+        "reserve": reserve, "free": free, "jobs": jobs, "remote_jobs": remote, "warnings": [],
     }
     if probe:
         now = time.time()
@@ -210,5 +244,6 @@ def status(project: Path | None = None, probe: bool = True, cache_seconds: float
     st["advice"] = (f"本机 {total} 个性能核，当前负载 {load:.1f}，所有课题已登记 {claimed} 核"
                     + (f"（其中别的课题 {sum(int(j['cores']) for j in others)} 核）" if others else "")
                     + f"，留 {reserve} 核；现在最多再用 {free} 核。"
-                    + ("".join(" ⚠ " + w for w in st["warnings"]) if st["warnings"] else ""))
+                    + ("".join(" ⚠ " + w for w in st["warnings"]) if st["warnings"] else "")
+                    + (f" 另有 {len(remote)} 个集群作业（{sum(int(j.get('cores', 0)) for j in remote)} 核，不占本机）。" if remote else ""))
     return st

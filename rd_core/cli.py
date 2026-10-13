@@ -1,4 +1,4 @@
-"""`rd` 命令行。子命令：install / init / update / serve / run / tick / arxiv-scan / free-cores / jobs / scheduler / doctor / finish / codex"""
+"""`rd` 命令行。子命令：install / init / update / serve / run / tick / arxiv-scan / free-cores / jobs / scheduler / doctor / finish / codex / cluster"""
 
 from __future__ import annotations
 
@@ -215,6 +215,10 @@ def cmd_free_cores(args):
                 print(f"    pid {pr['pid']:>6}  cpu {pr['cpu']:>5}%  线程 {pr['running_threads']:>2}  内存 {pr['rss_gb']:>4} GB  {pr['cmd']}")
         for w in st.get("warnings", []):
             print(f"  ⚠ {w}")
+        if st.get("remote_jobs"):
+            print(f"  集群作业 {len(st['remote_jobs'])} 个（不占本机；`rd cluster jobs` 看状态）：")
+            for j in st["remote_jobs"]:
+                print(f"    - [{j.get('project', '')}] {j['label']}: {j['cores']} 核 ({j.get('host')} #{j.get('slurm_id')})")
 
 
 def cmd_jobs(args):
@@ -295,6 +299,8 @@ def main(argv=None):
     p = sub.add_parser("finish", help="收尾门槛：核对当前版本的推导审核、薄层一致性检查与 doctor，通过才把 lab 标为 done"); p.add_argument("path"); p.add_argument("lab"); p.add_argument("--check", action="store_true", help="只检查不改状态"); p.set_defaults(fn=cmd_finish)
     from .codex import add_parser as _codex_parser
     _codex_parser(sub)
+    from .cluster import add_parser as _cluster_parser
+    _cluster_parser(sub)
 
     args = ap.parse_args(argv)
     try:

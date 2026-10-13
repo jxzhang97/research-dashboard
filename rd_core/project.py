@@ -398,6 +398,14 @@ class Project:
         doc = self._lab_doc(d)
         self._annotate_runs([doc])
         doc.extra["has_resume"] = (d / "resume.md").exists()
+        doc.extra["jobs"] = []
+        if doc.meta.get("status") == "running":
+            # 登记表里本 lab 的数值作业（本机 pid 或集群 slurm 作业号），lab 页显示在等什么
+            from . import cores
+            try:
+                doc.extra["jobs"] = [{k: j.get(k) for k in ("label", "cores", "pid", "host", "slurm_id")} for j in cores.lab_jobs(self.root, d.name)]
+            except Exception:  # noqa: BLE001
+                doc.extra["jobs"] = []
         for name in ("report.md", "DATA.md"):
             p = d / name
             if p.exists():

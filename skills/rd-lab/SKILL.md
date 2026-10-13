@@ -61,7 +61,7 @@ created: 2026-10-02
 1. `status: running`，记 log。
 2. 开工前做一次三方对照：任务书 ↔ PROJECT.md/notation ↔ 你打算走的路线。有分歧按 rd-discussion 提问（无人值守时写 discussion 并把 status 改 `waiting_answer`，结束）。
 3. 推导、分析、方法说明都进 `notes.md`，按 rd-notes skill，在同一上下文里写（谁推导谁写）。
-4. 数值：先 `rd free-cores <课题目录>`，按建议设并行数与线程数（并行数 × 每作业线程数 ≤ 建议核数；多进程并行时 BLAS 线程设 1；DMRG 按内存定并行数）并 `rd jobs claim … --pid <批量进程>`；**启动后一两分钟再跑一次 `rd free-cores`**，看它的警告：system 占比高、活跃线程超过核数、内存压缩/交换上涨，都说明核在打架，停批量、调小再重启，不要硬跑；大数据写到 `data_root/<lab id>/`，跑完 `rd jobs release`。脚本放本 lab 文件夹，可复用的提到 `src/`。
+4. 数值：先 `rd free-cores <课题目录>`，按建议设并行数与线程数（并行数 × 每作业线程数 ≤ 建议核数；多进程并行时 BLAS 线程设 1；DMRG 按内存定并行数）并 `rd jobs claim … --pid <批量进程>`；**启动后一两分钟再跑一次 `rd free-cores`**，看它的警告：system 占比高、活跃线程超过核数、内存压缩/交换上涨，都说明核在打架，停批量、调小再重启，不要硬跑；大数据写到 `data_root/<lab id>/`，跑完 `rd jobs release`。脚本放本 lab 文件夹，可复用的提到 `src/`。**重的批量可以分摊到集群**（AGENTS.md §5，操作与模板见本目录 `cluster.md`）：`rd cluster status` 看空位 → 写 `labs/NN-slug/cluster/*.sbatch` → `rd cluster push` → `--test` 小尺寸 → 生产提交（排队 ≤ 8 个、每作业 2–10 核）→ 续跑单写作业号与拉回命令 → 结束运行；作业结束调度器叫醒你：`rd cluster pull` 拉汇总结果、`rd cluster inventory`、DATA.md 加「集群」一节。
 5. 中途的小结论随时写进 `report.md`（草稿状态，首屏可以先只有「问题」和「当前回答（初步）」），避免运行中断什么都没留下。
 6. **续跑单 `resume.md`**：每到一个里程碑（批量启动、厚层齐、审计启动、交接单写完、每次 commit）就更新 `labs/NN-slug/resume.md`，运行结束前必须更新一次。它是写给下一次运行的你的，只回答四件事：做完了什么（指向文件，不复述内容）；还差什么（按顺序）；在等哪个外部进程（数值批量的 pid 与完成标记、Codex 审计/写作的记录目录名）；下一步具体跑哪条命令、看哪个文件。半页以内。模板：
 
@@ -69,7 +69,7 @@ created: 2026-10-02
    ---
    updated: 2026-10-08 12:00
    stage: 厚层未齐 | 等数值 | 审计进行中 | 审计待处理 | 复核进行中 | 交接单未写 | 薄层未写 | 一致性进行中 | 一致性待处理 | 回写未完 | 待 finish
-   waiting_on: 无 | 批量 pid 12345（results/batch.log 出现 BATCH_ALL_DONE） | codex audit 2026-10-08-lab02-derivation-3
+   waiting_on: 无 | 批量 pid 12345（results/batch.log 出现 BATCH_ALL_DONE） | pod 作业 123456,123457（~/<dir>/labs/NN/results/PHASE3_DONE；`rd cluster jobs . --lab NN`） | codex audit 2026-10-08-lab02-derivation-3
    ---
    ## 已完成
    - notes §0–§5 已写并 commit（a1b2c3d）；fig/main.png 已出
@@ -78,7 +78,7 @@ created: 2026-10-02
    ## 下一步
    - `codex-audit.sh --wait . 2026-10-08-lab02-derivation-3 540`，报告在 audit/2026-10-08-gpt-6-astra-derivation.md
    ```
-7. **后台进程**：Codex 审计/写作只用 `codex-audit.sh` / `codex-write.sh` 启动并用 `--wait` 前台等（它们自己脱离父进程）；数值批量用 `nohup … &` 启动、`rd jobs claim <根> --cores N --label "<lab id> <说明>" --pid <pid>` 登记（标签以 lab id 开头，调度器靠它决定什么时候叫醒续跑）、留完成标记文件。**不要用 Claude Code 的 run_in_background 跑任何必须活过本次运行的东西**，本次运行一结束它们就被清掉。
+7. **后台进程**：Codex 审计/写作只用 `codex-audit.sh` / `codex-write.sh` 启动并用 `--wait` 前台等（它们自己脱离父进程）；数值批量用 `nohup … &` 启动、`rd jobs claim <根> --cores N --label "<lab id> <说明>" --pid <pid>` 登记（标签以 lab id 开头，调度器靠它决定什么时候叫醒续跑）、留完成标记文件；集群作业用 `rd cluster submit` 提交，它自己登记。**不要用 Claude Code 的 run_in_background 跑任何必须活过本次运行的东西**，本次运行一结束它们就被清掉。
 8. 运行结束时状态只能是 `done` / `waiting_answer` / `awaiting_review` / `blocked`，或仍在等外部进程的 `running`（续跑单写清在等什么）。`running` 且没有活着的运行的 lab，系统会自动派续跑（D 节）。`done` 只能由 `rd finish` 写（C5），不要手改。
 9. **文献定位页 `sources/reading-map.md`**：lab 读了哪些原文就记在这里，边读边记（模板见 rd-reference §「阅读范围」）：每份 PDF 的真实身份（标题、版本、页数）、精读到哪几页哪些式号、公开附录从哪个 URL 哪个版本取得、**哪些没拿到或被拒绝访问**（403、不在 arXiv）并写明"未读、未冒充读过"。审计者和写作者据它判断引用边界；卡片只链接它，不重复。
 

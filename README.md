@@ -82,6 +82,22 @@ rd scheduler status <课题目录>
 4. 任务收尾：notes.md、fig/ 与 sources/reading-map.md 齐 → 推导审计（Codex），处理发现后对当前版本复核到通过 → 交接单 handoff.md → 薄层写作步交给 Codex（report.md、wiki 页、问题的当前回答、STATUS.md，每个输出 `--expect` 声明）→ 机械检查 → 薄层一致性检查（Codex）到通过 → 卡片两三句、index、日志 → `rd finish` 核对当前版本的审核报告与 doctor 后才标 done → git commit。PDF 与英文版按需导出。
 5. 每天 arXiv 候选进"文献"页等你审批；批准的被下载、精读、建卡。
 
+## 把重的数值分摊到集群
+
+`config.toml` 的 `[cluster]`（默认 UCSB CSC 的 Pod，Slurm）。studio 仍是默认；一个批量要跑半天以上、或本机已没有空闲核时，agent 把其中彼此独立的部分交到集群：
+
+```bash
+rd cluster status <课题目录>                      # 分区空闲核、我的在跑/排队、还能交几个
+rd cluster init <课题目录>                        # 建 /bigscratch/jiaxin/<课题>/ 与 ~/<课题>/
+rd cluster push <课题目录> src labs/NN/cluster     # 推代码（相对课题根）
+rd cluster submit <课题目录> NN cluster/x.sbatch -c 4 -t 2-00:00:00 [--test] -- 参数…
+rd cluster jobs <课题目录> [--lab NN]             # 状态（squeue/sacct），结束的自动从登记表放掉
+rd cluster pull <课题目录> NN [--scratch 路径]     # 拉回汇总结果（或原始数据到 data_root）
+rd cluster inventory <课题目录> NN                 # 写 labs/NN/cluster/inventory.md：集群上有什么
+```
+
+约定：大的中间数据放 `/bigscratch/jiaxin/<课题>/<lab>/`（不备份），代码与画图用的汇总放 `~/<课题>/`（结构同课题目录）；同时排队的作业不超过 8 个、单作业不超过 20 核（`submit` 把关）；每次提交记进 `labs/NN/cluster/jobs.jsonl` 并登记到 `~/.rd/jobs.json`，调度器像等本机批量一样等它、作业一结束就派续跑；`DATA.md` 必须有「集群」一节写清数据位置。规则在 `AGENTS.md` §5，操作与模板在 `skills/rd-lab/cluster.md`。
+
 ## 多个课题同时跑
 
 每个课题一个文件夹、一个 dashboard、一套 launchd 任务，互不干扰；机器级的东西统一在 `~/.rd/`（每台机器一份，不进 iCloud）：

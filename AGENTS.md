@@ -95,7 +95,11 @@
 
 ## 5. 计算
 
-- 任务书的 `machine` 字段指定在哪跑，没写就是 studio。只在用户明确说时用笔记本或集群。
+- 任务书的 `machine` 字段指定在哪跑，没写就是 studio；笔记本只在用户明确说时用。**集群**（`config.toml` 的 `[cluster]`，默认 UCSB CSC 的 Pod，Slurm）用来分摊重的数值：一个批量在 studio 要跑半天以上、或 `rd free-cores` 已经给不出核，就先 `rd cluster status` 看空位，把其中彼此独立、单链单核的部分交到集群，studio 继续跑其余；谁在哪跑写进续跑单。小检查、后处理、画图留在 studio。
+- **集群上的目录**：一个课题一个文件夹（`[cluster].dir`，默认课题名、空白换下划线）。大的中间数据（QMC 的 bin 与构型、DMRG 的态、检查点）一律放 `/bigscratch/jiaxin/<dir>/<lab id>/`（NVMe，不备份）；代码、提交脚本、Slurm 日志和最后画图用的汇总数据放 `~/<dir>/`，目录结构与课题目录一致（`labs/<lab id>/`、`src/`）；`/home` 很满，别往里放大文件。`rd cluster init` 建目录，`rd cluster push <根> src labs/<lab>/cluster …` 推代码。
+- **提交**：一律 `rd cluster submit <根> <lab> <脚本> -c N -t <时限> [--test]`——它在 `~/<dir>/labs/<lab>/` 里 `sbatch`，把作业记进 `labs/<lab>/cluster/jobs.jsonl`，并登记到 `~/.rd/jobs.json`（标签以 lab id 开头），调度器据此等它、作业一结束就叫醒续跑。先 `--test`（short 分区，2 小时）跑一个小尺寸确认二进制、路径、输出都对，再交生产。**同时排队的作业不超过 8 个**（在跑的不算；超了 `submit` 会拒绝，把没交的写进续跑单的待提交清单，下次续跑再交）。**单作业别要太多核**：一个作业里几条链用 `-c N` 并行、`OMP_NUM_THREADS=1`，N 取 2–10 最容易排上，整节点 40 核的作业会排很久；时限按实测 ×1.5 自己给。脚本里把中间数据写到 scratch 目录、汇总结果写到 `results/`、留完成标记文件。细节与模板见 rd-lab skill 的 `cluster.md`。
+- **记录**（本机课题文件夹必须能查到集群上有什么）：`DATA.md` 加「集群」一节——集群名与登录主机、scratch 路径、home 路径、每个目录里是什么、日期、对应的作业号、怎么重新生成、哪些已拉回本机。`rd cluster inventory <根> <lab>` 生成 `labs/<lab>/cluster/inventory.md`（目录大小、文件数、作业表），每次提交、拉回、清理后重跑一次，DATA.md 链接它。画图要用的汇总结果用 `rd cluster pull` 拉回本机 `labs/<lab>/results/`；原始 bin 留在 scratch（要本机留副本的加 `--scratch`，进 `data_root`）。集群不是归档：bigscratch 不备份。
+- **等集群作业**与等本机批量一样：登记后更新续跑单（在等哪些作业号、完成标记在哪、拉回命令）就结束运行，不要在前台等；`rd cluster jobs <根> --lab <lab>` 看状态，FAILED/TIMEOUT 的先看 `~/<dir>/labs/<lab>/logs/` 里的 `.err` 再决定重交。
 - **并行不设固定预算，按当时空闲决定**：跑数值前先执行 `rd free-cores <课题目录>`，它会报告性能核数、当前负载、**本机所有课题**已登记的作业，以及"现在最多再用几个核"。按它说的来，并显式设线程数（`OMP_NUM_THREADS`、`MKL_NUM_THREADS`、`OPENBLAS_NUM_THREADS`、Julia `-t`、Mathematica `$ProcessorCount` 相关设置），然后 `rd jobs claim <课题目录> --cores N --label "<lab id> <批量说明>" --pid <长寿命批量进程>` 登记（标签必须以 lab id 开头：调度器靠它知道这个 lab 在等哪些作业，见第 12 节），跑完 `rd jobs release --id <jid>`。登记表是机器级的（`~/.rd/jobs.json`），别的课题的数值也在里面，所以不同课题不会互相抢核。
 - **不要让核打架**（oversubscription）：同时在跑的线程数不能超过 `rd free-cores` 给的核数——并行作业数 × 每个作业的线程数才是真实占用，Julia 的 `-t N` 和 BLAS 线程（`OPENBLAS_NUM_THREADS` / `MKL_NUM_THREADS` / `OMP_NUM_THREADS`）会叠加，所以多进程并行时 BLAS 线程一律显式设 1，只有单进程才给 BLAS 多线程；DMRG 这类作业按内存算并行数，不只按核数。**批量启动一两分钟后再跑一次 `rd free-cores`**：它会报 CPU 的 user / system 占比、正在跑的线程总数和内存压缩/交换，并直接给出警告。**system 占比持续超过 25%** 几乎都不是在算数，而是线程超额争抢（自旋、调度）或内存压缩/交换在吃 CPU，这时要停下来检查：`rd free-cores` 列出的每个数值进程的线程数之和是否超过性能核数、压缩区和交换区是否在涨；确认打架就停掉批量、减少 WORKERS 或线程数再重启，不要让它"慢慢跑完"。别的课题的作业也算在内。
 - 同一台机器上可能同时有好几个课题的 dashboard 和 agent。规矩：每个课题自己的 agent 串行；全机同时最多 `~/.rd/machine.toml` 里 `max_agents` 个 agent（默认 2），超出的排队；不要跨课题写文件。
@@ -146,6 +150,7 @@ rd jobs claim <课题目录> --cores N --label X --pid P / rd jobs release <课�
 rd doctor <课题目录>                     # 断链、卡片缺节、状态异常
 rd tick <课题目录>                       # 处理所有待办（回答、审批、升级）
 rd finish <课题目录> <lab id> [--check]  # 收尾门槛：当前版本有通过的推导审核与一致性报告、薄层来自写作作业、doctor 干净，才标 done
+rd cluster status|init|push|submit|jobs|pull|inventory|cancel <课题目录> …   # 集群（Slurm）：空位、目录、推代码、提交、状态、拉结果、清单
 ```
 `rd` 在 `~/doc_unsyn/research-dashboard/rd`（可能不在 PATH，用绝对路径）。
 
@@ -161,6 +166,6 @@ rd finish <课题目录> <lab id> [--check]  # 收尾门槛：当前版本有通
 
 - **无人值守运行是一次性进程**：它一结束，用 Claude Code 后台任务（run_in_background）起的进程一起被清掉，"等通知"永远等不到。Codex 审计/一致性检查/写作只用 `codex-audit.sh` / `codex-write.sh` 启动（它们自己脱离父进程、记 pid、记源文件哈希），用 `--wait` 在前台等（单次最多 540 秒，Bash timeout 600000，循环到退出码不是 7）；等的时候不要改被审的源文件；数值批量用 `nohup … &` 启动、`rd jobs claim` 登记 pid、留完成标记文件。
 - **续跑单**：lab 每到一个里程碑和每次运行结束前更新 `labs/NN-slug/resume.md`（做完了什么、还差什么、在等哪个进程、下一步具体命令），半页以内，模板见 rd-lab B.6。
-- **自动续跑**：lab 状态 `running` 但没有活着的运行（上次被额度、超时打断或在等外部进程时结束），调度器会派 `resume_lab` 运行；续跑接着做、不重做、不整体重读 notes（rd-lab D 节）；该 lab 的 Codex 作业还活着时调度器先等它；用 `rd jobs claim --pid` 登记的数值作业（标签以 lab id 开头）还活着时也不派，其中任何一个结束（或全部结束）就立刻派一次并在提示里说明是哪一个；没登记作业的 `running` lab 最多每 `schedule.resume_minutes`（默认 60 分钟）派一次。所以等数值时**核对进度、更新续跑单后立刻结束运行，不要在前台空等**——运行期间你占着课题的 agent 锁，这个课题别的事都派不出去。连续三次续跑失败改 `blocked`。运行结束时 lab 状态只能是 `done` / `waiting_answer` / `awaiting_review` / `blocked`，或仍在等外部进程的 `running`。
+- **自动续跑**：lab 状态 `running` 但没有活着的运行（上次被额度、超时打断或在等外部进程时结束），调度器会派 `resume_lab` 运行；续跑接着做、不重做、不整体重读 notes（rd-lab D 节）；该 lab 的 Codex 作业还活着时调度器先等它；用 `rd jobs claim --pid` 登记的数值作业（标签以 lab id 开头；`rd cluster submit` 交的集群作业也在登记表里，squeue 里消失就算结束）还活着时也不派，其中任何一个结束（或全部结束）就立刻派一次并在提示里说明是哪一个；没登记作业的 `running` lab 最多每 `schedule.resume_minutes`（默认 60 分钟）派一次。所以等数值时**核对进度、更新续跑单后立刻结束运行，不要在前台空等**——运行期间你占着课题的 agent 锁，这个课题别的事都派不出去。连续三次续跑失败改 `blocked`。运行结束时 lab 状态只能是 `done` / `waiting_answer` / `awaiting_review` / `blocked`，或仍在等外部进程的 `running`。
 - **额度**：运行输出里出现 Claude 的 limit 提示（"hit your session limit · resets …"），调度器记下重置时刻，到时之前不派任何任务；所以每到里程碑就 commit 并更新续跑单，被打断时损失只有最后一小段。
 - **同一个 lab 不会被派两次**：已有排队或运行中的记录时，批准、tick、文件监视都不再派。调度器靠运行记录的标签后缀 `:<lab id>` 认出一次运行属于哪个 lab；手工派给某个 lab 的运行（`rd run` 或网页的「立刻执行」）标签请写成 `manual:<lab id>`，否则它会以为该 lab 没人管而派续跑。

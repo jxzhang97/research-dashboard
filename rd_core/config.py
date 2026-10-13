@@ -65,6 +65,21 @@ DEFAULTS: dict = {
         # 用户对讨论的回答不当场消化：每 digest_minutes 统一消化一次，这样互相关联的几个回答能一起考虑（用户 2026-10-04 定为 5 小时）
         "digest_minutes": 300,
     },
+    "cluster": {
+        # 校园集群（Slurm）。重的数值批量可以分摊到这里：见 AGENTS.md §5、skills/rd-lab/cluster.md、`rd cluster`
+        "enabled": True,
+        "name": "pod",                               # 登记表与缓存里用的集群名
+        "ssh": "pod-login1.cnsi.ucsb.edu",           # ~/.ssh/config 里的主机（两台机器都要配好免密）
+        "dir": "",                                   # 集群上的课题文件夹名；空 = 课题名、空白换下划线
+        "scratch_root": "/bigscratch/jiaxin",        # 大的中间数据：<scratch_root>/<dir>/<lab id>/（NVMe，不备份）
+        "home_root": "~",                            # 代码与最后画图用的汇总数据：<home_root>/<dir>/（结构同课题目录）
+        "partition": "batch",                        # 生产分区（Pod：3 天默认、58 天上限）
+        "test_partition": "short",                   # 测试分区（Pod：2 小时上限）
+        "default_time": "3-00:00:00",
+        "test_time": "01:30:00",
+        "max_pending": 8,                            # 同时排队（PD）的作业不超过这个数；在跑的不算
+        "max_cpus_per_job": 20,                      # 单作业核数上限（节点 40 核；要太多会一直排不上）
+    },
     "server": {
         "host": "0.0.0.0",
         # 只有这些网段来的请求能写（回答、审批、立刻执行）；其他地址一律只读。默认：本机 + Tailscale（100.64.0.0/10）

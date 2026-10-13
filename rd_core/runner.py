@@ -24,7 +24,7 @@ HEADLESS_RULES = """
 2. 只在课题目录内写文件；大的中间数据写到 config.toml 的 data_root 下，并在 lab 文件夹留 DATA.md。
 3. 结束前：更新受影响的卡片/wiki/idea 状态，追加 log.md，然后 `git add -A && git commit -m "<简述>"`（如果课题目录是 git 仓库）。
 4. 最后一条输出用三到五行中文总结：做了什么、改了哪些文件、还有什么没做。
-5. 本次运行一结束，你用 Claude Code 后台任务（run_in_background）起的进程会一起被清掉。所以：Codex 审计/写作只用 codex-audit.sh / codex-write.sh 启动（它们自己脱离父进程），用它们的 `--wait` 在前台等（单次最多 540 秒，Bash timeout 设 600000，循环到返回 0）；数值批量用 `nohup … &` 启动并 `rd jobs claim` 登记 pid。不要用 run_in_background 跑任何必须活过本次运行的东西，也不要靠"等通知"。
+5. 本次运行一结束，你用 Claude Code 后台任务（run_in_background）起的进程会一起被清掉。所以：Codex 审计/写作只用 codex-audit.sh / codex-write.sh 启动（它们自己脱离父进程），用它们的 `--wait` 在前台等（单次最多 540 秒，Bash timeout 设 600000，循环到返回 0）；数值批量用 `nohup … &` 启动并 `rd jobs claim` 登记 pid；交到集群的用 `rd cluster submit`（它自己登记作业号，排队上限与单作业核数在那里把关）。不要用 run_in_background 跑任何必须活过本次运行的东西，也不要靠"等通知"。
 6. 如果结束时 lab 的状态仍是 running（在等数值或 Codex），先更新 `labs/<id>/resume.md` 续跑单（做完了什么、还差什么、在等哪个进程、下一步具体命令和要看的文件），再结束；系统会在没有活着的运行时自动派续跑。续跑运行从续跑单、brief、report 开始，不整体重读 notes。lab 状态只能停在 done / waiting_answer / awaiting_review / blocked，或仍在等外部进程的 running。
 """.strip()
 

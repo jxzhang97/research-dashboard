@@ -52,6 +52,22 @@ retry_minutes = 30           # 某项失败后多久才重试
 resume_minutes = 60          # 等外部进程的 lab 没登记作业时，续跑最多每 60 分钟派一次；rd jobs claim 登记过的作业一结束就立刻派
 digest_minutes = 300          # 用户的回答每 5 小时统一消化一次（相关的裁决一起看）
 
+[cluster]
+# 校园集群（UCSB CSC Pod，Slurm）：重的数值批量可以分摊到这里跑，studio 仍是默认。规则见 AGENTS.md §5，操作见 rd-lab skill 的 cluster.md，
+# 命令 `rd cluster status|init|push|submit|jobs|pull|inventory`。两台机器的 ~/.ssh/config 都要有这个主机的免密配置。
+enabled = true
+name = "pod"
+ssh = "pod-login1.cnsi.ucsb.edu"
+dir = ""                       # 集群上的课题文件夹名；空 = 课题名、空白换下划线（例如 "Magic_in_heavy_fermion"）
+scratch_root = "/bigscratch/jiaxin"   # 大的中间数据：<scratch_root>/<dir>/<lab id>/（70 TB NVMe，不备份）
+home_root = "~"                       # 代码与最后画图用的汇总数据：<home_root>/<dir>/（结构同课题目录；/home 很满，别放大文件）
+partition = "batch"            # 生产分区
+test_partition = "short"       # 测试分区（2 小时上限）
+default_time = "3-00:00:00"    # 生产作业默认时限（按实测 ×1.5 自己给 -t）
+test_time = "01:30:00"
+max_pending = 8                # 同时排队（PD）的作业不超过 8 个；在跑的不算。rd cluster submit 超了会拒绝
+max_cpus_per_job = 20          # 单作业核数上限；一个作业里几条链用 -c N 并行，N 取 2–10 最容易排上
+
 [server]
 host = "0.0.0.0"             # 0.0.0.0 才能从笔记本经 Tailscale 访问
 port = 8010
