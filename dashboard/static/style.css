@@ -220,3 +220,10 @@ button.small { font-size: 12px; padding: 2px 8px; }
   .english-reading #projects { max-width:100%; }
   .english-reading .list .t { min-width:0; overflow-wrap:anywhere; }
 }
+
+/* English question cards need room for full scientific terms. */
+.english-reading .qtree { --card-w: 300px; --card-h: 202px; }
+.english-reading .qcard .title { height: 4.05em; -webkit-line-clamp: 3; }
+.english-reading .qcard .verdict { height: 4.2em; -webkit-line-clamp: 3; }
+
+.english-reading .qcard .top { flex-wrap: wrap; }

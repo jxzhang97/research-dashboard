@@ -44,6 +44,29 @@
     "已开始统一消化":"The scheduled review of answers has started", "消化已在队列里":"The review of answers is already queued",
     "已记录":"Saved", "已放行，agent 下次运行回答":"Approved. The research agent will answer on its next run.",
     "原文件":"Original file", "同文件夹":"In this folder",
+    "左侧选择一页。wiki 是当前理解的汇编，由 agent 维护并随进展重写；[[双括号]] 互相链接。课题到哪了看":"Choose a page on the left. The Wiki explains our current understanding and links related concepts. For project progress, see the ",
+    "还没有页面":"No pages yet", "依据已审计":"Supporting work reviewed",
+    "问题树":"Questions", "路线":"Research approach", "方法":"Method", "缩小":"Zoom out", "放大":"Zoom in",
+    "按宽度适应":"Fit to width", "实际大小":"Actual size", "适应":"Fit", "全部展开":"Expand all", "只看选中分支":"Selected branch",
+    "画布比窗口宽，可以横向滚动或缩小":"Scroll horizontally or zoom out to see the rest of the tree.",
+    "还没有当前回答":"No current answer yet", "当前回答":"Current answer", "未回答":"Unanswered", "关闭 ✕":"Close ✕",
+    "完整页面 ↗":"Full page ↗", "关键证据与链接":"Key evidence and links", "子问题":"Subquestions", "原话与历史":"Original wording and history",
+    "原话":"Original wording", "agent 的理解":"Research interpretation", "历史":"History", "派生":"Derived questions", "agent 备注":"Research notes",
+    "记下":"Save", "投稿":"Submit", "升级为 lab 任务":"Create a research task", "让 agent 起草任务书":"Request a research plan",
+    "给任务书的补充说明（可空）；写「不用过目」则直接执行":"Optional instructions for the research plan. Say “no review needed” to authorize immediate execution.",
+    "速记一个想法：模糊的也行，原话会被原样保存；agent 会整理挂到树上，不会改你的话。":"Capture an idea, even if it is tentative. Your wording will be saved as written and organized into the question tree.",
+    "访客投稿：留下名字和想法，原话会原样保存；课题负责人放行后 agent 才会整理挂到问题树上。":"Guest submissions: leave your name and idea. Your wording is saved as written; the project owner must approve it before it is added to the question tree.",
+    "你的想法或问题：模糊的也行。":"Your idea or question; tentative thoughts are welcome.",
+    "任务已在进行：意见会记进任务书，agent 下次运行时先读它。":"This task is already in progress. Your comment will be saved with the plan for the next research session.",
+    "写下你对这份任务书的意见（要改什么、加什么、删什么）。提交后 agent 会按意见修改任务书并在意见下回复，改完仍等你过目；写「可以开始」就直接执行。":"Describe any changes, additions or removals you want. The plan will be revised for your review. Say “ready to start” to authorize execution.",
+    "上次运行已结束但任务没收尾；系统会自动派续跑（额度用尽时等重置）":"The previous session ended before completion. Work will resume automatically when available.",
+    "改变结论的审计发现已按唯一方向修正并复核通过；不认可就在讨论里说":"Corrections affecting the conclusions have been made and reviewed. Raise any disagreement in the discussion.",
+    "rd jobs claim / rd cluster submit 登记的作业；结束后调度器派续跑":"Registered numerical jobs. Research work resumes when a job finishes.",
+    "已记下":"Saved", "已请求":"Requested", "已投稿，等课题负责人放行":"Submitted; awaiting project-owner approval.",
+    "已记下，agent 下次运行会读到":"Saved for the next research session.", "已记下，agent 开始按意见修改任务书":"Saved. Revision of the research plan has started.",
+    "已批准，agent 开始执行":"Approved. Work is starting.",
+    "studio（一、二期）+ pod（三期 L=9）":"studio (phases 1–2) + pod (phase 3, L=9)",
+    "薄层写作尚未通过独立写作作业完成（codex-write.sh 启动时要用 --expect 声明每个输出文件，含 report.md）":"The reader-facing pages have not yet been completed through an independent writing job. Each output, including report.md, must be registered with --expect.",
     "审计修正清单，过目即可，不卡任务：认可就回答“认可”，不认可指出哪一处":"Audit corrections for review. Confirm acceptance or identify the correction you disagree with.",
   };
   const substitutions = [
@@ -51,13 +74,13 @@
     [/^创建：/, "Created: "], [/^更新：/, "Updated: "], [/^课题状态 · 更新 /, "Project overview · Updated "],
     [/^相关任务 /, "Related task "], [/^来自问题：/, "Related question: "], [/^机器：/, "Machine: "],
     [/^审计：/, "Reviews: "], [/^历史：/, "History: "], [/^全部图 \((\d+)\)$/, "All figures ($1)"],
-    [/^文件 \((\d+)\)$/, "Files ($1)"], [/^任务书 brief.md/, "Research plan (Chinese)"],
+    [/^文件 \((\d+)\)$/, "Files ($1)"], [/^任务书 brief.md/, "Research plan (brief.md)"],
     [/^📖 推导与分析 /, "📖 Detailed notes (Chinese) "], [/^最近动态（(\d+) 条）$/, "Recent activity ($1 entries; Chinese)"],
     [/^只读 · /, "Read-only · "], [/^需要你处理/, "Needs your attention"], [/^agent 正在运行：/, "Research agent running: "],
     [/^后台数值：/, "Numerical jobs: "], [/^数值作业：/, "Numerical jobs: "], [/^ · 给 AI 读：$/, " · Machine-readable source (Chinese): "],
     [/^\(\d+\)$/, "$&"], [/^（未启动）$/, " (offline)"], [/^ ·待处理$/, " · awaiting action"],
     [/^访客 (.+) 问 agent( · 等你放行)?$/, "Guest question from $1"],
-    [/^讨论 /, "Discussion "], [/^收尾门槛（rd finish）还差$/, "Remaining completion checks (Chinese)"],
+    [/^讨论 /, "Discussion "], [/^收尾门槛（rd finish）还差$/, "Remaining completion checks"],
     [/^(\d+) 条回答等待统一消化$/, "$1 answers awaiting review"],
     [/^已提交，将在 (.+) 左右与其他回答一起消化$/, "Submitted. Your answer will be reviewed with the other answers around $1."],
     [/^· 为了把互相关联的回答放在一起考虑，agent 每 (\d+) 分钟消化一次，下次约 (.+)。$/, "· Related answers are reviewed together every $1 minutes. Next review: $2."],
@@ -65,6 +88,23 @@
     [/^访客 (.+) 问 agent（等放行）$/, "Guest question from $1 (awaiting approval)"],
     [/^agent 问你(?=\s*·|$)/, "Question for the project owner"],
     [/^你问 agent(?=\s*·|$)/, "Question for the research agent"],
+    [/^← 问题树$/, "← Questions"], [/^上级：/, "Parent: "], [/^相关：/, "Related: "], [/^反向链接：/, "Linked from: "],
+    [/^▾ 收起$/, "▾ Collapse"], [/^▸ (\d+) 个子问题$/, "▸ $1 subquestions"],
+    [/^(\d+) 个节点 · (\d+) 个显示中 · /, "$1 questions · $2 visible · "],
+    [/自动：只展开选中分支$/, "Auto: selected branch"], [/自动：全部展开$/, "Auto: expand all"],
+    [/全部展开$/, "Expand all"], [/只看选中分支$/, "Selected branch"],
+    [/^已升级为 /, "Research task created: "], [/^已请求升级（(.+)），agent 正在起草任务书。$/, "Research plan requested ($1); preparation is in progress."],
+    [/ · 有你的意见待 agent 处理$/, " · comments awaiting review"],
+    [/推导审计/g, "Derivation review"], [/代码审计/g, "Code review"], [/薄层一致性/g, "Summary consistency review"],
+    [/改变结论/g, "conclusion-changing findings"], [/不严谨/g, "missing qualifications"], [/已过期/g, "Out of date"],
+    [/ · 审核后源文件又改过，要重审$/, " · source changed; a new review is needed"], [/ · 发现未处理$/, " · findings awaiting action"],
+    [/ ·待处理$/, " · awaiting action"], [/^已加入队列：/, "Queued: "],
+    [/^缺少 (.+)$/, "Missing $1"],
+    [/^(推导审核|薄层一致性检查): 没有覆盖当前文件版本的通过报告（还没有这类作业）。实质修改后要对当前版本复核$/, "$1: no passing review covers the current files. A new review is needed after substantive changes."],
+    [/Summary consistency review检查: 没有覆盖当前文件版本的通过报告（还没有这类作业）。实质修改后要对当前版本复核$/, "Summary consistency review: no passing review covers the current files. A new review is needed after substantive changes."],
+    [/推导审核/g, "Derivation review"], [/，(\d+) 核/g, ", $1 cores"],
+    [/（pid ([^)]+)）/g, "(pid $1)"], [/（(pod #[^）]+)）/g, "($1)"],
+    [/studio（一、二期）\+ pod（三期 L=9）/g, "studio (phases 1–2) + pod (phase 3, L=9)"],
   ];
   function t(text) {
     if (!english() || typeof text !== "string") return text;
@@ -72,8 +112,9 @@
     if (Object.prototype.hasOwnProperty.call(words, trimmed)) return text.replace(trimmed, words[trimmed]);
     const counted = trimmed.match(/^(.*?)\s+(\(\d+\))$/);
     if (counted && Object.prototype.hasOwnProperty.call(words, counted[1])) return text.replace(trimmed, words[counted[1]] + " " + counted[2]);
-    for (const [pattern, replacement] of substitutions) if (pattern.test(trimmed)) return text.replace(trimmed, trimmed.replace(pattern, replacement));
-    return text;
+    let value = trimmed;
+    for (const [pattern, replacement] of substitutions) value = value.replace(pattern, replacement);
+    return text.replace(trimmed, value);
   }
   function translateUI(root = document.body) {
     if (!english()) return;
@@ -98,7 +139,7 @@
     const result = { ...doc, translation: info(path) };
     if (entry) {
       result.title = entry.title;
-      if (doc.meta) result.meta = { ...doc.meta, title: entry.title };
+      if (doc.meta) result.meta = { ...doc.meta, ...entry.fields, title: entry.title };
       if ("body" in doc) result.body = entry.body;
     }
     return result;
@@ -109,7 +150,7 @@
   }
   function lab(doc) {
     const path = `labs/${doc.id}/report.md`, entry = catalog.documents[path];
-    const result = { ...doc };
+    const result = translated(doc);
     if (entry) {
       result.title = entry.title; result.short = entry.title;
       result.answer = section(entry.body, "Current answer");
@@ -122,12 +163,25 @@
             captions.set((child.attrGet("src") || "").split("/").pop(), child.content);
           }
         }
-        result.images = doc.images.map((im) => ({ ...im, caption: captions.get(im.path.split("/").pop()) || im.name }));
+        result.images = doc.images.map((im) => {
+          const reportCaption = captions.get(im.path.split("/").pop());
+          const galleryCaption = catalog.captions?.[im.path];
+          if (reportCaption) return { ...im, caption: reportCaption, captionTranslation: info(path).state };
+          if (galleryCaption) return { ...im, caption: galleryCaption.text, captionTranslation: galleryCaption.state };
+          return { ...im, caption: im.caption || im.name, captionTranslation: im.caption && /[\u4e00-\u9fff]/.test(im.caption) ? "missing" : null };
+        });
       }
     } else {
-      result.answer = "No English summary is available yet."; result.question = "";
+      result.short = result.title;
+      result.answer = "No research summary is available yet."; result.question = "";
     }
-    result.translation = info(doc.path); // the plan itself may remain Chinese
+    if (doc.data) result.data = translated(doc.data, `labs/${doc.id}/DATA.md`);
+    return result;
+  }
+  function question(doc) {
+    const result = translated(doc), entry = catalog.documents[doc.path];
+    if (entry) result.answer = section(entry.body, "Current answer");
+    if (doc.children) result.children = doc.children.map(question);
     return result;
   }
   function overlay(path, data) {
@@ -146,6 +200,14 @@
     if (pathname.startsWith("/api/discussion/")) return translated(data);
     if (pathname === "/api/labs") return data.map(lab);
     if (pathname.startsWith("/api/labs/")) return lab(data);
+    if (pathname === "/api/wiki") return data.map((doc) => translated(doc));
+    if (pathname.startsWith("/api/wiki/")) {
+      const result = translated(data);
+      if (data.backlinks) result.backlinks = data.backlinks.map((link) => ({ ...link, title: catalog.documents[`wiki/${link.id}.md`]?.title || link.title }));
+      return result;
+    }
+    if (pathname === "/api/ideas") return { ...data, tree: data.tree.map(question) };
+    if (pathname.startsWith("/api/ideas/")) return question(data);
     if (pathname === "/api/raw" || (data && "body" in data && data.path)) return translated(data);
     return data;
   }
@@ -169,7 +231,12 @@
     if (entry.state === "stale" && entry.source_body) {
       const details = document.createElement("details"), summary = document.createElement("summary");
       summary.textContent = "Latest original, including any new answers";
-      details.append(summary, render(entry.source_body, path.includes("/") ? path.slice(0,path.lastIndexOf("/")) : ""));
+      details.append(summary);
+      if (entry.source_fields?.verdict) {
+        const verdict = document.createElement("p"); verdict.textContent = "Current source verdict: " + entry.source_fields.verdict;
+        details.append(verdict);
+      }
+      details.append(render(entry.source_body, path.includes("/") ? path.slice(0,path.lastIndexOf("/")) : ""));
       container.append(details);
     }
   }
