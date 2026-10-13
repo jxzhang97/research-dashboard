@@ -98,6 +98,26 @@ def test_translation_fields_cannot_replace_workflow_state(project_dir):
     assert fm.read(project_dir/path)[0]["status"] == "open"
 
 
+def test_new_question_verdict_marks_existing_translation_stale(project_dir):
+    install(project_dir)
+    path = "ideas/new-question.md"
+    source = project_dir / path
+    source.parent.mkdir(exist_ok=True)
+    fm.write(source, {"title": "问题", "status": "seed"}, "## 当前回答\n待检验。\n")
+    batch = project_dir / "translations/en/content.json"
+    batch.write_text(json.dumps({"schema_version": 1, "language": "en", "documents": {
+        path: {"title": "A question", "body": "## Current answer\nTo be tested.\n", "source_sha256": source_hash(source)}
+    }}))
+    project = Project(project_dir)
+    assert catalog(project)["documents"][path]["state"] == "current"
+    fm.update(source, status="exploring")
+    assert catalog(project)["documents"][path]["state"] == "current"
+    fm.update(source, verdict="数值支持")
+    entry = catalog(project)["documents"][path]
+    assert entry["state"] == "stale"
+    assert entry["source_fields"]["verdict"] == "数值支持"
+
+
 def test_gallery_caption_freshness_tracks_caption_not_unrelated_notes(project_dir):
     install(project_dir)
     folder = project_dir / "labs/99-gallery-test"

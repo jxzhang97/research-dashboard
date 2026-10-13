@@ -83,7 +83,13 @@ def catalog(project) -> dict:
                     raise ValueError("Invalid translated tags")
                 if fields and not isinstance(entry.get("source_meta_sha256"), str):
                     raise ValueError("Missing display field source hash")
-                stale = current_hash != entry["source_sha256"] or bool(fields and metadata_hash(meta, fields) != entry["source_meta_sha256"])
+                source_field_keys = set(meta) & DISPLAY_FIELDS
+                tracks_fields = "source_meta_sha256" in entry or path.startswith("ideas/")
+                fields_changed = tracks_fields and (
+                    set(fields) != source_field_keys
+                    or bool(fields and metadata_hash(meta, fields) != entry["source_meta_sha256"])
+                )
+                stale = current_hash != entry["source_sha256"] or fields_changed
                 documents[path] = {
                     "title": entry["title"], "body": entry["body"],
                     "fields": fields,
@@ -91,7 +97,7 @@ def catalog(project) -> dict:
                     "state": "stale" if stale else "current",
                     "source_headings": re.findall(r"^#{1,6}\s+(.+?)\s*#*\s*$", original, re.M),
                     "source_body": original if stale else None,
-                    "source_fields": {key: meta.get(key) for key in fields} if stale else None,
+                    "source_fields": {key: meta.get(key) for key in source_field_keys | set(fields)} if stale else None,
                 }
         except (OSError, ValueError, KeyError, TypeError, PermissionError):
             errors.append(str(name))
