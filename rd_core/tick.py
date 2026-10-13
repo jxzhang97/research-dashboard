@@ -169,7 +169,8 @@ def actionable(project: Project, cfg: dict | None = None, only: str | None = Non
                 seen = dict(alive)
             finished = {k: v for k, v in (seen or {}).items() if k not in alive}
             if alive and not finished:
-                names = "、".join(f"{j.get('label')}（pid {j.get('pid')}）" for j in jobs[:3]) + ("…" if len(jobs) > 3 else "")
+                names = "、".join(f"{j.get('label')}（{j.get('host')} #{j['slurm_id']}）" if j.get("slurm_id") else f"{j.get('label')}（pid {j.get('pid')}）"
+                                 for j in jobs[:3]) + ("…" if len(jobs) > 3 else "")
                 deferred.append({**w, "last_status": "numerics", "retry_in_s": 300, "reason": f"等数值：{names}"})
                 continue
             if finished:
