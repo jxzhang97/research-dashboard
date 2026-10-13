@@ -342,6 +342,11 @@ def create_app(project: Project) -> FastAPI:
     def links():
         return project.link_table()
 
+    @app.get("/api/translations")
+    def translations():
+        from .translations import catalog
+        return JSONResponse(catalog(project), headers={"Cache-Control": "no-store"})
+
     @app.post("/api/seen")
     def seen(body: SeenIn):
         project.mark_seen(body.kind, body.id)

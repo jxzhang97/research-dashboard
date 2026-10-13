@@ -2,6 +2,7 @@
 (() => {
   const $ = (s, el = document) => el.querySelector(s);
   const main = $("#main");
+  const reader = window.ReadingMode || { overlay: (_path, data) => data, t: (text) => text, decorate: (div) => div, refresh: async () => {}, english: () => false };
   let LINKS = {};
   let OVERVIEW = null;
   const STATUS_ZH = {
@@ -52,10 +53,11 @@
   async function api(path, opts) {
     const r = await fetch(path, opts && { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(opts) });
     if (!r.ok) throw new Error(`${r.status} ${await r.text()}`);
-    return r.json();
+    const data = await r.json();
+    return opts ? data : reader.overlay(path, data);
   }
   function toast(msg) {
-    const t = $("#toast"); t.textContent = msg; t.classList.add("on"); setTimeout(() => t.classList.remove("on"), 2200);
+    const t = $("#toast"); t.textContent = reader.t(msg); t.classList.add("on"); setTimeout(() => t.classList.remove("on"), 2200);
   }
 
   // ---------- markdown ----------
@@ -92,7 +94,7 @@
     }
     return parts.join("/");
   }
-  function render(src, baseDir = "") {
+  function render(src, baseDir = "", translation = null) {
     const { src: s1, store } = protectMath(src || "");
     let html = md.render(wikilinks(s1));
     html = restoreMath(html, store);
@@ -152,7 +154,7 @@
     if (window.renderMathInElement) {
       renderMathInElement(div, { delimiters: [{ left: "$$", right: "$$", display: true }, { left: "\\[", right: "\\]", display: true }, { left: "\\(", right: "\\)", display: false }, { left: "$", right: "$", display: false }], throwOnError: false });
     }
-    return div;
+    return reader.decorate(div, translation, render, slugId, md);
   }
   // 长文的目录：h2/h3 超过 3 个才显示
   function tocFor(div, min = 4) {
@@ -178,6 +180,7 @@
 
   // ---------- 总览 / 红点 ----------
   async function refreshOverview() {
+    await reader.refresh();
     try {
       OVERVIEW = await api("/api/overview");
       LINKS = await api("/api/links");
@@ -259,7 +262,11 @@
     if (o.status) {
       const box = $("#status");
       box.innerHTML = `<div class="meta"><span>课题状态 · 更新 ${esc(o.status.updated)}</span><a href="${docRoute("STATUS.md")}">全文</a></div>`;
-      box.appendChild(render(o.status.body, ""));
+      box.appendChild(render(o.status.body, "", o.status.translation));
+      if (reader.english()) {
+        const intro = document.createElement("a"); intro.href = docRoute("PROJECT.md"); intro.textContent = "Project aims and model";
+        box.querySelector(".meta").appendChild(intro);
+      }
     }
   };
 
@@ -293,7 +300,7 @@
         ${m.file ? `<a href="/api/file?path=${encodeURIComponent(m.file)}" target="_blank">PDF</a>` : ""}
         <span>阅读深度：${esc({ abstract: "只读摘要", skim: "略读", full: "精读" }[m.read_depth] || "未填")}</span><span>来源：${esc(m.source || "")}</span><span>更新：${esc(d.updated)}</span></div>
       <div class="panel" id="body"></div>`;
-    const body = render(d.body, dirOf(d.path)); $("#body").appendChild(body);
+    const body = render(d.body, dirOf(d.path), d.translation); $("#body").appendChild(body);
     const toc = tocFor(body, 5); if (toc) $("#body").prepend(toc);
   };
 
@@ -303,7 +310,7 @@
       <div class="meta">${chip(m.status)}<a href="${esc(m.url || "https://arxiv.org/abs/" + m.arxiv)}" target="_blank">arXiv:${esc(m.arxiv)}</a><span>${esc(m.published || "")}</span></div>
       ${m.status === "pending" ? `<p><button class="primary" id="ok">通过，下载并精读</button> <button id="no">拒绝</button></p>` : ""}
       <div class="panel" id="body"></div>`;
-    $("#body").appendChild(render(d.body, dirOf(d.path)));
+    $("#body").appendChild(render(d.body, dirOf(d.path), d.translation));
     const act = (s) => async () => { await api(`/api/inbox/${encodeURIComponent(key)}/${s}`, {}); toast("已记录"); location.hash = "#/refs"; };
     if ($("#ok")) { $("#ok").onclick = act("approved"); $("#no").onclick = act("rejected"); }
   };
@@ -317,7 +324,7 @@
       const d = await api(`/api/wiki/${slug}`);
       const back = (d.backlinks || []).map((b) => `<a href="#/wiki/${esc(b.id)}">${esc(b.title)}</a>`).join(" · ");
       const c = $("#content"); c.innerHTML = `<h2 style="margin-top:0">${esc(d.title)}</h2><div class="meta"><span>更新：${esc(d.updated)}</span>${(d.meta.tags || []).map((t) => `<span class="chip">${esc(t)}</span>`).join("")}${(d.meta.audited_by || []).length ? `<span class="chip audit pass" title="${esc((d.meta.audited_by || []).join(", "))}">依据已审计</span>` : ""}</div><div id="toc-top"></div><div class="panel" id="body"></div>${back ? `<p class="small muted">反向链接：${back}</p>` : ""}`;
-      const body = render(d.body, dirOf(d.path)); $("#body").appendChild(body);
+      const body = render(d.body, dirOf(d.path), d.translation); $("#body").appendChild(body);
       const toc = tocFor(body, 5); if (toc) $("#toc-top").appendChild(toc);
     }
   };
@@ -353,8 +360,8 @@
         <div class="form-row"><button class="primary" id="comment">提交意见</button><span class="muted small">原话会原样追加到任务书的「用户意见」一节</span></div></div>
       ${d.data ? `<details class="panel"><summary>数据去向 DATA.md</summary><div id="data"></div></details>` : ""}
       <details class="panel"><summary>文件 (${(d.files || []).length})</summary><ul class="list small">${files}</ul></details>`;
-    $("#brief").appendChild(render(d.body, labDir));
-    if (d.report) $("#report").appendChild(render(d.report.body, labDir));
+    $("#brief").appendChild(render(d.body, labDir, d.translation));
+    if (d.report) $("#report").appendChild(render(d.report.body, labDir, d.report.translation));
     if (d.data) $("#data").appendChild(render(d.data.body, labDir));
     if ($("#approve")) $("#approve").onclick = async () => { await api(`/api/labs/${encodeURIComponent(id)}/approve`, {}); toast("已批准，agent 开始执行"); pages.lab(id); refreshOverview(); };
     if ($("#park")) $("#park").onclick = async () => { await api(`/api/labs/${encodeURIComponent(id)}/status/parked`, {}); pages.lab(id); };
@@ -398,7 +405,7 @@
       <div class="meta"><span>更新：${esc(d.updated || "")}</span>${d.meta.status ? chip(d.meta.status) : ""}<a href="/api/file?path=${encodeURIComponent(path)}" target="_blank">原文件</a></div>
       ${auditBanner}<div class="two"><div class="side panel" id="toc-side">${sib ? `<div class="small muted" style="margin-top:10px">同文件夹</div>${sib}` : ""}</div><div class="panel" id="body"></div></div>`;
     const baseDir = base || d.meta.base || dirOf(path);
-    const body = render(d.body, baseDir); $("#body").appendChild(body);
+    const body = render(d.body, baseDir, d.translation); $("#body").appendChild(body);
     const toc = tocFor(body, 3); if (toc) $("#toc-side").prepend(toc);
     if (!toc && !sib) { $("#toc-side").remove(); $("#body").parentElement.style.gridTemplateColumns = "1fr"; }
     scrollToFrag(body, frag);
@@ -445,7 +452,7 @@
       ${approveBox}${reviewBox}<div class="panel" id="body"></div>
       <div class="panel"><b>${m.asked_by === "agent" ? "你的回答" : "补充"}</b><textarea id="ans" placeholder="写下你的裁决或想法。回答不会当场处理：agent 每五小时把这段时间的所有回答放在一起统一消化（讨论列表页可以手动“现在就消化”）。"></textarea>
         <div class="form-row"><button class="primary" id="send">提交回答</button>${m.status !== "resolved" ? `<button id="resolve">标记已解决</button>` : ""}</div></div>`;
-    $("#body").appendChild(render(d.body, dirOf(d.path)));
+    $("#body").appendChild(render(d.body, dirOf(d.path), d.translation));
     $("#send").onclick = async () => { const t = $("#ans").value.trim(); if (!t) return; await api(`/api/discussion/${encodeURIComponent(id)}/answer`, { text: t }); const dg = await api("/api/digest").catch(() => null); toast(dg && dg.next_digest_str ? `已提交，将在 ${dg.next_digest_str} 左右与其他回答一起消化` : "已提交"); pages.thread(id); refreshOverview(); };
     if ($("#resolve")) $("#resolve").onclick = async () => { await api(`/api/discussion/${encodeURIComponent(id)}/resolve`, {}); pages.thread(id); refreshOverview(); };
     if ($("#approve-q")) $("#approve-q").onclick = async () => { await api(`/api/discussion/${encodeURIComponent(id)}/approve`, {}); toast("已放行，agent 下次运行回答"); pages.thread(id); refreshOverview(); };

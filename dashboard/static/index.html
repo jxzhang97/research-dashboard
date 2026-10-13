@@ -6,7 +6,7 @@
 <title>课题 dashboard</title>
 <link rel="alternate" type="text/markdown" title="给 AI 读的入口（llms.txt）" href="/llms.txt">
 <link rel="stylesheet" href="/static/vendor/katex/katex.min.css">
-<link rel="stylesheet" href="/static/style.css?v=20261012b">
+<link rel="stylesheet" href="/static/style.css?v=20261013">
 <script src="/static/vendor/markdown-it.min.js"></script>
 <script src="/static/vendor/katex/katex.min.js"></script>
 <script src="/static/vendor/katex/contrib/auto-render.min.js"></script>
@@ -24,12 +24,14 @@
     <a href="#/runs" data-key="runs">任务<b class="badge" data-badge="runs"></b></a>
   </nav>
   <select id="projects" style="display:none;width:auto;font-size:13px;padding:3px 8px"></select>
+  <div id="reading-language" hidden role="group" aria-label="Reading language / 阅读语言"><button type="button" data-lang="zh">中文</button><button type="button" data-lang="en">English</button></div>
   <span id="host" class="muted"></span>
 </header>
 <main id="main"><p class="muted">加载中…</p>
 <noscript><p>这个页面需要 JavaScript 才能显示。机器可读版本（给 AI 或程序读，纯 markdown）：<a href="/llms.txt">/llms.txt</a>，全部内容合并：<a href="/llms-full.txt">/llms-full.txt</a>。</p></noscript>
 </main>
 <div id="toast"></div>
-<script src="/static/app.js?v=20261012b"></script>
+<script src="/static/reading-mode.js?v=20261013"></script>
+<script src="/static/app.js?v=20261013"></script>
 </body>
 </html>
