@@ -521,6 +521,10 @@ def inventory(project: Path, lab_id: str) -> Path:
         elif "|" in ln and cur:
             p = ln.split("|")
             lines.append("| " + " | ".join(f"`{p[0]}`" if i == 0 else x for i, x in enumerate(p)) + " |")
+    # 空表补一行，免得表头后面直接接下一节
+    for i in range(len(lines) - 1, 0, -1):
+        if lines[i].startswith("|---") and (i + 1 == len(lines) or not lines[i + 1].startswith("|")):
+            lines.insert(i + 1, "| （无） |" + " |" * (lines[i].count("|") - 2))
     lines += ["", "## 作业记录（labs/%s/cluster/jobs.jsonl）" % lab_id, "", "| 作业号 | 名称 | 核 | 分区 | 时限 | 提交 | 状态 | 用时 | 脚本 |", "|---|---|---|---|---|---|---|---|---|"]
     for r in recs:
         lines.append(f"| {r.get('slurm_id', '')} | {r.get('name', '')} | {r.get('cpus', '')}{'×' + str(r['tasks']) if r.get('tasks', 1) > 1 else ''} | {r.get('partition', '')} | {r.get('time', '')} | {r.get('submitted', '')} | {r.get('state', '')} | {r.get('elapsed', '')} | `{r.get('script', '')} {' '.join(r.get('args') or [])}`".rstrip() + " |")
