@@ -123,3 +123,22 @@ def test_pending_review_shows_in_attention(project_dir: Path):
     fm.update(project_dir / BASE / "brief.md", status="running", pending_review="2026-10-08-lab01-audit-fixes")
     att = Project(project_dir).attention()
     assert any(i["kind"] == "lab" and "审计修正" in i["why"] for i in att["items"])
+
+
+def test_shared_pages_do_not_expire_reports_after_done(project_dir: Path):
+    """STATUS.md 被下一个 lab 改写后，已 done 的 lab 的一致性报告不算过期；done 之前仍算。"""
+    for n in ("notes.md", "handoff.md", "report.md"):
+        (project_dir / BASE / n).write_text(n, encoding="utf-8")
+    record(project_dir, "write", "w1", [BASE + "report.md"], [])
+    report(project_dir, BASE + "audit/d.md", "derivation")
+    record(project_dir, "audit", "a1", [BASE + "audit/d.md"], [BASE + "notes.md"])
+    report(project_dir, BASE + "audit/c.md", "consistency")
+    record(project_dir, "consistency", "c1", [BASE + "audit/c.md"], [BASE + n for n in ("notes.md", "handoff.md", "report.md")] + ["STATUS.md"])
+    assert workflow.finish(project_dir, LAB)["status"] == "done"
+    (project_dir / "STATUS.md").write_text("下一个 lab 改写了状态页\n", encoding="utf-8")
+    assert workflow.completion_errors(project_dir, LAB) == []
+    assert Project(project_dir).lab(LAB).extra["audit"]["consistency"]["stale"] is False
+    # 还没 done 的 lab：STATUS 改了就得重做一致性检查
+    fm.update(project_dir / BASE / "brief.md", status="running")
+    assert any("STATUS.md" in e for e in workflow.completion_errors(project_dir, LAB))
+    assert Project(project_dir).lab(LAB).extra["audit"]["consistency"]["stale"] is True

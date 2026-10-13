@@ -15,7 +15,7 @@ description: 推导、代码与薄层的独立审计步（research-dashboard 课
 | `code` | 脚本、`results/`、`DATA.md`、画图脚本 | 用户点按钮才做（要跑东西，耗时不可控） | lab 页按钮 |
 | `consistency` | 薄层：`report.md`、本 lab 写的 wiki 页、idea 当前回答、`STATUS.md`，对照 notes、交接单、图与证据 | 薄层写完、机械检查通过之后自动做；发现处理完再做一次 | rd-lab C3b；lab 页按钮 |
 
-**为什么要绑版本**：`codex-audit.sh` 启动时用 `--source` 声明审的是哪些文件（记哈希）、用 `--expect` 声明报告路径。作业结束后源文件再被改，这份报告就"过期"（lab 页的标记会打叉），`rd finish` 不认。所以**处理完发现一定要对当前版本复核**，不能自己标一句"已处理"就算通过。
+**为什么要绑版本**：`codex-audit.sh` 启动时用 `--source` 声明审的是哪些文件（记哈希）、用 `--expect` 声明报告路径。作业结束后源文件再被改，这份报告就"过期"（lab 页的标记会打叉），`rd finish` 不认。所以**处理完发现一定要对当前版本复核**，不能自己标一句"已处理"就算通过。例外：`STATUS.md`、`wiki/index.md`、`wiki/notation.md` 是所有 lab 共用的页面，只在 finish 时要求与审核版本一致；lab done 之后它们被下一个 lab 改写，不算过期。
 
 ## 1. 组提示词
 

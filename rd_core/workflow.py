@@ -18,6 +18,14 @@ from . import config, fm
 from .codex import REVIEW_KINDS, _hash, done_jobs
 
 REQUIRED = ("notes.md", "handoff.md", "report.md")
+# 所有 lab 共用、每次收尾都会被下一个 lab 改写的页面：finish 时必须与审核版本一致，lab done 之后它们再变不算"过期"
+SHARED_PAGES = {"STATUS.md", "wiki/index.md", "wiki/notation.md"}
+
+
+def stale_sources(root: Path, hashes: dict, ignore=()) -> list[str]:
+    """作业记录的源文件里，现在已经改过的（忽略 ignore 里的共享页面）。"""
+    now = _hash(root, hashes)
+    return sorted(p for p, h in hashes.items() if p not in ignore and now.get(p) != h)
 
 
 def _report_passes(root: Path, job: dict, outcome: dict, report: str) -> tuple[bool, str]:
@@ -63,6 +71,11 @@ def completion_errors(root: Path, lab: str, project=None) -> list[str]:
         return ["非法的 lab 路径或没有 brief.md"]
     cfg = config.load(root)
     errors: list[str] = []
+    try:
+        done = fm.read(lab_dir / "brief.md")[0].get("status") == "done"
+    except (OSError, ValueError):
+        done = False
+    ignore = SHARED_PAGES if done else ()
     base = f"labs/{lab}/"
     required = {base + n for n in REQUIRED}
     errors += [f"缺少 {p}" for p in sorted(required) if not (root / p).is_file()]
@@ -88,8 +101,9 @@ def completion_errors(root: Path, lab: str, project=None) -> list[str]:
             if not targets.issubset(hashes):
                 why.append(f"{job['name']}: 声明的源文件没覆盖 {sorted(targets - set(hashes))}")
                 continue
-            if _hash(root, hashes) != hashes:
-                why.append(f"{job['name']}: 审核后源文件又改过（报告已过期）")
+            changed = stale_sources(root, hashes, ignore)
+            if changed:
+                why.append(f"{job['name']}: 审核后源文件又改过（报告已过期）: {changed}")
                 continue
             for report in job.get("expected") or []:
                 ok, reason = _report_passes(root, job, oc, report)

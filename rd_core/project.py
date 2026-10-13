@@ -338,8 +338,9 @@ class Project:
             pass
         return ev
 
-    def _audits(self, d: Path, evidence: dict | None = None) -> list[dict]:
-        from .codex import _hash
+    def _audits(self, d: Path, evidence: dict | None = None, done: bool = False) -> list[dict]:
+        from .workflow import SHARED_PAGES, stale_sources
+        ignore = SHARED_PAGES if done else ()
         out = []
         for p in sorted((d / "audit").rglob("*.md")) if (d / "audit").exists() else []:
             rel_in = p.relative_to(d / "audit").parts
@@ -355,7 +356,7 @@ class Project:
             out.append({"path": rel, "name": str(p.relative_to(d / "audit")), "kind": meta.get("kind"), "verdict": meta.get("verdict", "pass"),
                         "counts": counts, "date": str(meta.get("date", "")), "model": meta.get("model", ""),
                         "handled": bool(meta.get("handled", False)), "pending": pending,
-                        "stale": bool(hashes) and _hash(self.root, hashes) != hashes, "title": meta.get("title", p.stem)})
+                        "stale": bool(hashes) and bool(stale_sources(self.root, hashes, ignore)), "title": meta.get("title", p.stem)})
         out.sort(key=lambda a: (a["date"], a["path"]))
         return out
 
@@ -377,7 +378,7 @@ class Project:
         pdfs = sorted(str(p.relative_to(d)) for p in d.rglob("*.pdf")
                       if not any(part.startswith(".") or part in ("results", "writing-test") for part in p.relative_to(d).parts))
         doc.extra["pdfs"] = pdfs[:20]
-        doc.extra["audit"] = self._audit_summary(self._audits(d, self._audit_evidence()))
+        doc.extra["audit"] = self._audit_summary(self._audits(d, self._audit_evidence(), done=doc.meta.get("status") == "done"))
         doc.extra["question"] = doc.extra["answer"] = ""
         doc.extra["notes"] = ""
         if doc.extra["has_report"]:
@@ -422,7 +423,7 @@ class Project:
         files.sort(key=lambda f: f["name"])
         doc.extra["files"] = files[:500]
         doc.extra["images"] = images[:200]  # lab 页的图画廊：fig/ 里的图都能看到，图注来自 report.md / notes.md 的 alt 文字
-        doc.extra["audits"] = self._audits(d)
+        doc.extra["audits"] = self._audits(d, done=doc.meta.get("status") == "done")
         # 收尾门槛（rd finish）现在还差什么；done 的 lab 不再重算
         if doc.extra["has_report"] and doc.meta.get("status") != "done":
             from .workflow import completion_errors
