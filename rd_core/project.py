@@ -466,11 +466,35 @@ class Project:
         return fm.update(self.safe_path(f"labs/{lab_id}/brief.md"), status=status)
 
     # ---------- discussion ----------
+    def review_discussions(self) -> dict[str, str]:
+        """被某个 lab 的 pending_review 指向的讨论：{讨论 id: lab id}。这些是"审计修正清单，过目即可"，不卡任何任务。"""
+        out: dict[str, str] = {}
+        labs_dir = self.root / "labs"
+        if not labs_dir.exists():
+            return out
+        for d in sorted(labs_dir.iterdir()):
+            b = d / "brief.md"
+            if not d.is_dir() or not b.exists():
+                continue
+            try:
+                pr = fm.read(b)[0].get("pending_review")
+            except (OSError, ValueError):
+                continue
+            for did in (pr if isinstance(pr, list) else [pr]) if pr else []:
+                out[str(did)] = d.name
+        return out
+
+    def _mark_review(self, d: Doc, review: dict[str, str]) -> None:
+        d.extra["review_only"] = d.id in review
+        d.extra["review_lab"] = review.get(d.id, "")
+
     def discussions(self) -> list[Doc]:
         docs = [self._read_doc("discussion", p) for p in self._md_files(self.root / "discussion")]
+        review = self.review_discussions()
         for d in docs:
             d.meta.setdefault("status", "open")
             d.meta.setdefault("asked_by", "agent")
+            self._mark_review(d, review)
         order = {s: i for i, s in enumerate(DISCUSSION_STATUSES)}
         docs.sort(key=lambda d: (order.get(d.meta["status"], 9), -d.mtime))
         return docs
@@ -479,6 +503,7 @@ class Project:
         d = self._read_doc("discussion", self.safe_path(f"discussion/{did}.md"))
         d.meta.setdefault("status", "open")
         d.meta.setdefault("asked_by", "agent")
+        self._mark_review(d, self.review_discussions())
         return d
 
     def answer_discussion(self, did: str, text: str) -> dict:
@@ -670,10 +695,14 @@ class Project:
     def attention(self) -> dict:
         """首页"需要你处理"与导航红点的数据源。"""
         items = []
+        REVIEW_WHY = "审计修正清单，过目即可，不卡任务：认可就回答“认可”，不认可指出哪一处"
         for d in self.discussions():
             st = d.meta["status"]
             if st == "open" and d.meta.get("asked_by") == "agent":
-                items.append({"kind": "discussion", "id": d.id, "title": d.title, "why": "agent 向你提问，等你回答", "time": d.mtime})
+                if d.extra.get("review_only"):
+                    items.append({"kind": "discussion", "id": d.id, "title": d.title, "why": REVIEW_WHY, "time": d.mtime, "soft": True, "lab": d.extra.get("review_lab")})
+                else:
+                    items.append({"kind": "discussion", "id": d.id, "title": d.title, "why": "agent 向你提问，等你回答", "time": d.mtime})
             elif st in ("digested", "resolved") and self.is_unread("discussion", d.id, d.mtime):
                 items.append({"kind": "discussion", "id": d.id, "title": d.title, "why": "agent 消化了你的回答", "time": d.mtime})
         for d in self.inbox():
@@ -697,12 +726,14 @@ class Project:
                 items.append({"kind": "lab", "id": d.id, "title": title, "why": "任务" + ("完成" if st == "done" else "受阻") + "，未查看", "time": d.mtime})
             pr = d.meta.get("pending_review")
             if pr and not any(it["kind"] == "discussion" and it["id"] in (pr if isinstance(pr, list) else [pr]) for it in items):
-                items.append({"kind": "lab", "id": d.id, "title": title, "why": "审计修正已按唯一方向改并复核通过，等你过目", "time": d.mtime})
-        items.sort(key=lambda x: -x["time"])
+                items.append({"kind": "lab", "id": d.id, "title": title, "why": "审计修正已按唯一方向改并复核通过，过目即可，不卡任务", "time": d.mtime, "soft": True})
+        # 真正等你的在前，"过目即可"的在后；各自按时间
+        items.sort(key=lambda x: (bool(x.get("soft")), -x["time"]))
         counts: dict[str, int] = {}
         for it in items:
             counts[it["kind"]] = counts.get(it["kind"], 0) + 1
-        return {"items": items, "counts": counts, "total": len(items)}
+        soft = sum(1 for it in items if it.get("soft"))
+        return {"items": items, "counts": counts, "total": len(items), "soft_total": soft, "hard_total": len(items) - soft}
 
     # ---------- 课题状态页 ----------
     def status_doc(self) -> dict | None:

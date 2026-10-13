@@ -35,6 +35,17 @@
     return ids.map((d) => `<a class="chip pending-review" href="#/discussion/${esc(d)}" title="改变结论的审计发现已按唯一方向修正并复核通过；不认可就在讨论里说">审计修正待过目</a>`).join(" ");
   };
   const chip = (s, extra = "") => `<span class="chip ${esc(s)} ${extra}">${esc(zh(s))}</span>`;
+  // 被某个 lab 的 pending_review 指向的讨论 = 审计修正清单，过目即可，不卡任务（服务端也会标 review_only；这里再从 /api/labs 算一遍，服务未重启时也对）
+  let REVIEW_IDS = null;
+  async function reviewIds() {
+    if (REVIEW_IDS) return REVIEW_IDS;
+    const m = new Map();
+    try { for (const l of await api("/api/labs")) { const pr = l.meta && l.meta.pending_review; for (const d of (Array.isArray(pr) ? pr : pr ? [pr] : [])) m.set(String(d), l.id); } } catch (e) { /* 可选 */ }
+    REVIEW_IDS = m; setTimeout(() => { REVIEW_IDS = null; }, 30000);
+    return m;
+  }
+  const REVIEW_WHY = "审计修正清单，过目即可，不卡任务：认可就回答“认可”，不认可指出哪一处";
+  const reviewChipD = (lab) => `<span class="chip review" title="对应任务已按唯一方向修正、复核通过并收尾${lab ? "：" + esc(lab) : ""}">过目即可</span>`;
   const kindChip = (k) => KIND_ZH[k] ? `<span class="chip kind">${KIND_ZH[k]}</span>` : "";
 
   // ---------- 网络 ----------
@@ -215,7 +226,12 @@
     await refreshOverview();
     const o = OVERVIEW; const a = o.attention;
     let cores = null; try { cores = await api("/api/cores"); } catch (e) { /* 可选 */ }
-    const items = a.items.map((it) => `<li><a href="${routeFor(it.kind, it.id)}"><b>${esc(it.title)}</b></a><span class="t muted">${esc(it.why)}</span></li>`).join("");
+    const rv = await reviewIds();
+    const soft = (it) => it.soft || (it.kind === "discussion" && rv.has(it.id));
+    const sorted = [...a.items].sort((x, y) => (soft(x) ? 1 : 0) - (soft(y) ? 1 : 0));
+    const nSoft = sorted.filter(soft).length;
+    const items = sorted.map((it) => `<li class="${soft(it) ? "soft" : ""}"><a href="${routeFor(it.kind, it.id)}"><b>${esc(it.title)}</b></a>${soft(it) ? reviewChipD(it.lab || rv.get(it.id)) : ""}<span class="t muted">${esc(soft(it) ? REVIEW_WHY : it.why)}</span></li>`).join("");
+    const attnHead = a.total ? ` (${a.total - nSoft}${nSoft ? ` · 另 ${nSoft} 项过目即可` : ""})` : "";
     const log = o.log.map((e) => `<li><span class="muted small">${esc(e.time)}</span><span class="t">${esc(e.who)} · ${esc(clip(e.what, 220))}</span></li>`).join("");
     const q = o.queue; const cur = q.current ? `agent 正在运行：<a href="#/runs/${q.current.id}">${esc(q.current.label)}</a>` : "agent 空闲";
     const jobs = (cores && cores.jobs || []).filter((j) => !o.project.name || j.project === o.project.name);
@@ -227,7 +243,7 @@
           ${o.status ? `<div class="panel status" id="status"></div>` : `<div class="panel"><p class="muted">还没有 <code>STATUS.md</code>（课题状态页）。agent 在下次收尾时会建立它；也可以 <code>rd update</code> 补一个空模板。</p></div>`}
         </div>
         <div class="col">
-          <div class="panel ${a.total ? "attn" : ""}"><h2 style="margin-top:0">需要你处理${a.total ? ` (${a.total})` : ""}</h2><ul class="list">${items || "<li class='muted'>没有待处理的事</li>"}</ul></div>
+          <div class="panel ${a.total - nSoft ? "attn" : ""}"><h2 style="margin-top:0">需要你处理${attnHead}</h2><ul class="list">${items || "<li class='muted'>没有待处理的事</li>"}</ul></div>
           <div class="panel"><h2 style="margin-top:0">agent 与数值</h2><p>${cur}${q.pending.length ? `，排队 ${q.pending.length}` : ""} · <a href="#/runs">任务页</a></p>
             <p class="small">${jobsHtml}</p>
             ${o.digest && o.digest.answered.length ? `<p class="small"><a href="#/discussion">${o.digest.answered.length} 条回答</a>等待统一消化，预计 ${esc(o.digest.next_digest_str)}</p>` : ""}</div>
@@ -390,19 +406,20 @@
 
   pages.discussion = async (id) => {
     if (id) return pages.thread(id);
-    const [list, dg] = await Promise.all([api("/api/discussion"), api("/api/digest").catch(() => null)]);
+    const [list, dg, rv] = await Promise.all([api("/api/discussion"), api("/api/digest").catch(() => null), reviewIds()]);
+    const isReview = (x) => !!x.review_only || rv.has(x.id);
     const grp = (s) => list.filter((x) => x.meta.status === s);
     const digestBar = dg && dg.answered.length ? `<div class="panel attn"><b>${dg.answered.length} 条回答等待统一消化</b> · 为了把互相关联的回答放在一起考虑，agent 每 ${dg.digest_minutes} 分钟消化一次，下次约 ${esc(dg.next_digest_str)}。
         <button id="digest-now" style="margin-left:8px">现在就消化</button></div>` : "";
     const who = (m) => m.asked_by === "user" ? "你问 agent" : m.asked_by === "guest" ? `访客 ${esc(m.author || "")} 问 agent${m.approved ? "" : " · 等你放行"}` : "agent 问你";
-    const row = (x) => `<li><span class="t"><a href="#/discussion/${esc(x.id)}"><b>${esc(x.title)}</b></a> <span class="small muted">${who(x.meta)}${x.meta.lab ? " · " + esc(x.meta.lab) : ""}</span></span>${chip(x.meta.status)}<span class="small muted">${esc(x.updated)}</span></li>`;
+    const row = (x) => `<li class="${isReview(x) && x.meta.status === "open" ? "soft" : ""}"><span class="t"><a href="#/discussion/${esc(x.id)}"><b>${esc(x.title)}</b></a> <span class="small muted">${who(x.meta)}${x.meta.lab ? " · " + esc(x.meta.lab) : ""}</span></span>${isReview(x) && x.meta.status === "open" ? reviewChipD(x.review_lab || rv.get(x.id)) : ""}${chip(x.meta.status)}<span class="small muted">${esc(x.updated)}</span></li>`;
     const sec = (title, arr) => arr.length ? `<h2>${title} (${arr.length})</h2><div class="panel"><ul class="list">${arr.map(row).join("")}</ul></div>` : "";
     const askPanel = isGuest()
       ? `<div class="panel guest-ok"><b>向 agent 提问（访客投稿）</b><p class="hint">留下名字和问题。课题负责人放行后 agent 才会回答，回答会出现在这条讨论页里。</p><div class="form-row"><input id="gname" placeholder="你的名字" style="max-width:220px"><input id="qt" placeholder="标题"></div><textarea id="qb" placeholder="问题内容，可以写公式 $…$"></textarea><div class="form-row"><button class="primary" id="ask">提交问题</button></div></div>`
       : `<div class="panel"><b>向 agent 提问</b><div class="form-row"><input id="qt" placeholder="标题"></div><textarea id="qb" placeholder="问题内容，可以写公式 $…$"></textarea><div class="form-row"><button class="primary" id="ask">提交</button></div></div>`;
     main.innerHTML = `<h1>讨论</h1>${digestBar}
       ${askPanel}
-      ${sec("等你放行（访客提问）", grp("open").filter((x) => x.meta.asked_by === "guest" && !x.meta.approved))}${sec("等你回答", grp("open").filter((x) => x.meta.asked_by === "agent"))}${sec("等 agent 回答", grp("open").filter((x) => x.meta.asked_by === "user" || (x.meta.asked_by === "guest" && x.meta.approved)))}${sec("你已回答，等待统一消化", grp("answered"))}${sec("agent 已消化", grp("digested"))}${sec("已解决", grp("resolved"))}
+      ${sec("等你放行（访客提问）", grp("open").filter((x) => x.meta.asked_by === "guest" && !x.meta.approved))}${sec("等你回答", grp("open").filter((x) => x.meta.asked_by === "agent" && !isReview(x)))}${sec("过目即可 · 审计修正清单（对应任务已修正、复核通过并收尾，不卡任务）", grp("open").filter((x) => x.meta.asked_by === "agent" && isReview(x)))}${sec("等 agent 回答", grp("open").filter((x) => x.meta.asked_by === "user" || (x.meta.asked_by === "guest" && x.meta.approved)))}${sec("你已回答，等待统一消化", grp("answered"))}${sec("agent 已消化", grp("digested"))}${sec("已解决", grp("resolved"))}
       ${list.length ? "" : "<p class='muted'>还没有讨论。agent 在遇到需要你裁决的问题时会在这里提问。</p>"}`;
     if ($("#digest-now")) $("#digest-now").onclick = async () => { const r = await api("/api/digest", {}); toast(r.id ? "已开始统一消化" : "消化已在队列里"); pages.discussion(); };
     $("#ask").onclick = async () => {
@@ -416,13 +433,16 @@
   };
 
   pages.thread = async (id) => {
-    const d = await api(`/api/discussion/${encodeURIComponent(id)}`); const m = d.meta;
+    const [d, rv] = await Promise.all([api(`/api/discussion/${encodeURIComponent(id)}`), reviewIds()]); const m = d.meta;
     const guestQ = m.asked_by === "guest";
+    const reviewLab = d.review_lab || rv.get(id);
+    const reviewBox = (d.review_only || rv.has(id)) && m.status === "open"
+      ? `<div class="panel soft-note"><b>过目即可，不卡任务。</b> <span class="small">这是 lab ${esc(reviewLab || "")} 的审计修正清单：改变结论的发现修正方向唯一，agent 已经改好、经审计者复核通过并完成收尾。认可就在下面回答“认可”（消化后讨论关闭）；不认可指出哪一处，agent 会改那一处并重走复核与薄层。</span></div>` : "";
     const approveBox = guestQ && m.status === "open" && !m.approved
       ? `<div class="panel attn"><b>访客 ${esc(m.author || "")} 的提问，等你放行</b> <span class="small muted">放行后 agent 下次运行就回答；回答只写进这条讨论，不改 wiki 或 lab。</span> <button class="primary" id="approve-q">放行，让 agent 回答</button></div>` : "";
     main.innerHTML = `<p><a href="#/discussion">← 讨论</a></p><h1>${esc(d.title)}</h1>
       <div class="meta">${chip(m.status)}<span>${m.asked_by === "user" ? "你问 agent" : guestQ ? `访客 ${esc(m.author || "")} 问 agent${m.approved ? "（已放行）" : "（等放行）"}` : "agent 问你"}</span>${m.lab ? `<a href="#/labs/${esc(m.lab)}">相关任务 ${esc(m.lab)}</a>` : ""}${m.idea ? `<a href="#/ideas/${esc(m.idea)}">相关问题</a>` : ""}<span>创建：${esc(m.created || "")}</span></div>
-      ${approveBox}<div class="panel" id="body"></div>
+      ${approveBox}${reviewBox}<div class="panel" id="body"></div>
       <div class="panel"><b>${m.asked_by === "agent" ? "你的回答" : "补充"}</b><textarea id="ans" placeholder="写下你的裁决或想法。回答不会当场处理：agent 每五小时把这段时间的所有回答放在一起统一消化（讨论列表页可以手动“现在就消化”）。"></textarea>
         <div class="form-row"><button class="primary" id="send">提交回答</button>${m.status !== "resolved" ? `<button id="resolve">标记已解决</button>` : ""}</div></div>`;
     $("#body").appendChild(render(d.body, dirOf(d.path)));

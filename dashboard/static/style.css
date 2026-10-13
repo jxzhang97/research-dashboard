@@ -196,6 +196,9 @@ button.small { font-size: 12px; padding: 2px 8px; }
 .chip.audit.typo { background: var(--code-bg); color: var(--muted); }
 .chip.audit.stale { background: var(--code-bg); color: var(--muted); text-decoration: line-through; }
 .chip.pending-review { background: var(--warn-bg); color: var(--warn); text-decoration: none; }
+.chip.review { background: var(--code-bg); color: var(--muted); margin-left: 6px; }
+.list li.soft { opacity: 0.72; }
+.panel.soft-note { border-left: 3px solid var(--line); }
 .findings { margin: 10px 0; }
 .finding { border: 1px solid var(--line); border-left: 4px solid var(--muted); border-radius: 8px; padding: 10px 14px; margin: 12px 0; }
 .finding.major { border-left-color: var(--danger); } .finding.minor { border-left-color: var(--warn); }

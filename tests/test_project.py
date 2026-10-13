@@ -141,3 +141,17 @@ def test_wiki_handoff_dir_is_not_a_page(project_dir: Path):
     (project_dir / "wiki" / "handoff" / "2026-10-04-rewrite.md").write_text("---\ntitle: 交接单\n---\n# 交接单\n", encoding="utf-8")
     ids = {p.id for p in Project(project_dir).wiki_pages()}
     assert "handoff/2026-10-04-rewrite" not in ids and "quantum-metric" in ids
+
+
+def test_review_discussions_are_soft_attention(project_dir: Path):
+    """被 lab 的 pending_review 指向的讨论：review_only，首页里标为"过目即可"并排在真正等回答的问题之后。"""
+    pr = Project(project_dir)
+    fm.update(project_dir / "labs" / "01-first-task" / "brief.md", status="done", pending_review="2026-10-02-which-limit")
+    d = pr.discussion("2026-10-02-which-limit")
+    assert d.extra["review_only"] is True and d.extra["review_lab"] == "01-first-task"
+    pr.new_discussion("真正的问题", "A 还是 B？", asked_by="agent")
+    att = pr.attention()
+    disc = [i for i in att["items"] if i["kind"] == "discussion"]
+    assert disc[0]["title"] == "真正的问题" and not disc[0].get("soft")
+    assert disc[1]["id"] == "2026-10-02-which-limit" and disc[1]["soft"] and "过目即可" in disc[1]["why"]
+    assert att["soft_total"] == 1 and att["hard_total"] == att["total"] - 1
