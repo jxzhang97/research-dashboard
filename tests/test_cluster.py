@@ -156,6 +156,10 @@ def test_finished_cluster_job_wakes_resume(project_dir: Path, fake: FakeCluster)
     fake.sacct[rec["slurm_id"]] = ("COMPLETED", "1-02:00:00", "2026-10-14T03:00:00", "0:0")
     cache = cluster._cache_path(cluster.settings(project_dir))
     c = json.loads(cache.read_text()); c["t"] = time.time() - 1000; cache.write_text(json.dumps(c))
+    jp = cores._jobs_path(); jobs = json.loads(jp.read_text())
+    for j in jobs:
+        j["t"] -= 600  # 登记已超过三分钟的宽限期
+    jp.write_text(json.dumps(jobs))
     assert cores.lab_jobs(project_dir, "01-first-task") == []
     ready, deferred = tick.actionable(pr)
     assert ready and ready[0]["kind"] == "resume_lab" and "phase3" in ready[0]["wake_note"]
