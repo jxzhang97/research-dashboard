@@ -368,15 +368,17 @@ def submit(project: Path, lab_id: str, script: str, cpus: int = 1, partition: st
     if not re.fullmatch(r"\d+", jid):
         raise RuntimeError(f"sbatch 没有返回作业号：{' '.join(out)[:300]}")
     rec.update({"slurm_id": jid, "submitted": time.strftime("%Y-%m-%d %H:%M"), "state": "PENDING"})
+    # 先把新作业塞进 squeue 缓存，再登记：dashboard 每 15 秒按缓存修剪登记表，登记早于缓存就会被当成"已结束"放掉
+    synthetic = {"id": jid, "name": name, "state": "PENDING", "partition": partition, "cpus": cpus,
+                 "elapsed": "0:00", "timelimit": time_limit, "reason": "None", "submitted": rec["submitted"]}
+    _write_cache(cs, (live or []) + [synthetic])
     rec["registry_id"] = cores.claim(project, cpus, rec["label"], host=cs["name"], slurm_id=jid, ssh=cs["ssh"])
     recs = _read_jobs(project, lab_id)
     recs.append(rec)
     _write_jobs(project, lab_id, recs)
-    # 新作业进了队列：刷新缓存，免得调度器在 5 分钟内把它当成"不存在"
     cache = my_jobs(cs, max_age=0)
     if cache is not None and not _is_alive(jid, cache):
-        _write_cache(cs, cache + [{"id": jid, "name": name, "state": "PENDING", "partition": partition, "cpus": cpus,
-                                   "elapsed": "0:00", "timelimit": time_limit, "reason": "None", "submitted": rec["submitted"]}])
+        _write_cache(cs, cache + [synthetic])
     return rec
 
 

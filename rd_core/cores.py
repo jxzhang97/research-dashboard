@@ -139,8 +139,11 @@ def is_local(j: dict) -> bool:
 
 
 def _remote_alive(j: dict, cache: dict) -> bool:
-    """集群作业：squeue（缓存 5 分钟）里还在就算活着；查不到（ssh 失败且无缓存）当活着，不乱放。"""
+    """集群作业：squeue（缓存 5 分钟）里还在就算活着；查不到（ssh 失败且无缓存）当活着，不乱放。
+    刚登记不到三分钟的一律算活着：提交与缓存刷新之间有个窗口，别的进程（dashboard 的 15 秒扫描）拿旧缓存会把它放掉。"""
     from . import cluster
+    if time.time() - float(j.get("t", 0)) < 180:
+        return True
     key = str(j.get("host"))
     if key not in cache:
         cache[key] = cluster.alive_ids(key, j.get("ssh"))

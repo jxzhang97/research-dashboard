@@ -165,6 +165,20 @@ def test_finished_cluster_job_wakes_resume(project_dir: Path, fake: FakeCluster)
     assert cores.list_jobs() == []
 
 
+def test_fresh_registration_survives_stale_cache(project_dir: Path, fake: FakeCluster):
+    """提交后 dashboard 的扫描拿着旧缓存（没有新作业）修剪登记表：三分钟内不放。"""
+    lab = project_dir / "labs" / "01-first-task"
+    (lab / "cluster").mkdir()
+    (lab / "cluster" / "a.sbatch").write_text("#!/bin/bash\n")
+    rec = cluster.submit(project_dir, "01-first-task", "cluster/a.sbatch")
+    cs = cluster.settings(project_dir)
+    cluster._write_cache(cs, [])  # 旧缓存：队列里什么都没有
+    assert [j["slurm_id"] for j in cores.list_jobs()] == [rec["slurm_id"]]
+    # 登记超过三分钟、缓存仍说没有 → 放掉
+    p = cores._jobs_path(); jobs = json.loads(p.read_text()); jobs[0]["t"] -= 600; p.write_text(json.dumps(jobs))
+    assert cores.list_jobs() == []
+
+
 def test_ssh_failure_keeps_jobs(project_dir: Path, fake: FakeCluster, monkeypatch):
     lab = project_dir / "labs" / "01-first-task"
     (lab / "cluster").mkdir()
