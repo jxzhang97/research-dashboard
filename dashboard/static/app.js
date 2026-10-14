@@ -288,14 +288,16 @@
     const d = await api("/api/references");
     const inbox = d.inbox.filter((x) => x.meta.status === "pending");
     const decided = d.inbox.filter((x) => x.meta.status !== "pending");
-    const inboxHtml = inbox.map((x) => `<li data-key="${esc(x.id)}"><span class="t"><a href="#/inbox/${esc(x.id)}"><b>${esc(x.title)}</b></a><br><span class="small muted">${esc((x.meta.authors || []).slice(0, 3).join(", "))} · ${esc(x.meta.published || "")} · 命中 ${esc((x.meta.hits || []).join(" "))}</span>${x.meta.reason ? `<br><span class="small">${esc(x.meta.reason)}</span>` : ""}</span>
+    const translationNote = (x) => x.translation?.state === "stale" ? '<br><span class="small translation-info stale">Translation needs updating.</span>' :
+      x.translation?.state === "missing" ? '<br><span class="small translation-info missing">English translation pending; original shown.</span>' : "";
+    const inboxHtml = inbox.map((x) => `<li data-key="${esc(x.id)}"><span class="t"><a href="#/inbox/${esc(x.id)}"><b>${esc(x.title)}</b></a><br><span class="small muted">${esc((x.meta.authors || []).slice(0, 3).join(", "))} · ${esc(x.meta.published || "")} · 命中 ${esc((x.meta.hits || []).join(" "))}</span>${x.meta.reason ? `<br><span class="small">${esc(x.meta.reason)}</span>` : ""}${translationNote(x)}</span>
         <button class="primary" data-act="approved">通过</button><button data-act="rejected">拒绝</button></li>`).join("");
-    const cards = d.cards.map((x) => `<li><span class="t"><a href="#/refs/${esc(x.id)}"><b>${esc(x.title)}</b></a><br><span class="small muted">${esc((x.meta.authors || []).slice(0, 3).join(", "))}${x.meta.year ? " · " + esc(x.meta.year) : ""}${x.meta.arxiv ? " · arXiv:" + esc(x.meta.arxiv) : ""}</span></span>
+    const cards = d.cards.map((x) => `<li><span class="t"><a href="#/refs/${esc(x.id)}"><b>${esc(x.title)}</b></a><br><span class="small muted">${esc((x.meta.authors || []).slice(0, 3).join(", "))}${x.meta.year ? " · " + esc(x.meta.year) : ""}${x.meta.arxiv ? " · arXiv:" + esc(x.meta.arxiv) : ""}</span>${translationNote(x)}</span>
         <span class="chip">${esc({ abstract: "只读摘要", skim: "略读", full: "精读" }[x.meta.read_depth] || "阅读深度未填")}</span><span class="small muted">${esc(x.updated)}</span></li>`).join("");
     main.innerHTML = `<h1>文献</h1>
       <div class="panel ${inbox.length ? "attn" : ""}"><h2 style="margin-top:0">arXiv 候选，等你审批 (${inbox.length})</h2>
         ${inbox.length ? `<ul class="list" id="inbox">${inboxHtml}</ul>` : `<p class="muted">没有待审批的候选。每天定时扫描，通过的才会精读入库。</p>`}
-        ${decided.length ? `<details><summary>已处理 ${decided.length}</summary><ul class="list small">${decided.map((x) => `<li><span class="t"><a href="#/inbox/${esc(x.id)}">${esc(x.title)}</a></span>${chip(x.meta.status)}</li>`).join("")}</ul></details>` : ""}</div>
+        ${decided.length ? `<details><summary>已处理 ${decided.length}</summary><ul class="list small">${decided.map((x) => `<li><span class="t"><a href="#/inbox/${esc(x.id)}">${esc(x.title)}</a>${translationNote(x)}</span>${chip(x.meta.status)}</li>`).join("")}</ul></details>` : ""}</div>
       <div class="panel"><h2 style="margin-top:0">卡片 (${d.cards.length})</h2><ul class="list">${cards || "<li class='muted'>还没有卡片</li>"}</ul></div>`;
     main.querySelectorAll("#inbox button").forEach((b) => b.onclick = async () => {
       const li = b.closest("li"); b.disabled = true;

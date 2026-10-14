@@ -6,6 +6,11 @@
   const english = () => catalog.enabled && requested === "en";
   const url = (lang) => { const u = new URL(location.href); u.searchParams.set("lang", lang); return u.href; };
   const words = {
+    "只读摘要":"Abstract only", "略读":"Skimmed", "精读":"Read in full", "阅读深度未填":"Reading depth not recorded",
+    "阅读深度：只读摘要":"Reading depth: abstract only", "阅读深度：略读":"Reading depth: skimmed", "阅读深度：精读":"Reading depth: read in full", "阅读深度：未填":"Reading depth: not recorded",
+    "没有待审批的候选。每天定时扫描，通过的才会精读入库。":"No candidates await approval. The daily scan adds candidates; only approved papers are read in full and added to the library.",
+    "卡片":"Reference notes", "还没有卡片":"No reference notes yet", "已通过，agent 将下载并精读":"Approved. The paper will be downloaded and read in full.",
+    "通过，下载并精读":"Approve and read in full",
     "首页":"Overview", "文献":"References", "讨论":"Discussions", "想法":"Questions", "任务":"Activity", "课题":"Project",
     "加载中…":"Loading…", "目录":"Contents", "全文":"Full page", "课题状态":"Project overview", "课题总纲":"Project aims",
     "草稿":"Draft", "待过目":"Awaiting review", "已批准":"Approved", "进行中":"In progress", "等你回答":"Awaiting your answer",
@@ -75,6 +80,7 @@
     "标签（针对某个 lab 的写 manual:<lab id>）":"Label (manual:<lab id> for a lab)",
   };
   const substitutions = [
+    [/^已处理 (\d+)$/, "Processed: $1"], [/^来源：/, "Source: "], [/ · 命中 /, " · Matched terms: "],
     [/^模型（空 = 默认）$/, "Model (project default)"], [/^effort（空 = 默认）$/, "Reasoning effort (project default)"],
     [/^模型（空 = (.+)）$/, "Model (default: $1)"], [/^effort（空 = (.+)）$/, "Reasoning effort (default: $1)"],
     [/^· 正在运行$/, "· Running"], [/^· 空闲$/, "· Idle"], [/^· 排队 /, "· Queued: "],
@@ -241,11 +247,12 @@
       const result = { ...data };
       if (data.status) result.status = translated(data.status, "STATUS.md");
       if (data.attention) result.attention = { ...data.attention, items: data.attention.items.map((item) => {
-        const source = item.kind === "discussion" ? `discussion/${item.id}.md` : item.kind === "lab" ? `labs/${item.id}/report.md` : null;
+        const source = item.kind === "discussion" ? `discussion/${item.id}.md` : item.kind === "lab" ? `labs/${item.id}/report.md` : item.kind === "inbox" ? `references/inbox/${item.id}.md` : null;
         return { ...item, title: catalog.documents[source]?.title || item.title };
       }) };
       return result;
     }
+    if (pathname === "/api/references") return { ...data, cards: data.cards.map((doc) => translated(doc)), inbox: data.inbox.map((doc) => translated(doc)) };
     if (pathname === "/api/discussion") return data.map((doc) => translated(doc));
     if (pathname.startsWith("/api/discussion/")) return translated(data);
     if (pathname === "/api/labs") return data.map(lab);
@@ -285,6 +292,10 @@
       if (entry.source_fields?.verdict) {
         const verdict = document.createElement("p"); verdict.textContent = "Current source verdict: " + entry.source_fields.verdict;
         details.append(verdict);
+      }
+      if (entry.source_fields?.reason) {
+        const reason = document.createElement("p"); reason.textContent = "Current source relevance note: " + entry.source_fields.reason;
+        details.append(reason);
       }
       details.append(render(entry.source_body, path.includes("/") ? path.slice(0,path.lastIndexOf("/")) : ""));
       container.append(details);

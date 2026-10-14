@@ -8,7 +8,7 @@ import re
 
 from . import fm
 
-DISPLAY_FIELDS = {"verdict", "tags"}
+DISPLAY_FIELDS = {"verdict", "tags", "reason"}
 
 
 def metadata_hash(meta: dict, keys) -> str:
@@ -79,12 +79,14 @@ def catalog(project) -> dict:
                     raise ValueError("Invalid translated display fields")
                 if "verdict" in fields and not isinstance(fields["verdict"], str):
                     raise ValueError("Invalid translated verdict")
+                if "reason" in fields and not isinstance(fields["reason"], str):
+                    raise ValueError("Invalid translated relevance reason")
                 if "tags" in fields and (not isinstance(fields["tags"], list) or not all(isinstance(tag, str) for tag in fields["tags"])):
                     raise ValueError("Invalid translated tags")
                 if fields and not isinstance(entry.get("source_meta_sha256"), str):
                     raise ValueError("Missing display field source hash")
                 source_field_keys = set(meta) & DISPLAY_FIELDS
-                tracks_fields = "source_meta_sha256" in entry or path.startswith("ideas/")
+                tracks_fields = "source_meta_sha256" in entry or path.startswith(("ideas/", "references/"))
                 fields_changed = tracks_fields and (
                     set(fields) != source_field_keys
                     or bool(fields and metadata_hash(meta, fields) != entry["source_meta_sha256"])

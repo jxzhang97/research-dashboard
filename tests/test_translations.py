@@ -195,3 +195,51 @@ def test_gallery_caption_freshness_tracks_caption_not_unrelated_notes(project_di
     (folder / "report.md").write_text(f"![{original_caption}](fig/curve.png)\n")
     assert catalog(project)["captions"][path]["state"] == "current"
     assert image.read_bytes() == b"unchanged image bytes"
+
+
+def test_reference_relevance_tracks_source_but_approval_and_reading_depth_stay_shared(project_dir):
+    install(project_dir)
+    path = 'references/inbox/reference-translation.md'
+    source = project_dir / path
+    source.parent.mkdir(parents=True, exist_ok=True)
+    fm.write(source, {'title': 'Paper title', 'reason': '与屏蔽有关', 'status': 'pending', 'read_depth': 'abstract'}, '摘要说明。\n')
+    meta, _ = fm.read(source)
+    batch = project_dir / 'translations/en/content.json'
+    batch.write_text(json.dumps({'schema_version': 1, 'language': 'en', 'documents': {path: {
+        'title': 'Paper title', 'body': 'Abstract notes.\n', 'source_sha256': source_hash(source),
+        'fields': {'reason': 'Related to screening'}, 'source_meta_sha256': metadata_hash(meta, ['reason']),
+    }}}))
+    project = Project(project_dir)
+    assert catalog(project)['documents'][path]['state'] == 'current'
+    fm.update(source, status='approved', read_depth='full')
+    assert catalog(project)['documents'][path]['state'] == 'current'
+    original = TestClient(create_app(project)).get('/api/inbox/reference-translation').json()
+    assert original['meta']['status'] == 'approved'
+    assert original['meta']['read_depth'] == 'full'
+    assert original['meta']['reason'] == '与屏蔽有关'
+    fm.update(source, reason='与两阶段屏蔽有关')
+    translated = catalog(project)['documents'][path]
+    assert translated['state'] == 'stale'
+    assert translated['source_fields']['reason'] == '与两阶段屏蔽有关'
+    assert translated['fields']['reason'] == 'Related to screening'
+    fm.update(source, reason=['invalid field type'])
+    data = json.loads(batch.read_text())
+    data['documents'][path]['fields']['reason'] = ['invalid field type']
+    batch.write_text(json.dumps(data))
+    assert catalog(project)['documents'] == {}
+
+
+def test_new_reference_relevance_note_marks_existing_translation_stale(project_dir):
+    install(project_dir)
+    path = 'references/inbox/new-reference.md'
+    source = project_dir / path
+    source.parent.mkdir(parents=True, exist_ok=True)
+    fm.write(source, {'title': 'Paper', 'status': 'pending'}, '说明。\n')
+    batch = project_dir / 'translations/en/content.json'
+    batch.write_text(json.dumps({'schema_version': 1, 'language': 'en', 'documents': {path: {
+        'title': 'Paper', 'body': 'Notes.\n', 'source_sha256': source_hash(source),
+    }}}))
+    project = Project(project_dir)
+    assert catalog(project)['documents'][path]['state'] == 'current'
+    fm.update(source, reason='新推荐理由')
+    assert catalog(project)['documents'][path]['state'] == 'stale'
