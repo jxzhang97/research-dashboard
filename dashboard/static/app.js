@@ -271,7 +271,7 @@
             <a class="stat" href="#/refs"><b>${o.counts.cards}</b><span>文献卡片</span></a>
             <a class="stat" href="#/wiki"><b>${o.counts.wiki}</b><span>wiki 页</span></a>
             <a class="stat" href="#/labs"><b>${o.counts.labs}</b><span>lab</span></a>
-            <a class="stat" href="#/ideas"><b>${o.counts.ideas}</b><span>问题</span></a>
+            <a class="stat" href="#/ideas"><b>${o.counts.ideas}</b><span>${reader.english() ? "Ideas" : "问题"}</span></a>
           </div>
         </div>
       </div>
