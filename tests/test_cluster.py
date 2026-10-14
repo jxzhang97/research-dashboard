@@ -64,6 +64,29 @@ class FakeCluster:
         raise AssertionError(f"假集群不认识的命令: {cmd[:120]}")
 
 
+def _expire_sacct(project_dir: Path) -> None:
+    """让 sacct 结论的缓存过期（dashboard 的 15 秒扫描靠它不每次 ssh）。"""
+    p = cluster._sacct_cache_path(cluster.settings(project_dir))
+    if p.exists():
+        c = json.loads(p.read_text())
+        for v in c.values():
+            v["t"] -= 10**4
+        p.write_text(json.dumps(c))
+
+
+def _aged_submit(project_dir: Path, label: str = "01-first-task pod x") -> dict:
+    """提交一个作业并把登记时间拨到三分钟宽限期之外。"""
+    lab = project_dir / "labs" / "01-first-task"
+    (lab / "cluster").mkdir(exist_ok=True)
+    (lab / "cluster" / "a.sbatch").write_text("#!/bin/bash\n")
+    rec = cluster.submit(project_dir, "01-first-task", "cluster/a.sbatch", label=label)
+    p = cores._jobs_path(); jobs = json.loads(p.read_text())
+    for j in jobs:
+        j["t"] -= 600
+    p.write_text(json.dumps(jobs))
+    return rec
+
+
 @pytest.fixture
 def fake(monkeypatch):
     fc = FakeCluster()
@@ -178,8 +201,11 @@ def test_fresh_registration_survives_stale_cache(project_dir: Path, fake: FakeCl
     cs = cluster.settings(project_dir)
     cluster._write_cache(cs, [])  # 旧缓存：队列里什么都没有
     assert [j["slurm_id"] for j in cores.list_jobs()] == [rec["slurm_id"]]
-    # 登记超过三分钟、缓存仍说没有 → 放掉
+    # 登记超过三分钟、缓存仍说没有，但 sacct 还没有它的记录 → 仍保留；sacct 给出终态才放掉
     p = cores._jobs_path(); jobs = json.loads(p.read_text()); jobs[0]["t"] -= 600; p.write_text(json.dumps(jobs))
+    assert [j["slurm_id"] for j in cores.list_jobs()] == [rec["slurm_id"]]
+    fake.sacct[rec["slurm_id"]] = ("COMPLETED", "0:30", "2026-10-13T01:00:00", "0:0")
+    _expire_sacct(project_dir)
     assert cores.list_jobs() == []
 
 
@@ -226,3 +252,54 @@ def test_cancel(project_dir: Path, fake: FakeCluster):
     out = cluster.cancel(project_dir, rec["slurm_id"])
     assert out["record"]["state"] == "CANCELLED" and cores.list_jobs() == []
     assert cluster._read_jobs(project_dir, "01-first-task")[0]["state"] == "CANCELLED"
+
+
+def test_squeue_glitch_keeps_running_job(project_dir: Path, fake: FakeCluster):
+    """slurmctld 抖动：squeue 成功但返回空，sacct 仍说 RUNNING → 不放；sacct 结论有缓存，15 秒扫描不会每次 ssh；sacct 终态才放。
+    rd cluster sync 同样只在终态时放登记。"""
+    rec = _aged_submit(project_dir)
+    cs = cluster.settings(project_dir)
+    fake.queue = []
+    cluster._write_cache(cs, [])  # 抖动那一次的 squeue 结果已进缓存
+    fake.sacct[rec["slurm_id"]] = ("RUNNING", "1-00:00:00", "Unknown", "0:0")
+    n = len(fake.cmds)
+    assert [j["slurm_id"] for j in cores.list_jobs()] == [rec["slurm_id"]]
+    cores.list_jobs()
+    cores.list_jobs()
+    assert sum(c.startswith("sacct") for c in fake.cmds[n:]) == 1
+    recs = cluster.sync(project_dir, "01-first-task")
+    assert recs[0]["state"] == "RUNNING" and [j["slurm_id"] for j in cores.list_jobs()] == [rec["slurm_id"]]
+    # 真结束：sacct 终态（缓存过期后重查）→ 放掉
+    fake.sacct[rec["slurm_id"]] = ("TIMEOUT", "3-00:00:00", "2026-10-16T00:00:00", "0:0")
+    _expire_sacct(project_dir)
+    assert cores.list_jobs() == []
+
+
+def test_unknown_everywhere_pruned_only_after_grace(project_dir: Path, fake: FakeCluster, monkeypatch):
+    """squeue 与 sacct 都查不到：先保留；sacct 的 ssh 失败不算查不到、不推进宽限；持续超过 FINAL_GRACE 才放掉。"""
+    rec = _aged_submit(project_dir)
+    cs = cluster.settings(project_dir)
+    fake.queue = []
+    cluster._write_cache(cs, [])
+    assert [j["slurm_id"] for j in cores.list_jobs()] == [rec["slurm_id"]]
+    cache = json.loads(cluster._sacct_cache_path(cs).read_text())
+    since = cache[rec["slurm_id"]]["missing_since"]
+    assert since and not cache[rec["slurm_id"]]["final"]
+    # sacct 的 ssh 失败：沿用上次结论
+    real = fake.ssh
+
+    def flaky(cs_, cmd, timeout=60):
+        if cmd.startswith("sacct"):
+            raise RuntimeError("sacct 失败")
+        return real(cs_, cmd, timeout)
+    monkeypatch.setattr(cluster, "_ssh", flaky)
+    _expire_sacct(project_dir)
+    assert [j["slurm_id"] for j in cores.list_jobs()] == [rec["slurm_id"]]
+    assert json.loads(cluster._sacct_cache_path(cs).read_text())[rec["slurm_id"]]["missing_since"] == since
+    monkeypatch.setattr(cluster, "_ssh", real)
+    # 持续查不到超过宽限期 → 放掉
+    p = cluster._sacct_cache_path(cs); c = json.loads(p.read_text())
+    c[rec["slurm_id"]]["missing_since"] = since - cluster.FINAL_GRACE - 10
+    p.write_text(json.dumps(c))
+    _expire_sacct(project_dir)
+    assert cores.list_jobs() == []

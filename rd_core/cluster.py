@@ -23,6 +23,7 @@ from . import config, registry
 
 CACHE_SECONDS = 300          # squeue 结果缓存：dashboard 每 15 秒扫一次待办，不能每次都 ssh
 SSH_TIMEOUT = 60
+FINAL_GRACE = 3600           # squeue 里不在、sacct 也查不到的作业：持续这么久才从登记表放掉（会计库抖动时不乱放，幽灵作业也不会永远挡住续跑）
 
 
 # ---------- 配置 ----------
@@ -109,7 +110,7 @@ def _cache_path(cs: dict) -> Path:
 
 
 def _write_cache(cs: dict, jobs: list[dict]) -> None:
-    _cache_path(cs).write_text(json.dumps({"t": time.time(), "jobs": jobs}, ensure_ascii=False), encoding="utf-8")
+    registry.atomic_write(_cache_path(cs), json.dumps({"t": time.time(), "jobs": jobs}, ensure_ascii=False))
 
 
 def my_jobs(cs: dict, max_age: float = CACHE_SECONDS) -> list[dict] | None:
@@ -151,6 +152,49 @@ def alive_ids(host_name: str, ssh: str | None = None, max_age: float = CACHE_SEC
     if ssh:
         cs["ssh"] = ssh
     return my_jobs(cs, max_age)
+
+
+def _sacct_cache_path(cs: dict) -> Path:
+    return registry.home() / f"cluster-{cs['name']}-sacct.json"
+
+
+def final_states(host_name: str, ssh: str | None, ids: list[str], max_age: float = CACHE_SECONDS) -> dict[str, dict]:
+    """给 cores.list_jobs 修剪登记表用：squeue 里不在的作业，再问一次 sacct 才下结论（squeue 偶尔返回空或不全，不能凭它一次就放）。
+    返回 {作业号: {"state": sacct 的状态（查不到为空）, "final": 是否终态, "missing_since": 第一次 squeue 与 sacct 都查不到的时刻或 None}}。
+    终态永久缓存；其余缓存 max_age 秒。ssh 失败沿用上次结论，不算"查不到"。
+    ids 要是该集群此刻 squeue 里不在的全部登记作业：不在 ids 里的非终态条目会被清掉（作业又出现在 squeue 里了，或已放掉）。"""
+    cs = dict(config.DEFAULTS["cluster"])
+    cs["name"] = host_name
+    if ssh:
+        cs["ssh"] = ssh
+    p = _sacct_cache_path(cs)
+    try:
+        cache = json.loads(p.read_text(encoding="utf-8")) if p.exists() else {}
+    except (ValueError, OSError):
+        cache = {}
+    now = time.time()
+    ids = [str(i) for i in ids]
+    need = [i for i in ids if not cache.get(i) or (not cache[i].get("final") and now - float(cache[i].get("t", 0)) >= max_age)]
+    if need:
+        try:
+            sacct = _parse_sacct(_ssh(cs, f"sacct -X -P -n -j {','.join(need)} -o JobID,State,Elapsed,End,ExitCode", timeout=45))
+        except RuntimeError:
+            sacct = None
+        for i in need:
+            prev = cache.get(i) or {}
+            if sacct is None:
+                cache[i] = {"state": prev.get("state", ""), "final": bool(prev.get("final")), "missing_since": prev.get("missing_since"), "t": now, "error": True}
+                continue
+            agg = _aggregate(i, sacct)
+            if agg:
+                cache[i] = {"state": agg["state"], "final": _final(agg["state"]), "missing_since": None, "t": now}
+            else:
+                cache[i] = {"state": "", "final": False, "missing_since": prev.get("missing_since") or now, "t": now}
+    cleaned = {k: v for k, v in cache.items()
+               if (v.get("final") and now - float(v.get("t", 0)) < 30 * 86400) or (not v.get("final") and k in ids)}
+    if need or cleaned != cache:
+        registry.atomic_write(p, json.dumps(cleaned, ensure_ascii=False))
+    return {i: cleaned[i] for i in ids if i in cleaned}
 
 
 def status(project: Path) -> dict:
@@ -446,7 +490,8 @@ def sync(project: Path, lab_id: str | None = None, refresh: bool = True) -> list
                     agg = _aggregate(r["slurm_id"], sacct) or {"state": "GONE", "elapsed": r.get("elapsed", ""), "end": "", "exit": ""}
                     r.update(agg)
                     changed = True
-                    if r.get("registry_id"):
+                    if r.get("registry_id") and _final(r["state"]):
+                        # sacct 还说 RUNNING/PENDING（squeue 抖动）就别放；登记表的修剪路径（cores.list_jobs）同样只认终态
                         cores.release(r["registry_id"])
         if changed:
             _write_jobs(project, lab, recs)

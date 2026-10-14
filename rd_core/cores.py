@@ -140,7 +140,8 @@ def is_local(j: dict) -> bool:
 
 def _remote_alive(j: dict, cache: dict) -> bool:
     """集群作业：squeue（缓存 5 分钟）里还在就算活着；查不到（ssh 失败且无缓存）当活着，不乱放。
-    刚登记不到三分钟的一律算活着：提交与缓存刷新之间有个窗口，别的进程（dashboard 的 15 秒扫描）拿旧缓存会把它放掉。"""
+    刚登记不到三分钟的一律算活着：提交与缓存刷新之间有个窗口，别的进程（dashboard 的 15 秒扫描）拿旧缓存会把它放掉。
+    返回 False 只表示"squeue 里不在"，放不放由 _confirm_finished 用 sacct 决定。"""
     from . import cluster
     if time.time() - float(j.get("t", 0)) < 180:
         return True
@@ -151,23 +152,46 @@ def _remote_alive(j: dict, cache: dict) -> bool:
     return True if live is None else cluster._is_alive(str(j["slurm_id"]), live)
 
 
+def _confirm_finished(missing: list[dict]) -> set[str]:
+    """squeue 里不在的集群作业，用 sacct 确认（cluster.final_states）：sacct 给出终态才放；还在 RUNNING/PENDING（squeue 抖动）或 sacct 查不到的保留；
+    squeue 与 sacct 都持续查不到超过 cluster.FINAL_GRACE 的也放，别让幽灵作业永远挡住续跑。返回要放掉的登记 id。"""
+    from . import cluster
+    drop: set[str] = set()
+    by_host: dict[tuple[str, str | None], list[dict]] = {}
+    for j in missing:
+        by_host.setdefault((str(j.get("host")), j.get("ssh")), []).append(j)
+    for (host, ssh), js in by_host.items():
+        verdict = cluster.final_states(host, ssh, [str(j["slurm_id"]) for j in js])
+        for j in js:
+            v = verdict.get(str(j["slurm_id"])) or {}
+            since = v.get("missing_since")
+            if v.get("final") or (since and time.time() - float(since) > cluster.FINAL_GRACE):
+                drop.add(j["id"])
+    return drop
+
+
 def list_jobs(prune: bool = True) -> list[dict]:
     p = _jobs_path()
     jobs = json.loads(p.read_text(encoding="utf-8")) if p.exists() else []
     if prune:
         remote: dict = {}
-        kept = []
+        kept, missing = [], []
         for j in jobs:
             if j.get("slurm_id"):
-                ok = _remote_alive(j, remote)
+                ok = True
+                if not _remote_alive(j, remote):
+                    missing.append(j)  # 先留着，下面用 sacct 确认
             elif j.get("pid"):
                 ok = _alive(int(j["pid"])) if is_local(j) else True  # 别的机器登记的 pid 本机查不了
             else:
                 ok = time.time() - j.get("t", 0) < 86400
             if ok:
                 kept.append(j)
+        if missing:
+            drop = _confirm_finished(missing)
+            kept = [j for j in kept if j["id"] not in drop]
         if len(kept) != len(jobs):
-            p.write_text(json.dumps(kept, ensure_ascii=False, indent=1), encoding="utf-8")
+            registry.atomic_write(p, json.dumps(kept, ensure_ascii=False, indent=1))
         jobs = kept
     return jobs
 
@@ -188,14 +212,14 @@ def claim(project: Path | None, cores: int, label: str, pid: int | None = None, 
     else:
         entry.update({"pid": pid or os.getppid(), "host": host or hostname()})
     jobs.append(entry)
-    _jobs_path().write_text(json.dumps(jobs, ensure_ascii=False, indent=1), encoding="utf-8")
+    registry.atomic_write(_jobs_path(), json.dumps(jobs, ensure_ascii=False, indent=1))
     return jid
 
 
 def release(jid: str) -> bool:
     jobs = list_jobs(prune=False)
     kept = [j for j in jobs if j["id"] != jid]
-    _jobs_path().write_text(json.dumps(kept, ensure_ascii=False, indent=1), encoding="utf-8")
+    registry.atomic_write(_jobs_path(), json.dumps(kept, ensure_ascii=False, indent=1))
     return len(kept) != len(jobs)
 
 

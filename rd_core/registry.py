@@ -17,6 +17,13 @@ DEFAULT_PORT = 8010
 MACHINE_DEFAULTS = {"max_agents": 2, "reserve_cores": 2}
 
 
+def atomic_write(path: Path, text: str) -> None:
+    """先写临时文件再 rename：别的进程（dashboard 每 15 秒的扫描、同时登记的 agent）不会读到半截。"""
+    tmp = path.with_name(f".{path.name}.{os.getpid()}.tmp")
+    tmp.write_text(text, encoding="utf-8")
+    os.replace(tmp, path)
+
+
 def home() -> Path:
     p = Path(os.environ.get("RD_HOME") or "~/.rd").expanduser()
     p.mkdir(parents=True, exist_ok=True)
