@@ -233,3 +233,4 @@ button.small { font-size: 12px; padding: 2px 8px; }
 .english-reading .two { grid-template-columns: 280px minmax(0, 1fr); }
 @media (max-width: 800px) { .english-reading .two { grid-template-columns: minmax(0, 1fr); } }
 @media (max-width: 600px) { .english-reading #toc-top .toc { grid-template-columns: minmax(0, 1fr); } }
+@media (max-width: 600px) { .english-reading .reference-panel .list .t { flex-basis: 100%; } }
