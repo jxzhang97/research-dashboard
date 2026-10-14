@@ -134,7 +134,10 @@
     const trimmed = text.trim();
     if (Object.prototype.hasOwnProperty.call(words, trimmed)) return text.replace(trimmed, words[trimmed]);
     const counted = trimmed.match(/^(.*?)\s+(\(\d+\))$/);
-    if (counted && Object.prototype.hasOwnProperty.call(words, counted[1])) return text.replace(trimmed, words[counted[1]] + " " + counted[2]);
+    if (counted && Object.prototype.hasOwnProperty.call(words, counted[1])) {
+      const label = counted[1] === "arXiv 候选，等你审批" ? "arXiv candidates awaiting approval" : words[counted[1]];
+      return text.replace(trimmed, label + " " + counted[2]);
+    }
     let value = trimmed;
     for (const [pattern, replacement] of substitutions) value = value.replace(pattern, replacement);
     return text.replace(trimmed, value);
