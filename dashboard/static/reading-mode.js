@@ -80,7 +80,7 @@
     "标签（针对某个 lab 的写 manual:<lab id>）":"Label (manual:<lab id> for a lab)",
   };
   const substitutions = [
-    [/^已处理 (\d+)$/, "Processed: $1"], [/^来源：/, "Source: "], [/ · 命中 /, " · Matched terms: "],
+    [/^已处理 (\d+)$/, "Processed: $1"], [/^来源：/, "Source: "], [/ · 命中 /, " · Matched terms: "], [/作者[:：]/g, "Author: "],
     [/^模型（空 = 默认）$/, "Model (project default)"], [/^effort（空 = 默认）$/, "Reasoning effort (project default)"],
     [/^模型（空 = (.+)）$/, "Model (default: $1)"], [/^effort（空 = (.+)）$/, "Reasoning effort (default: $1)"],
     [/^· 正在运行$/, "· Running"], [/^· 空闲$/, "· Idle"], [/^· 排队 /, "· Queued: "],

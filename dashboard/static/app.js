@@ -95,7 +95,10 @@
     return parts.join("/");
   }
   function render(src, baseDir = "", translation = null) {
-    const { src: s1, store } = protectMath(src || "");
+    // Localize the equation-reference label; keep stored TeX and original views intact.
+    const displayed = reader.english() && translation && translation.state !== "missing"
+      ? (src || "").replace(/\\text\{式 (\d[^}]*)\}/g, (_, refs) => `\\text{${refs.includes(",") ? "Eqs." : "Eq."} ${refs}}`) : (src || "");
+    const { src: s1, store } = protectMath(displayed);
     let html = md.render(wikilinks(s1));
     html = restoreMath(html, store);
     const div = document.createElement("div"); div.className = "md"; div.innerHTML = html;
