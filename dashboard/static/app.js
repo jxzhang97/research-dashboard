@@ -94,10 +94,10 @@
     }
     return parts.join("/");
   }
-  function render(src, baseDir = "", translation = null) {
-    // Localize the equation-reference label; keep stored TeX and original views intact.
-    const displayed = reader.english() && translation && translation.state !== "missing"
-      ? (src || "").replace(/\\text\{式 (\d[^}]*)\}/g, (_, refs) => `\\text{${refs.includes(",") ? "Eqs." : "Eq."} ${refs}}`) : (src || "");
+  function render(src, baseDir = "", translation = null, translatedFragment = false) {
+    // Fragments reuse translated pages without adding a second translation banner.
+    const isTranslated = reader.english() && (translatedFragment || (translation && translation.state !== "missing"));
+    const displayed = isTranslated ? reader.mathText(src || "") : (src || "");
     const { src: s1, store } = protectMath(displayed);
     let html = md.render(wikilinks(s1));
     html = restoreMath(html, store);
@@ -170,6 +170,7 @@
       });
       translation = { ...translation, source_heading_texts: texts };
     }
+    if (isTranslated) reader.decorateSources(div);
     return reader.decorate(div, translation, render, slugId, md);
   }
   // 长文的目录：h2/h3 超过 3 个才显示
@@ -190,7 +191,7 @@
   // 列表/树里的一行预览（当前回答）：渲染 markdown 与公式；用 data-md 延迟渲染
   const answerHtml = (text, cls = "answer") => text ? `<div class="${cls}" data-md="${esc(text)}"></div>` : "";
   function renderAnswers(root = main) {
-    root.querySelectorAll("[data-md]").forEach((el) => { el.replaceChildren(render(el.dataset.md)); el.removeAttribute("data-md"); });
+    root.querySelectorAll("[data-md]").forEach((el) => { el.replaceChildren(render(el.dataset.md, "", null, reader.english())); el.removeAttribute("data-md"); });
   }
   const clip = (s, n = 160) => { s = String(s || ""); return s.length > n ? s.slice(0, n - 1) + "…" : s; };
 
@@ -274,7 +275,7 @@
           </div>
         </div>
       </div>
-      <details class="panel"><summary>最近动态（${o.log.length} 条）</summary><ul class="list small">${log}</ul></details>`;
+      <details class="panel"><summary>最近动态（${o.log.length} 条）</summary><ul class="list small" data-original-text>${log}</ul></details>`;
     if (o.status) {
       const box = $("#status");
       box.innerHTML = `<div class="meta"><span>课题状态 · 更新 ${esc(o.status.updated)}</span><a href="${docRoute("STATUS.md")}">全文</a></div>`;
@@ -352,7 +353,7 @@
     if (id) return pages.lab(id);
     const list = await api("/api/labs");
     const rows = list.map((x) => `<li class="lab-row"><span class="t"><a href="#/labs/${esc(x.id)}"><b>${esc(x.short || x.title)}</b></a> <span class="small muted">${esc(x.id)}</span>
-        ${x.answer ? answerHtml(x.answer) : x.question ? answerHtml("问题：" + x.question, "answer muted") : ""}</span>${chip(x.meta.status)}${x.stale_run ? `<span class="chip blocked" title="上次运行已结束但任务没收尾；系统会自动派续跑（额度用尽时等重置）">运行中断·等续跑</span>` : ""}${reviewChip(x.meta)}${auditChip(x.audit)}${x.meta.machine ? `<span class="chip">${esc(x.meta.machine)}</span>` : ""}<span class="small muted">${esc(x.updated)}</span></li>`).join("");
+        ${x.answer ? answerHtml(x.answer) : x.question ? answerHtml(reader.t("问题：") + x.question, "answer muted") : ""}</span>${chip(x.meta.status)}${x.stale_run ? `<span class="chip blocked" title="上次运行已结束但任务没收尾；系统会自动派续跑（额度用尽时等重置）">运行中断·等续跑</span>` : ""}${reviewChip(x.meta)}${auditChip(x.audit)}${x.meta.machine ? `<span class="chip">${esc(x.meta.machine)}</span>` : ""}<span class="small muted">${esc(x.updated)}</span></li>`).join("");
     main.innerHTML = `<h1>Lab</h1><p class="muted small">每个任务一个文件夹：任务书 brief.md、摘要 report.md（首屏：问题 / 当前回答 / 为什么信 / 边界）、推导与分析 notes.md、数据去向 DATA.md。想法页里可以把问题升级成 lab。</p><div class="panel"><ul class="list">${rows || "<li class='muted'>还没有任务</li>"}</ul></div>`;
     renderAnswers();
   };
@@ -496,7 +497,7 @@
     return out;
   }
   const firstSentence = (t) => (t || "").replace(/\*\*/g, "").split(/[。；！？\n]/)[0].slice(0, 40);
-  const inlineMd = (text) => { const d = render(text || "", "ideas"); return d.innerHTML.replace(/^<p>|<\/p>\s*$/g, ""); };
+  const inlineMd = (text, translation) => { const d = render(text || "", "ideas", null, !!translation && translation.state !== "missing"); return d.innerHTML.replace(/^<p>|<\/p>\s*$/g, ""); };
 
   pages.ideas = async (slug) => {
     if (slug) return pages.idea(slug);
@@ -555,7 +556,7 @@
         const verdict = n.meta.verdict;
         card.innerHTML = `<div class="top">${q ? `<span class="q">${esc(q)}</span>` : ""}${kindChip(n.meta.kind)}${chip(n.meta.status)}${reader.english() && n.translation?.state === "stale" ? '<span class="chip translation-state">English needs updating</span>' : ""}</div>
           <div class="title" title="${esc(n.title)}">${esc(title)}</div>
-          <div class="verdict${verdict ? "" : " fallback"}">${verdict ? inlineMd(verdict) : (n.answer ? inlineMd(firstSentence(n.answer)) : "<i>还没有当前回答</i>")}</div>
+          <div class="verdict${verdict ? "" : " fallback"}">${verdict ? inlineMd(verdict, n.translation) : (n.answer ? inlineMd(firstSentence(n.answer), n.translation) : "<i>还没有当前回答</i>")}</div>
           <div class="foot"><span>${(n.meta.labs || []).map((l) => `<a href="#/labs/${esc(l)}" title="${esc(l)}">lab ${esc(l.slice(0, 2))}</a>`).join(" ")}</span>
             ${n.children.length ? `<span class="tog">${n.open ? "▾ 收起" : `▸ ${count(n.children)} 个子问题`}</span>` : ""}</div>`;
         card.onclick = (e) => { if (e.target.classList.contains("tog")) { n.open = !n.open; draw(); return; } if (e.target.tagName === "A") return; select(n); };
@@ -574,22 +575,23 @@
       const dt = $("#detail");
       dt.innerHTML = `<button class="close" id="close">关闭 ✕</button><h2>${esc(n.title)}</h2>
         <div class="meta">${kindChip(n.meta.kind)}${chip(n.meta.status)}${n.parent ? `<a href="#" data-sel="${esc(n.parent.id)}">上级：${esc(n.parent.title.replace(/^Q\d+[a-z]?\s/, "").slice(0, 16))}…</a>` : ""}${(n.meta.labs || []).map((l) => `<a href="#/labs/${esc(l)}">lab ${esc(l)}</a>`).join("")}<a href="#/ideas/${esc(n.id)}">完整页面 ↗</a></div>
-        ${n.meta.verdict ? `<div class="verdict-line">${inlineMd(n.meta.verdict)}</div>` : ""}
+        ${n.meta.verdict ? `<div class="verdict-line">${inlineMd(n.meta.verdict, n.translation)}</div>` : ""}
         <h3>当前回答</h3><div class="answer-box" id="ans"><span class="muted small">加载中…</span></div><div id="rest"></div>`;
       const wire = () => { dt.querySelectorAll("a[data-sel]").forEach((a) => a.onclick = (e) => { e.preventDefault(); select(NODES[a.dataset.sel]); }); $("#close").onclick = () => { SEL = null; dt.innerHTML = ""; draw(); }; };
       wire();
       try {
         const full = await api(`/api/ideas/${encodeURIComponent(n.id)}`); if (SEL !== n) return;
         if (full.translation && reader.english()) $("#ans").before(render("", "ideas", full.translation));
-        const S = mdSections(full.body); const ans = $("#ans"); ans.innerHTML = ""; ans.appendChild(render(S["当前回答"] || (reader.english() ? "_No current answer yet._" : "_（还没有当前回答）_"), "ideas"));
+        const renderSection = (text) => render(text, "ideas", null, !!full.translation && full.translation.state !== "missing");
+        const S = mdSections(full.body); const ans = $("#ans"); ans.innerHTML = ""; ans.appendChild(renderSection(S["当前回答"] || (reader.english() ? "_No current answer yet._" : "_（还没有当前回答）_")));
         let html = "";
         if (S["证据与链接"]) html += `<h3>关键证据与链接</h3><div id="ev"></div>`;
         if (n.children.length) html += `<h3>子问题</h3><div class="kids">${n.children.map((c) => `<a href="#" data-sel="${esc(c.id)}">${esc(c.title)}<br><span class="v">→ ${esc(c.meta.verdict || firstSentence(c.answer) || "未回答")}</span></a>`).join("")}</div>`;
         html += `<h3>原话与历史</h3>`;
         for (const h of ["原话", "agent 的理解", "历史", "派生", "agent 备注"]) if (S[h]) html += `<details ${h === "原话" ? "open" : ""}><summary>${esc(h)}</summary><div data-sec="${esc(h)}"></div></details>`;
         const rest = $("#rest"); rest.innerHTML = html;
-        if (S["证据与链接"]) $("#ev").appendChild(render(S["证据与链接"], "ideas"));
-        rest.querySelectorAll("[data-sec]").forEach((el) => el.appendChild(render(S[el.dataset.sec], "ideas")));
+        if (S["证据与链接"]) $("#ev").appendChild(renderSection(S["证据与链接"]));
+        rest.querySelectorAll("[data-sec]").forEach((el) => el.appendChild(renderSection(S[el.dataset.sec])));
         wire();
       } catch (e) { const a = $("#ans"); if (a) a.textContent = "加载失败：" + e.message; }
     }

@@ -6,6 +6,26 @@
   const english = () => catalog.enabled && requested === "en";
   const url = (lang) => { const u = new URL(location.href); u.searchParams.set("lang", lang); return u.href; };
   const words = {
+    "问题：":"Question: ",
+    "已升级为":"Research task created:",
+    "加载失败：":"Could not load: ",
+    "过目即可，不卡任务。":"For review; this does not block the task.",
+    "放行后 agent 下次运行就回答；回答只写进这条讨论，不改 wiki 或 lab。":"Once approved, the research agent will answer here in its next session. The answer is saved in this discussion; Wiki and Lab pages are unchanged.",
+    "放行后 agent 下次运行把它整理进问题树（原话不改）。":"Once approved, the research agent will organize this submission into the question tree, preserving the original wording.",
+    "放行，交给 agent 整理":"Approve for organization", "已放行":"Approved",
+    "已放行，agent 已整理":"Approved and organized", "已放行，等 agent 整理":"Approved; awaiting organization",
+    "发现待处理":"Findings awaiting action", "发现已处理":"Findings addressed", "无待处理发现":"No findings awaiting action",
+    "← 回到 lab":"← Back to Lab",
+    "任务书等你过目":"Research plan awaiting your review",
+    "任务卡在一个问题上，见讨论":"The task is waiting for a decision; see the discussion",
+    "任务完成，未查看":"Task completed; not yet viewed", "任务受阻，未查看":"Task blocked; not yet viewed",
+    "审计修正已按唯一方向改并复核通过，过目即可，不卡任务":"Audit corrections have been made and independently reviewed; your review does not block the task",
+    "还没有":"Not yet available:",
+    "（课题状态页）。agent 在下次收尾时会建立它；也可以":" (project status page). It will be created when the research agent next completes a task. You can also use",
+    "补一个空模板。":"to add an empty template.",
+    "Reading language / 阅读语言":"Reading language",
+    "agent 向你提问，等你回答":"The research agent is waiting for your answer",
+    "把这个网址丢给任何 AI，它顺着链接就能读完全部内容":"Share this address with an AI assistant to access the project content through its links.",
     "只读摘要":"Abstract only", "略读":"Skimmed", "精读":"Read in full", "阅读深度未填":"Reading depth not recorded",
     "阅读深度：只读摘要":"Reading depth: abstract only", "阅读深度：略读":"Reading depth: skimmed", "阅读深度：精读":"Reading depth: read in full", "阅读深度：未填":"Reading depth: not recorded",
     "没有待审批的候选。每天定时扫描，通过的才会精读入库。":"No candidates await approval. The daily scan adds candidates; only approved papers are read in full and added to the library.",
@@ -80,6 +100,19 @@
     "标签（针对某个 lab 的写 manual:<lab id>）":"Label (manual:<lab id> for a lab)",
   };
   const substitutions = [
+    [/^找不到 /, "Not found: "], [/^加载失败：/, "Could not load: "],
+    [/^只读：这个地址只能看，不能操作；但可以留名字投想法、向 agent 提问$/, "Read-only access. You can submit ideas or questions as a guest by leaving your name."],
+    [/对应任务已按唯一方向修正、复核通过并收尾[:：]?/, "The related task has been corrected, reviewed and completed: "],
+    [/ · 另 (\d+) 项过目即可/, " · $1 additional items for review"], [/，排队 (\d+)/, "; queued: $1"],
+    [/^(\d+) 条回答$/, "$1 answers"], [/^等待统一消化，预计 /, "awaiting review, expected around "],
+    [/^访客 (.+) 的投稿，等你放行$/, "Submission from $1, awaiting approval"],
+    [/^访客 (.+) 的投稿$/, "Submission from $1"], [/^访客 (.+) 的提问，等你放行$/, "Question from $1, awaiting approval"],
+    [/^访客 (.+) 投了想法，等你放行$/, "Idea submitted by $1, awaiting approval"],
+    [/^访客 (.+) 向 agent 提问，等你放行$/, "Question from $1, awaiting approval"],
+    [/^这是 lab (.+) 的审计修正清单：改变结论的发现修正方向唯一，agent 已经改好、经审计者复核通过并完成收尾。认可就在下面回答“认可”（消化后讨论关闭）；不认可指出哪一处，agent 会改那一处并重走复核与薄层。$/, "These are the audit corrections for lab $1. Findings affecting the conclusions had unambiguous corrections, which have been made and independently reviewed, and the task is complete. Reply below to confirm acceptance; the discussion will close after the response is incorporated. If you disagree, identify the correction so it can be revised and reviewed again."],
+    [/❌ 有改变结论的发现/, "❌ Findings affect the conclusions"], [/⚠️ 有不严谨之处/, "⚠️ Missing qualifications"], [/✅ 通过/, "✅ Passed"],
+    [/^agent 空闲(?=\s|$)/, "Research agent idle"], [/ · (\d+) 核(?=\s|$)/g, " · $1 cores"],
+    [/^· 给 AI 读：$/, "· Machine-readable source (Chinese): "],
     [/^已处理 (\d+)$/, "Processed: $1"], [/^来源：/, "Source: "], [/ · 命中 /, " · Matched terms: "], [/作者[:：]/g, "Author: "],
     [/^模型（空 = 默认）$/, "Model (project default)"], [/^effort（空 = 默认）$/, "Reasoning effort (project default)"],
     [/^模型（空 = (.+)）$/, "Model (default: $1)"], [/^effort（空 = (.+)）$/, "Reasoning effort (default: $1)"],
@@ -142,15 +175,59 @@
     for (const [pattern, replacement] of substitutions) value = value.replace(pattern, replacement);
     return text.replace(trimmed, value);
   }
+  // Reviewed translations of text annotations only; never used for original source views.
+  const mathLabels = {
+    "\\text{窗口外}": "\\text{outside the window}",
+    "\\text{（此例）}": "\\text{(in this example)}",
+    "\\text{ 的窗口外}": "\\text{ outside the window}",
+    "\\text{（全态纯且层交换对称）}": "\\text{(full state pure and symmetric under layer exchange)}",
+    "\\text{nat/格点}": "\\text{nat/site}",
+    "\\rm 左": "\\rm left",
+    "\\rm 右": "\\rm right"
+  };
+  function mathText(src) {
+    if (!english()) return src;
+    const formula = /\$\$[\s\S]+?\$\$|\\\[[\s\S]+?\\\]|\\\([\s\S]+?\\\)|(?<![\\$])\$(?!\s)[^$\n]+?(?<!\s)\$(?!\d)/g;
+    const localize = (math) => {
+      for (const [source, label] of Object.entries(mathLabels)) {
+        if (source.startsWith("\\rm ")) {
+          const escaped = source.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+          math = math.replace(new RegExp(escaped + "(?=\\s*})", "g"), () => label);
+        } else math = math.split(source).join(label);
+      }
+      return math.replace(/\\text\{式 (\d[^}]*)\}/g, (_, refs) => `\\text{${refs.includes(",") ? "Eqs." : "Eq."} ${refs}}`);
+    };
+    // Code examples retain their exact source spelling.
+    return src.split(/(```[\s\S]*?```|~~~[\s\S]*?~~~|`[^`\n]+`)/g)
+      .map((part, i) => i % 2 ? part : part.replace(formula, localize)).join("");
+  }
+  function decorateSources(div) {
+    if (!english()) return;
+    const walk = document.createTreeWalker(div, NodeFilter.SHOW_TEXT), nodes = [];
+    while (walk.nextNode()) if (!walk.currentNode.parentElement.closest("a, pre, code, .katex, .translation-info")) nodes.push(walk.currentNode);
+    for (const node of nodes) {
+      const matches = [...node.nodeValue.matchAll(/ideas\/inbox\/\d{4}-\d{2}-\d{2}-[^\s()<>]+\.md/g)];
+      if (!matches.length) continue;
+      const fragment = document.createDocumentFragment(); let end = 0;
+      for (const match of matches) {
+        fragment.append(node.nodeValue.slice(end, match.index));
+        // Historical inbox notes may already have been incorporated into this page.
+        const label = document.createElement("span"); label.textContent = "original note";
+        label.dataset.originalSourcePath = match[0]; fragment.append(label);
+        end = match.index + match[0].length;
+      }
+      fragment.append(node.nodeValue.slice(end)); node.replaceWith(fragment);
+    }
+  }
   function translateUI(root = document.body) {
     if (!english()) return;
-    const skip = (el) => !el || el.closest(".md, .log, pre, code, textarea, script, style, .translation-info");
+    const skip = (el) => !el || el.closest(".md, .log, [data-original-text], pre, code, textarea, script, style, .translation-info");
     const walk = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
     const nodes = []; while (walk.nextNode()) nodes.push(walk.currentNode);
     for (const node of nodes) if (!skip(node.parentElement)) { const value = t(node.nodeValue); if (value !== node.nodeValue) node.nodeValue = value; }
-    root.querySelectorAll("[placeholder], [title]").forEach((el) => {
-      if (el.closest(".md, .log, .translation-info")) return;
-      for (const attr of ["placeholder", "title"]) if (el.hasAttribute(attr)) {
+    root.querySelectorAll("[placeholder], [title], [aria-label]").forEach((el) => {
+      if (el.closest(".md, .log, [data-original-text], .translation-info")) return;
+      for (const attr of ["placeholder", "title", "aria-label"]) if (el.hasAttribute(attr)) {
         const value = t(el.getAttribute(attr)); if (value !== el.getAttribute(attr)) el.setAttribute(attr, value);
       }
     });
@@ -248,6 +325,7 @@
     if (pathname.startsWith("/api/runs/")) return activity(data);
     if (pathname === "/api/overview") {
       const result = { ...data };
+      if (data.queue) result.queue = { ...data.queue, current: data.queue.current ? activity(data.queue.current) : null, pending: data.queue.pending.map(activity) };
       if (data.status) result.status = translated(data.status, "STATUS.md");
       if (data.attention) result.attention = { ...data.attention, items: data.attention.items.map((item) => {
         const source = item.kind === "discussion" ? `discussion/${item.id}.md` : item.kind === "lab" ? `labs/${item.id}/report.md` : item.kind === "inbox" ? `references/inbox/${item.id}.md` : null;
@@ -391,6 +469,6 @@
   new MutationObserver(() => {
     if (!english() || scheduled) return;
     scheduled = true; queueMicrotask(() => { scheduled = false; translateUI(); translateImages(); });
-  }).observe(document.body, { childList: true, subtree: true, characterData: true });
-  window.ReadingMode = { english, t, refresh, overlay, decorate, info };
+  }).observe(document.body, { childList: true, subtree: true, characterData: true, attributes: true, attributeFilter: ["placeholder", "title", "aria-label"] });
+  window.ReadingMode = { english, t, mathText, decorateSources, refresh, overlay, decorate, info };
 })();
