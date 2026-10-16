@@ -206,11 +206,13 @@ class SeenIn(BaseModel):
 
 
 # 不跑 JavaScript 的来访者：AI 抓取器（ChatGPT-User、ClaudeBot、PerplexityBot…）、通用爬虫、命令行工具。
+# 只认具体的抓取器标识，不按 "claude""openai" 这种词匹配——Claude 桌面端内置浏览器的 UA 里就有 "Claude/2.x"，按词匹配会把真人误判成机器人。
 # 浏览器的 Accept 里一定有 text/html 且 UA 不在这个表里；其余都当成要 markdown 的
 AI_UA_RE = re.compile(
-    r"gptbot|chatgpt|openai|claude|anthropic|perplexity|cohere|mistral|google-extended|googlebot|bingbot|duckassist|youbot|applebot"
-    r"|ccbot|bytespider|diffbot|amazonbot|meta-external|facebookexternalhit|crawler|spider|\bbot\b|python-requests|python-urllib|httpx|aiohttp"
-    r"|curl|wget|go-http-client|node-fetch|undici|axios|libwww|okhttp",
+    r"GPTBot|ChatGPT-User|OAI-SearchBot|ClaudeBot|Claude-User|Claude-SearchBot|anthropic-ai|PerplexityBot|Perplexity-User"
+    r"|Google-Extended|Googlebot|Bingbot|DuckAssistBot|YouBot|Applebot|CCBot|Bytespider|Amazonbot|meta-externalagent|facebookexternalhit"
+    r"|cohere-ai|MistralAI-User|Diffbot|crawler|spider|\bbot/|python-requests|python-urllib|\bhttpx/|aiohttp|^curl/|^Wget/|Go-http-client"
+    r"|node-fetch|undici|axios/|libwww|okhttp|^Java/",
     re.I,
 )
 

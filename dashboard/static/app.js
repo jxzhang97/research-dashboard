@@ -50,7 +50,30 @@
   const kindChip = (k) => KIND_ZH[k] ? `<span class="chip kind">${KIND_ZH[k]}</span>` : "";
 
   // ---------- 网络 ----------
-  async function api(path, opts) {
+  // 路由序号：每次切页加一。每个页面函数开头用 `const api = pageApi()` 把请求绑定到自己这一页：
+  // 页面已经切走时，这一页的请求返回一个永远不结束的 promise，页面函数就停在那里，不会在新页渲染完之后再把 main 覆盖掉
+  // （以前点"文献"再立刻点"想法"，文献的请求后到就会停在文献页）。用"永不结束"而不是抛错，是因为页面里到处有 catch(() => null)。
+  let routeSeq = 0;
+  const NEVER = new Promise(() => {});
+  function pageApi() {
+    const seq = routeSeq;
+    const live = () => seq === routeSeq;
+    const bound = async (path, opts) => {
+      if (!live()) return NEVER;
+      const r = await fetch(path, opts && { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(opts) });
+      if (!live()) return NEVER;
+      if (!r.ok) throw new Error(`${r.status} ${await r.text()}`);
+      const data = await r.json();
+      if (!live()) return NEVER;
+      return opts ? data : reader.overlay(path, data);
+    };
+    bound.check = () => (live() ? Promise.resolve() : NEVER);  // 在不经 api 的 await 之后调一次
+    return bound;
+  }
+  // 页面函数之外（按钮回调、公共小函数）用的 api：按调用时的页面绑定
+  const api = (path, opts) => pageApi()(path, opts);
+  // 不随切页作废的请求：总览刷新、标已读
+  async function apiBg(path, opts) {
     const r = await fetch(path, opts && { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(opts) });
     if (!r.ok) throw new Error(`${r.status} ${await r.text()}`);
     const data = await r.json();
@@ -199,8 +222,8 @@
   async function refreshOverview() {
     await reader.refresh();
     try {
-      OVERVIEW = await api("/api/overview");
-      LINKS = await api("/api/links");
+      OVERVIEW = await apiBg("/api/overview");
+      LINKS = await apiBg("/api/links");
     } catch (e) { console.error(e); return; }
     const a = OVERVIEW.attention;
     $("#brand-name").textContent = OVERVIEW.project.name || "课题";
@@ -243,7 +266,9 @@
   const pages = {};
 
   pages.home = async () => {
+    const api = pageApi();  // 绑定到本页：切走后请求永不返回，不再覆盖新页
     await refreshOverview();
+    await api.check();  // refreshOverview 不随切页作废，这里补一次核对
     const o = OVERVIEW; const a = o.attention;
     let cores = null; try { cores = await api("/api/cores"); } catch (e) { /* 可选 */ }
     const rv = await reviewIds();
@@ -288,6 +313,7 @@
   };
 
   pages.refs = async (key) => {
+    const api = pageApi();  // 绑定到本页：切走后请求永不返回，不再覆盖新页
     if (key) return pages.card(key);
     const d = await api("/api/references");
     const inbox = d.inbox.filter((x) => x.meta.status === "pending");
@@ -311,6 +337,7 @@
   };
 
   pages.card = async (key) => {
+    const api = pageApi();  // 绑定到本页：切走后请求永不返回，不再覆盖新页
     const d = await api(`/api/references/${encodeURIComponent(key)}`);
     const m = d.meta;
     main.innerHTML = `<p><a href="#/refs">← 文献</a></p><h1>${esc(d.title)}</h1>
@@ -324,6 +351,7 @@
   };
 
   pages.inbox = async (key) => {
+    const api = pageApi();  // 绑定到本页：切走后请求永不返回，不再覆盖新页
     const d = await api(`/api/inbox/${encodeURIComponent(key)}`); const m = d.meta;
     main.innerHTML = `<p><a href="#/refs">← 文献</a></p><h1>${esc(d.title)}</h1>
       <div class="meta">${chip(m.status)}<a href="${esc(m.url || "https://arxiv.org/abs/" + m.arxiv)}" target="_blank">arXiv:${esc(m.arxiv)}</a><span>${esc(m.published || "")}</span></div>
@@ -335,6 +363,7 @@
   };
 
   pages.wiki = async (slug) => {
+    const api = pageApi();  // 绑定到本页：切走后请求永不返回，不再覆盖新页
     if (!slug && reader.english()) slug = "index";
     const list = await api("/api/wiki");
     const side = list.map((p) => `<a href="#/wiki/${esc(p.id)}" class="${p.id === slug ? "cur" : ""}">${esc(p.title)}</a>`).join("");
@@ -350,6 +379,7 @@
   };
 
   pages.labs = async (id) => {
+    const api = pageApi();  // 绑定到本页：切走后请求永不返回，不再覆盖新页
     if (id) return pages.lab(id);
     const list = await api("/api/labs");
     const rows = list.map((x) => `<li class="lab-row"><span class="t"><a href="#/labs/${esc(x.id)}"><b>${esc(x.short || x.title)}</b></a> <span class="small muted">${esc(x.id)}</span>
@@ -359,6 +389,7 @@
   };
 
   pages.lab = async (id) => {
+    const api = pageApi();  // 绑定到本页：切走后请求永不返回，不再覆盖新页
     const d = await api(`/api/labs/${encodeURIComponent(id)}`); const m = d.meta; const st = m.status;
     const labDir = dirOf(d.path);
     const auditLine = `${auditChip(d.audit) || "<span class='muted'>还没审计</span>"} <button id="audit-der" class="small">推导审计</button> <button id="audit-code" class="small">代码审计</button> <button id="audit-consistency" class="small">薄层一致性</button>${(d.audits || []).length ? ` <span class="small muted">历史：${d.audits.map((a) => `<a href="${docRoute(a.path)}">${esc(a.date)} ${esc(AUDIT_KIND_ZH[a.kind] || a.kind)}${a.stale ? "（已过期）" : ""}</a>`).join(" · ")}</span>` : ""}`;
@@ -391,12 +422,13 @@
     if ($("#audit-der")) $("#audit-der").onclick = auditGo("derivation");
     if ($("#audit-code")) $("#audit-code").onclick = auditGo("code");
     if ($("#audit-consistency")) $("#audit-consistency").onclick = auditGo("consistency");
-    api("/api/seen", { kind: "lab", id }).then(refreshOverview);
+    apiBg("/api/seen", { kind: "lab", id }).then(refreshOverview).catch(() => {});
   };
 
   // 通用文档页：项目内任意 markdown（notes.md、handoff.md、STATUS.md、writing-test/…）
   // base：相对链接按哪个目录解析（草稿、试写等"为别的位置写的" markdown 用 ?base=<目录> 或 frontmatter base: 指定）
   pages.doc = async (path, frag, base) => {
+    const api = pageApi();  // 绑定到本页：切走后请求永不返回，不再覆盖新页
     let d;
     try { d = await api(`/api/raw?path=${encodeURIComponent(path)}`); }
     catch (e) { main.innerHTML = `<p class="muted">找不到 ${esc(path)}</p>`; return; }
@@ -432,6 +464,7 @@
   };
 
   pages.discussion = async (id) => {
+    const api = pageApi();  // 绑定到本页：切走后请求永不返回，不再覆盖新页
     if (id) return pages.thread(id);
     const [list, dg, rv] = await Promise.all([api("/api/discussion"), api("/api/digest").catch(() => null), reviewIds()]);
     const isReview = (x) => !!x.review_only || rv.has(x.id);
@@ -460,6 +493,7 @@
   };
 
   pages.thread = async (id) => {
+    const api = pageApi();  // 绑定到本页：切走后请求永不返回，不再覆盖新页
     const [d, rv] = await Promise.all([api(`/api/discussion/${encodeURIComponent(id)}`), reviewIds()]); const m = d.meta;
     const guestQ = m.asked_by === "guest";
     const reviewLab = d.review_lab || rv.get(id);
@@ -476,7 +510,7 @@
     $("#send").onclick = async () => { const t = $("#ans").value.trim(); if (!t) return; await api(`/api/discussion/${encodeURIComponent(id)}/answer`, { text: t }); const dg = await api("/api/digest").catch(() => null); toast(dg && dg.next_digest_str ? `已提交，将在 ${dg.next_digest_str} 左右与其他回答一起消化` : "已提交"); pages.thread(id); refreshOverview(); };
     if ($("#resolve")) $("#resolve").onclick = async () => { await api(`/api/discussion/${encodeURIComponent(id)}/resolve`, {}); pages.thread(id); refreshOverview(); };
     if ($("#approve-q")) $("#approve-q").onclick = async () => { await api(`/api/discussion/${encodeURIComponent(id)}/approve`, {}); toast("已放行，agent 下次运行回答"); pages.thread(id); refreshOverview(); };
-    api("/api/seen", { kind: "discussion", id }).then(refreshOverview);
+    apiBg("/api/seen", { kind: "discussion", id }).then(refreshOverview).catch(() => {});
   };
 
   // ---------- 想法页：问题树的卡片分支图 ----------
@@ -500,6 +534,7 @@
   const inlineMd = (text, translation) => { const d = render(text || "", "ideas", null, !!translation && translation.state !== "missing"); return d.innerHTML.replace(/^<p>|<\/p>\s*$/g, ""); };
 
   pages.ideas = async (slug) => {
+    const api = pageApi();  // 绑定到本页：切走后请求永不返回，不再覆盖新页
     if (slug) return pages.idea(slug);
     const d = await api("/api/ideas");
     const ROOTS = d.tree.filter((n) => !n.id.startsWith("inbox/")); const INBOX = d.tree.filter((n) => n.id.startsWith("inbox/"));
@@ -601,7 +636,7 @@
     $("#mode-all").onclick = () => { MODE = "all"; (function w(ns) { for (const n of ns) { n.open = true; w(n.children); } })(ROOTS); draw(); };
     $("#mode-focus").onclick = () => { MODE = "focus"; applyFocus(); if (SEL) SEL.open = true; draw(); };
     $("#outer").addEventListener("wheel", (e) => { if (e.ctrlKey || e.metaKey) { e.preventDefault(); setZoom(ZOOM * (e.deltaY < 0 ? 1.08 : 1 / 1.08)); } }, { passive: false });
-    window.addEventListener("resize", draw);
+    window._ideasResize = draw; window.addEventListener("resize", draw);  // route() 切页时注销
     $("#save").onclick = async () => {
       const t = $("#cap").value.trim(); if (!t) return;
       if (isGuest()) {
@@ -615,6 +650,7 @@
   };
 
   pages.idea = async (slug) => {
+    const api = pageApi();  // 绑定到本页：切走后请求永不返回，不再覆盖新页
     const d = await api(`/api/ideas/${slug}`); const m = d.meta;
     main.innerHTML = `<p><a href="#/ideas">← 问题树</a></p><h1>${esc(d.title)}</h1>
       <div class="meta">${kindChip(m.kind)}${chip(m.status)}${m.parent ? `<a href="#/ideas/${esc(m.parent)}">上级：${esc(m.parent)}</a>` : ""}${(m.labs || []).map((l) => `<a href="#/labs/${esc(l)}">lab ${esc(l)}</a>`).join("")}${(m.related || []).map((r) => `<a href="#/ideas/${esc(r)}">相关：${esc(r)}</a>`).join("")}<span>创建：${esc(m.created || "")}</span></div>
@@ -635,6 +671,7 @@
   };
 
   pages.runs = async (id) => {
+    const api = pageApi();  // 绑定到本页：切走后请求永不返回，不再覆盖新页
     if (id) return pages.run(id);
     const [d, cores] = await Promise.all([api("/api/runs"), api("/api/cores").catch(() => null)]);
     const rows = d.runs.map((r) => `<li><span class="t"><a href="#/runs/${esc(r.id)}"><b>${esc(r.label || r.kind)}</b></a> <span class="small muted">${esc(r.display_kind || r.kind)} · ${esc(r.model || "")}</span></span>${chip(r.status)}<span class="small muted">${esc(r.started || "")}</span></li>`).join("");
@@ -655,6 +692,7 @@
   };
 
   pages.run = async (id) => {
+    const api = pageApi();  // 绑定到本页：切走后请求永不返回，不再覆盖新页
     const r = await api(`/api/runs/${encodeURIComponent(id)}`);
     main.innerHTML = `<p><a href="#/runs">← 任务</a></p><h1>${esc(r.label || r.kind)}</h1>
       <div class="meta"><span id="st">${chip(r.status)}</span><span>${esc(r.display_kind || r.kind)}</span><span>${esc(r.model || "")}</span><span>${esc(r.started || "")}${r.ended ? " → " + esc(r.ended) : ""}</span>${r.cost_usd != null ? `<span>$${r.cost_usd.toFixed(2)}</span>` : ""}
@@ -673,7 +711,11 @@
 
   // ---------- 路由 ----------
   async function route() {
+    const seq = ++routeSeq;  // 让还在路上的上一页作废（见 api()）
     if (window._es) { window._es.close(); window._es = null; }
+    if (window._ideasResize) { window.removeEventListener("resize", window._ideasResize); window._ideasResize = null; }  // 想法页的重绘监听随页面注销
+    // 切走之后才出的错不往 main 里写
+    const fail = (e) => { if (seq !== routeSeq) return; main.innerHTML = `<p class="muted">出错了：${esc(e.message)}</p>`; };
     const hash = location.hash.replace(/^#\/?/, "");
     if (hash.startsWith("doc/")) {
       // 通用文档页：#/doc/<项目内路径>?h=<节锚点>
@@ -682,8 +724,8 @@
       const params = new URLSearchParams(qs || ""); const frag = params.get("h"); const base = params.get("base");
       const top = { labs: "labs", wiki: "wiki", ideas: "ideas", discussion: "discussion", references: "refs" }[path.split("/")[0]] || "home";
       document.querySelectorAll("nav a").forEach((a) => a.classList.toggle("active", a.dataset.key === top));
-      try { await pages.doc(path, frag, base); } catch (e) { main.innerHTML = `<p class="muted">出错了：${esc(e.message)}</p>`; }
-      window.scrollTo(0, 0);
+      try { await pages.doc(path, frag, base); } catch (e) { fail(e); }
+      if (seq === routeSeq) window.scrollTo(0, 0);
       return;
     }
     const parts = hash.split("/");
@@ -691,8 +733,8 @@
     document.querySelectorAll("nav a").forEach((a) => a.classList.toggle("active", a.dataset.key === key || (key === "inbox" && a.dataset.key === "refs")));
     main.classList.toggle("full", key === "ideas" && !rest);  // 想法页的卡片图用全宽
     const fn = pages[key] || pages.home;
-    try { await fn(rest ? decodeURIComponent(rest) : undefined); } catch (e) { main.innerHTML = `<p class="muted">出错了：${esc(e.message)}</p>`; }
-    window.scrollTo(0, 0);
+    try { await fn(rest ? decodeURIComponent(rest) : undefined); } catch (e) { fail(e); }
+    if (seq === routeSeq) window.scrollTo(0, 0);
   }
   window.addEventListener("hashchange", route);
   refreshOverview().then(route);

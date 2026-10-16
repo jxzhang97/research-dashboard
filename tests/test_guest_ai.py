@@ -119,6 +119,11 @@ def test_root_serves_markdown_to_ai_and_html_to_browsers(project_dir: Path):
                "accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"}
     r = outsider.get("/", headers=browser)
     assert r.headers["content-type"].startswith("text/html") and "<script" in r.text
+    # Claude 桌面端内置浏览器、Electron 应用之类 UA 里带 "Claude/…""OpenAI/…" 字样的真人浏览器，不能被当成机器人
+    for ua in ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Claude/2.31226.1 Chrome/152.0.0.0 Safari/537.36",
+               "Mozilla/5.0 (Windows NT 10.0) AppleWebKit/537.36 (KHTML, like Gecko) OpenAI/1.2 Chrome/150 Electron/33 Safari/537.36"):
+        r = outsider.get("/", headers={**browser, "user-agent": ua})
+        assert r.headers["content-type"].startswith("text/html"), ua
     for ua in ("Mozilla/5.0 AppleWebKit/537.36 (KHTML, like Gecko); compatible; ChatGPT-User/1.0; +https://openai.com/bot",
                "Mozilla/5.0 (compatible; ClaudeBot/1.0; +claudebot@anthropic.com)", "PerplexityBot/1.0", "curl/8.4.0"):
         r = outsider.get("/", headers={"user-agent": ua, "accept": "text/html,*/*"})
