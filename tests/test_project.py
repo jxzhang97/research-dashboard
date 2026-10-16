@@ -126,6 +126,27 @@ def test_lab_answer_pdfs_and_gallery(project_dir: Path):
     assert imgs[0]["caption"].startswith("看哪里")
 
 
+def test_gallery_matches_full_paths_and_bracketed_math(project_dir: Path):
+    from rd_core.translations import gallery_sources
+    lab = project_dir / "labs/01-first-task"
+    files = {"fig/main.png": b"L3", "fig/L6/main.png": b"L6", "fig/multiL/main.png": b"all sizes",
+             "report/figs/main.png": b"older export"}
+    for name, content in files.items():
+        image = lab / name
+        image.parent.mkdir(parents=True, exist_ok=True)
+        image.write_bytes(content)
+    (lab / "report.md").write_text("![L3 caption](fig/main.png)\n")
+    (lab / "notes.md").write_text("![L6: $J \u2208 [3.1,3.3]$](fig/L6/main.png)\n![ignored older caption](fig/main.png)\n")
+    project = Project(project_dir)
+    images = project.lab("01-first-task").full()["images"]
+    assert {image["name"]: image["caption"] for image in images} == {
+        "fig/main.png": "L3 caption", "fig/L6/main.png": "L6: $J \u2208 [3.1,3.3]$", "fig/multiL/main.png": ""}
+    captions = gallery_sources(project)
+    assert captions["labs/01-first-task/fig/main.png"] == "L3 caption"
+    assert captions["labs/01-first-task/fig/L6/main.png"] == "L6: $J \u2208 [3.1,3.3]$"
+    assert "labs/01-first-task/fig/multiL/main.png" not in captions
+
+
 def test_idea_answer_and_status_doc(project_dir: Path):
     (project_dir / "ideas" / "metric-bound.md").write_text(
         "---\ntitle: 度规 bound\nparent: root-idea\nkind: route\nstatus: lab\nlabs: [01-first-task]\n---\n# 度规 bound\n\n## 原话\n\n……\n\n<!-- agent -->\n## 当前回答\n\n未回答，等 lab 01。\n\n## 历史\n\n- 建立。\n", encoding="utf-8")

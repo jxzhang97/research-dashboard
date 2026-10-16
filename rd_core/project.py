@@ -4,6 +4,8 @@
 from __future__ import annotations
 
 import json
+import hashlib
+import posixpath
 import os
 import re
 import time
@@ -73,11 +75,46 @@ def section_text(body: str, heading: str, max_chars: int = 400) -> str:
 
 
 def figure_captions(body: str) -> dict[str, str]:
-    """markdown 里 `![图注](path)` 的 path(basename) → 图注。"""
+    """Map complete relative image paths to captions, including bracketed math."""
     out = {}
-    for alt, path in re.findall(r"!\[([^\]]*)\]\(([^)\s]+)", body or ""):
-        out.setdefault(Path(path).name, alt.strip())
+    for alt, path in re.findall(r"!\[(.*?)\]\(([^)\s]+)\)", body or "", re.S):
+        out.setdefault(posixpath.normpath(path), alt.strip())
     return out
+
+
+def lab_gallery(folder: Path) -> list[dict]:
+    """Keep distinct canonical figures and omit duplicate or exported report copies."""
+    captions = {}
+    for name in ("report.md", "notes.md"):
+        source = folder / name
+        if source.is_file():
+            for path, caption in figure_captions(fm.read(source)[1]).items():
+                captions.setdefault(path, caption)
+    seen = set()
+    images = []
+    ordered = sorted(folder.rglob("*"), key=lambda p: (0 if p.relative_to(folder).parts[:1] in (("fig",), ("figs",)) else 1, str(p)))
+    canonical_names = {p.name for p in ordered if p.is_file() and p.relative_to(folder).parts[:1] in (("fig",), ("figs",))}
+    for image in ordered:
+        if image.relative_to(folder).parts[:1] not in (("fig",), ("figs",)) and image.name in canonical_names:
+            continue  # Exported report copies do not replace canonical figures.
+        if (not image.is_file() or image.name.startswith(".") or
+                image.suffix.lower() not in (".png", ".svg", ".jpg", ".jpeg", ".gif", ".webp") or
+                "writing-test" in image.parts or "__pycache__" in image.parts):
+            continue
+        identity = (image.name, hashlib.sha256(image.read_bytes()).digest())
+        if identity in seen:
+            continue
+        seen.add(identity)
+        name = image.relative_to(folder).as_posix()
+        images.append({"path": image, "name": name, "caption": captions.get(name, "")})
+    # Historical exported reports can point at an identical report/figs/ copy.
+    # Fall back by basename only when the image and caption are both unique.
+    for image in images:
+        basename = image["path"].name
+        matches = [v for k, v in captions.items() if Path(k).name == basename]
+        if not image["caption"] and len(matches) == 1 and sum(i["path"].name == basename for i in images) == 1:
+            image["caption"] = matches[0]
+    return images
 
 
 def _mtime(p: Path) -> float:
@@ -413,26 +450,14 @@ class Project:
                 m, b = fm.read(p)
                 doc.extra[name.replace(".md", "").lower()] = {"meta": m, "body": b}
         files = []
-        images = []
-        captions = {}
-        for name in ("report.md", "notes.md"):
-            if (d / name).exists():
-                for k, v in figure_captions(fm.read(d / name)[1]).items():
-                    captions.setdefault(k, v)
-        seen_names: set[str] = set()
-        img_ext = (".png", ".svg", ".jpg", ".jpeg", ".gif", ".webp")
-        # 先收 fig/（权威图源），再收别处；同名文件（report/figs/ 里的导出副本）只显示一次
+        images = [{**image, "path": self.rel(image["path"])} for image in lab_gallery(d)]
+        # Keep the file listing independent of the deduplicated image gallery.
         ordered = sorted(d.rglob("*"), key=lambda p: (0 if p.relative_to(d).parts[:1] in (("fig",), ("figs",)) else 1, str(p)))
         for p in ordered:
             if not p.is_file() or p.name.startswith(".") or "__pycache__" in p.parts:
                 continue
             rel_in = str(p.relative_to(d))
             files.append({"path": self.rel(p), "name": rel_in, "size": p.stat().st_size})
-            if p.suffix.lower() in img_ext and "writing-test" not in p.parts:
-                if p.name in seen_names:
-                    continue
-                seen_names.add(p.name)
-                images.append({"path": self.rel(p), "name": rel_in, "caption": captions.get(p.name, "")})
         files.sort(key=lambda f: f["name"])
         doc.extra["files"] = files[:500]
         doc.extra["images"] = images[:200]  # lab 页的图画廊：fig/ 里的图都能看到，图注来自 report.md / notes.md 的 alt 文字

@@ -198,7 +198,7 @@
   }
   // 长文的目录：h2/h3 超过 3 个才显示
   function tocFor(div, min = 4) {
-    const hs = [...div.querySelectorAll("h2, h3")];
+    const hs = [...div.querySelectorAll("h2, h3")].filter((h) => !h.closest(".translation-info"));
     if (hs.length < min) return null;
     const nav = document.createElement("nav"); nav.className = "toc";
     nav.innerHTML = `<b>目录</b>` + hs.map((h) => `<a class="${h.tagName.toLowerCase()}" data-id="${esc(h.id)}">${esc(h.textContent)}</a>`).join("");

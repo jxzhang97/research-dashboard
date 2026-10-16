@@ -18,23 +18,12 @@ def metadata_hash(meta: dict, keys) -> str:
 
 def gallery_sources(project) -> dict[str, str]:
     """Match the live Lab gallery's report-first caption selection, without writes."""
-    from .project import figure_captions
+    from .project import lab_gallery
     sources = {}
     for brief in sorted((project.root / "labs").glob("*/brief.md")):
-        folder = brief.parent
-        captions = {}
-        for name in ("report.md", "notes.md"):
-            source = folder / name
-            if source.is_file():
-                for filename, caption in figure_captions(fm.read(source)[1]).items():
-                    captions.setdefault(filename, caption)
-        seen = set()
-        for image in sorted(folder.rglob("*"), key=lambda p: (0 if p.relative_to(folder).parts[:1] in (("fig",), ("figs",)) else 1, str(p))):
-            if not image.is_file() or image.name.startswith(".") or image.suffix.lower() not in (".png", ".svg", ".jpg", ".jpeg", ".gif", ".webp") or "writing-test" in image.parts or "__pycache__" in image.parts or image.name in seen:
-                continue
-            seen.add(image.name)
-            if image.name in captions:
-                sources[image.relative_to(project.root).as_posix()] = captions[image.name]
+        for image in lab_gallery(brief.parent):
+            if image["caption"]:
+                sources[image["path"].relative_to(project.root).as_posix()] = image["caption"]
     return sources
 
 

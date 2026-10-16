@@ -6,6 +6,7 @@
   const english = () => catalog.enabled && requested === "en";
   const url = (lang) => { const u = new URL(location.href); u.searchParams.set("lang", lang); return u.href; };
   const words = {
+    "pod（studio 只做后处理与画图）":"pod (postprocessing and plotting on studio)",
     "问题：":"Question: ",
     "已升级为":"Research task created:",
     "加载失败：":"Could not load: ",
@@ -183,7 +184,8 @@
     "\\text{（全态纯且层交换对称）}": "\\text{(full state pure and symmetric under layer exchange)}",
     "\\text{nat/格点}": "\\text{nat/site}",
     "\\rm 左": "\\rm left",
-    "\\rm 右": "\\rm right"
+    "\\rm 右": "\\rm right",
+    "\\text{链间散布}": "\\text{between-chain spread}"
   };
   function mathText(src) {
     if (!english()) return src;
@@ -241,8 +243,8 @@
     const entry = catalog.documents[path];
     const result = { ...doc, translation: info(path) };
     if (entry) {
-      result.title = entry.title;
-      if (doc.meta) result.meta = { ...doc.meta, ...entry.fields, title: entry.title };
+      result.title = entry.title || doc.title;
+      if (doc.meta) result.meta = { ...doc.meta, ...entry.fields, title: entry.title || doc.meta.title };
       if ("body" in doc) {
         result.translation.original_body = doc.body;
         result.body = entry.body;
@@ -251,7 +253,7 @@
     return result;
   }
   function section(body, name) {
-    const re = new RegExp("^##\\s+" + name + "\\s*\\n([\\s\\S]*?)(?=^##\\s|$(?![\\s\\S]))", "im");
+    const re = new RegExp("^##\\s+" + name + "(?:[ \t]*[（(][^\\n]*[）)])?[ \t]*\\r?\\n([\\s\\S]*?)(?=^##\\s|$(?![\\s\\S]))", "im");
     return (body.match(re) || [])[1]?.trim() || "";
   }
   function lab(doc) {
@@ -266,11 +268,11 @@
         const captions = new Map();
         for (const token of window.markdownit({ html:false }).parse(entry.body, {})) {
           for (const child of token.children || []) if (child.type === "image") {
-            captions.set((child.attrGet("src") || "").split("/").pop(), child.content);
+            captions.set(new URL(child.attrGet("src") || "", "https://project.invalid/labs/" + doc.id + "/").pathname.slice(1), child.content);
           }
         }
         result.images = doc.images.map((im) => {
-          const reportCaption = captions.get(im.path.split("/").pop());
+          const reportCaption = captions.get(im.path);
           const galleryCaption = catalog.captions?.[im.path];
           if (reportCaption) return { ...im, caption: reportCaption, captionTranslation: info(path).state };
           if (galleryCaption) return { ...im, caption: galleryCaption.text, captionTranslation: galleryCaption.state };
