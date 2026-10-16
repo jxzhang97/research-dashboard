@@ -162,6 +162,7 @@
     [/推导审核/g, "Derivation review"], [/，(\d+) 核/g, ", $1 cores"],
     [/（pid ([^)]+)）/g, "(pid $1)"], [/（(pod #[^）]+)）/g, "($1)"],
     [/studio（一、二期）\+ pod（三期 L=9）/g, "studio (phases 1–2) + pod (phase 3, L=9)"],
+    [/pod（studio 只做后处理与画图）/g, "pod (postprocessing and plotting on studio)"],
   ];
   function t(text) {
     if (!english() || typeof text !== "string") return text;

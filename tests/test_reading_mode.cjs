@@ -22,6 +22,7 @@ async function readingMode(lang) {
     {path:'labs/test/fig/multiL/main.png',caption:'多尺寸'}, {path:'labs/test/fig/L9/main.png',caption:''}
   ]};
   const en=await readingMode('en');
+  assert.equal(en.t('机器：pod（studio 只做后处理与画图）'),'Machine: pod (postprocessing and plotting on studio)');
   const result=en.overlay('/api/labs/test',original);
   assert.equal(result.answer,'Preliminary evidence.');
   assert.equal(result.images[0].caption,'L3 result');
@@ -31,6 +32,7 @@ async function readingMode(lang) {
   assert.equal(original.images[0].caption,'L3 中文');
   assert.equal(en.overlay('/api/raw?path=labs/test/DATA.md',{path:'labs/test/DATA.md',title:'DATA.md',body:'数据'}).title,'DATA.md');
   const zh=await readingMode('zh');
+  assert.equal(zh.t('机器：pod（studio 只做后处理与画图）'),'机器：pod（studio 只做后处理与画图）');
   assert.equal(zh.overlay('/api/labs/test',original),original);
   console.log('Reading mode: qualified summary, full-path captions, and Chinese preservation passed.');
 })().catch(error=>{console.error(error);process.exitCode=1;});
