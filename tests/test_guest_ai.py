@@ -132,3 +132,22 @@ def test_root_serves_markdown_to_ai_and_html_to_browsers(project_dir: Path):
     # 没说要 html 的（通用 HTTP 客户端）也给 markdown
     r = outsider.get("/", headers={"user-agent": "SomeTool/1.0", "accept": "*/*"})
     assert r.headers["content-type"].startswith("text/markdown")
+
+
+def test_wiki_audit_attachments_stay_out_of_navigation_and_ai_export(project_dir: Path):
+    paths = ("wiki/audit/review.md", "wiki/audit/scratch/algebra.md", "wiki/scratch/check.md")
+    for rel in paths:
+        p = project_dir / rel
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text(f"# Internal verification {p.stem}\n\nAUDIT-ATTACHMENT-{p.stem}\n", encoding="utf-8")
+    _, outsider = _clients(project_dir)
+    listed = {p["path"] for p in outsider.get("/api/wiki").json()}
+    assert "wiki/quantum-metric.md" in listed
+    catalog = outsider.get("/llms.txt").text
+    full = outsider.get("/llms-full.txt").text
+    for rel in paths:
+        assert rel not in listed and rel not in catalog
+        assert f"AUDIT-ATTACHMENT-{Path(rel).stem}" not in full
+        assert outsider.get(f"/md/{rel}").status_code == 404
+        assert outsider.get("/api/raw", params={"path": rel}).status_code == 200
+        assert outsider.get(f"/api/wiki/{rel[5:-3]}").status_code == 200

@@ -29,6 +29,8 @@
 | `log.md` | 时间线，只追加 | 双方 |
 | `.dashboard/` | 运行记录（含 `writing/` 里 Codex 写作步的提示词与输出）、作业登记、本机配置，不是内容 | 程序 |
 
+**Wiki 与核查档案分开**：wiki 概念导航只放面向读者的知识页；审计报告、复算过程、脚本输出和写作交接单不是概念页，不加入 `wiki/index.md`，不复制进正文充当解释。实验审计按第 11 节放在 lab 的 `audit/`；独立 wiki/STATUS 维护的核查路径也见第 11 节。`wiki/handoff/` 仅作写作输入。导航和 AI 内容目录排除 wiki 中任何层级的 `handoff/`、`audit/`、`scratch/`，这是对旧材料或误放文件的兜底，不是把新审计写入 `wiki/audit/` 的理由。
+
 ## 2. 写给谁、写在哪、写多少
 
 **读者**：面向读者的页面（`STATUS.md`、`report.md`、wiki 页、idea 节点）假定读者是刚进组的研究生：懂二次量子化、知道 DMRG 大概是什么，**不认识本课题的任何记号，也没看过任何一次运行**。写之前先想这个人。
@@ -156,6 +158,7 @@ rd cluster status|init|push|submit|jobs|pull|inventory|cancel <课题目录> …
 
 ## 11. 审计
 
+- **独立页面维护的存放位置**：不属于整个 lab 收尾的 wiki 教学补充、讨论消化或 STATUS 更新，其审计报告放项目根的 `audit/wiki/<页面 slug>/` 或 `audit/status/`，独立代数、验证脚本及结果放对应目录的 `scratch/`。不要为这些材料新造 lab，也不要放进 `wiki/audit/`、`wiki/scratch/` 或概念页列表；不要让局部页面检查顶替整个 lab 的最新审计。已有 lab 相关教学档案可保留在该 lab 的 `audit/scratch/wiki-teaching/`。wiki 只在 `audited_by` 或证据处引用报告；把对读者必要的物理解释写入原概念页，核查过程留在附件。迁移旧材料时保留内容和原审核范围，修复当前引用、记录旧路径到新路径的对应关系，不改写历史审核哈希来冒充重新通过。
 - 三种审计都由另一个模型（`config.toml` 的 `[auditor]`，Codex）独立做，流程和报告格式见 rd-audit skill，报告在 `labs/NN/audit/`：**推导审计**（厚层齐后自动）、**代码审计**（用户点按钮）、**薄层一致性检查**（薄层写完后自动，逐句对照厚层）。
 - 审计作业启动时用 `--source` 声明审的文件、`--expect` 声明报告；源文件之后再改，报告就过期（共享的 `STATUS.md`、`wiki/index.md`、`wiki/notation.md` 只在 finish 时要求一致，lab done 之后再变不算过期）。**处理完发现改过源文件，就要对当前版本复核到 `verdict: pass`**；`handled: true` 只表示作者处理了，不表示审计者认可。`rd finish` 只认覆盖当前版本的通过报告。
 - 发现分三档。`typo` 和 `不严谨` 由你直接改，改完在报告「处理」一节记一行。`改变结论` 分两种：**修正方向唯一**的（符号、漏项、精度说过头、论证降为假设、范围收窄）由你直接改、重跑验证、复核，再开一个讨论把全部修正列清单请用户过目，任务书 frontmatter 写 `pending_review: <讨论 id>`，照常写薄层、收尾，不阻塞；**方向不唯一**或你不同意审计的，不自己改，开讨论让用户裁决，lab 状态 `waiting_answer`，不写薄层。

@@ -143,6 +143,31 @@ def test_wiki_handoff_dir_is_not_a_page(project_dir: Path):
     assert "handoff/2026-10-04-rewrite" not in ids and "quantum-metric" in ids
 
 
+def test_wiki_internal_records_are_not_concepts(project_dir: Path):
+    internal = (
+        "audit/review.md", "audit/scratch/algebra.md", "scratch/check.md",
+        "models/audit/review.md", "models/handoff/prompt.md",
+    )
+    concepts = ("models/hubbard.md", "audit-method.md")
+    for rel in internal + concepts:
+        p = project_dir / "wiki" / rel
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text(f"# {rel}\n", encoding="utf-8")
+    pr = Project(project_dir)
+    ids = {p.id for p in pr.wiki_pages()}
+    ai_paths = {p["path"] for _, pages in pr.ai_pages() for p in pages}
+    for rel in internal:
+        assert rel[:-3] not in ids
+        assert pr.resolve_link(rel[:-3]) is None
+        assert f"wiki/{rel}" not in ai_paths
+        assert not pr.ai_allowed(f"wiki/{rel}")
+        assert pr.wiki(rel[:-3]).body  # Existing direct links still open the record.
+    for rel in concepts:
+        assert rel[:-3] in ids
+        assert f"wiki/{rel}" in ai_paths
+        assert pr.ai_allowed(f"wiki/{rel}")
+
+
 def test_review_discussions_are_soft_attention(project_dir: Path):
     """被 lab 的 pending_review 指向的讨论：review_only，首页里标为"过目即可"并排在真正等回答的问题之后。"""
     pr = Project(project_dir)

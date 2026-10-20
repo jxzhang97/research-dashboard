@@ -19,6 +19,8 @@ description: 推导、代码与薄层的独立审计步（research-dashboard 课
 
 ## 1. 组提示词
 
+先区分审核范围。整个 lab 的审核沿用下面的 `labs/NN-slug/audit/`；仅针对独立 wiki 教学补充或 STATUS 维护时，报告分别放项目根 `audit/wiki/<页面 slug>/`、`audit/status/`，复算与脚本输出放其 `scratch/`，将这些实际路径填入 `{{OUT}}`、`{{OUT_DIR}}` 并传给 `--expect`。不要写进 `wiki/audit/`、`wiki/scratch/`，不要为核查档案新建概念页或 lab；局部页面检查也不能顶替整个 lab 的收尾审核。旧档案迁移保留范围与版本证据，见 `AGENTS.md` §11。
+
 从本目录 `audit-prompt.md` 填模板，存到 `labs/NN-slug/audit/prompt-<日期>-<kind>[-v2].md`。要填的：
 - `{{KIND}}`：`derivation` / `code` / `consistency`；`{{KIND_ZH}}`：推导审计 / 代码审计 / 薄层一致性检查（复核时写"推导审计（复核）"）；
 - `{{LAB}}`、`{{TITLE}}`、`{{BRIEF}}`（brief.md 的目标与用户原话，原样粘）；

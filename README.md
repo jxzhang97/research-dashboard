@@ -113,6 +113,8 @@ dashboard 右上角可以在本机的课题之间切换。
 
 三种审计都交给另一个模型（`[auditor]`，Codex `gpt-6-astra`）独立做：**推导审计**在厚层齐后自动做；**薄层一致性检查**在 Codex 写完 report、wiki、idea 当前回答、STATUS 之后自动做，逐句对照 notes 查夸大与丢条件；**代码审计**在 lab 页点按钮。报告在 `labs/NN/audit/`，发现只分三档：`typo`、`不严谨`、`改变结论`，并明确不吹毛求疵。
 
+单独维护 wiki 或 STATUS 时，核查档案放项目根的 `audit/wiki/<页面 slug>/` 或 `audit/status/`，复算附件放其 `scratch/`。Wiki 导航只收录概念页；交接单、审计和复算过程通过证据链接查看，不作为知识页，也不重复合并进正文。扫描器会排除 wiki 中任意层级的 `handoff/`、`audit/`、`scratch/`，AI 目录和全文导出同样排除；旧档案仍可由原页面地址或 `#/doc/<路径>` 打开。
+
 审计作业启动时记下所审文件的哈希，源文件之后再改，报告就显示"已过期"；研究 agent 处理完发现必须对当前版本**复核**到通过。`改变结论` 的发现若修正方向唯一（符号、漏项、精度说过头之类），agent 直接改并复核，再开一个讨论把修正列清单请你过目（lab 上显示"审计修正待过目"），不阻塞收尾；方向不唯一或 agent 不同意审计的才停下等你裁决。
 
 `rd finish <课题目录> <lab>` 是收尾门槛：当前版本有通过的推导审核与一致性报告、report.md 由写作作业产出、doctor 无问题，才把 lab 标为 done；agent 不能手改状态。lab 页、wiki 页、STATUS.md 上都有审计标记，lab 页还列出"收尾门槛还差什么"。见 `skills/rd-audit`、`skills/rd-lab`。

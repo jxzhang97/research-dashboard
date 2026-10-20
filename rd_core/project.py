@@ -16,6 +16,7 @@ from . import config, fm
 
 WIKILINK_RE = re.compile(r"\[\[([^\]|#]+)(?:#[^\]|]*)?(?:\|([^\]]*))?\]\]")
 LOG_ENTRY_RE = re.compile(r"^## (\d{4}-\d{2}-\d{2}(?: \d{2}:\d{2})?)\s*·\s*(.*)$")
+WIKI_INTERNAL_DIRS = frozenset({"handoff", "audit", "scratch"})
 
 LAB_STATUSES = ["draft", "awaiting_review", "approved", "running", "waiting_answer", "done", "blocked", "parked"]
 IDEA_STATUSES = ["seed", "exploring", "lab", "resolved", "parked", "dropped"]
@@ -179,8 +180,8 @@ class Project:
     def wiki_pages(self) -> list[Doc]:
         docs = []
         for p in self._md_files(self.root / "wiki", recursive=True):
-            if "handoff" in p.relative_to(self.root / "wiki").parts[:-1]:
-                continue  # wiki/handoff/ 是写给 Codex 的交接单，不是概念页
+            if WIKI_INTERNAL_DIRS.intersection(p.relative_to(self.root / "wiki").parts[:-1]):
+                continue  # 交接单、审核报告及复算附件不是概念页；旧文档仍可按路径打开。
             slug = self.rel(p)[len("wiki/"):-3]
             d = self._read_doc("wiki", p, id_=slug)
             d.extra["links"] = sorted({m.group(1).strip() for m in WIKILINK_RE.finditer(d.body)})
@@ -813,7 +814,7 @@ class Project:
             return False
         if rel in ("STATUS.md", "PROJECT.md", "log.md"):
             return True
-        if parts[0] == "wiki" and "handoff" not in parts:
+        if parts[0] == "wiki" and not WIKI_INTERNAL_DIRS.intersection(parts[1:-1]):
             return True
         if parts[0] == "labs" and len(parts) == 3 and parts[2] in ("report.md", "notes.md", "brief.md", "DATA.md"):
             return True

@@ -9,7 +9,7 @@ description: 薄层写作步（research-dashboard 课题目录内使用）：把
 
 ## 1. 交接单（研究 agent 写）
 
-`labs/NN-slug/handoff.md`（wiki 改写时放 `wiki/handoff/<日期>-<slug>.md`）。开头先填写下面这一块；多个目标页分别给出各自的三句话：
+`labs/NN-slug/handoff.md`（wiki 改写时放 `wiki/handoff/<日期>-<slug>.md`，仅为内部写作输入，不加入概念索引）。独立 wiki/STATUS 维护的审核路径按 `rd-audit` §1 和 `AGENTS.md` §11 指定在项目根 `audit/` 下；不要预留 `wiki/audit/` 路径，也不要把审计或复算记录声明为 wiki 输出。开头先填写下面这一块；多个目标页分别给出各自的三句话：
 
 ```markdown
 ## 读者要带走的三句话
