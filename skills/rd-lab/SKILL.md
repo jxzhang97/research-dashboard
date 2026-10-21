@@ -16,7 +16,7 @@ description: 课题 lab 任务的起草、执行与收尾（research-dashboard �
 3. 写出目标、步骤、交付物、机器。默认规则（语言、rd-notes、notation、并行、数据去向）不用重复，只写与默认不同的。标题二十字以内，细节放副标题或目标。
 4. 判断是否需要用户过目：默认 `status: awaiting_review`；用户原话或 promote_note 里说了"不用过目 / 直接做"就 `approved` 并立即进入 B。
 5. 在来源 idea 的 frontmatter 写 `promoted_lab: <lab id>`、`labs: [<lab id>]`、`status: lab`。记 log。
-6. **用户的意见**：用户在 dashboard 任务页写的意见会由程序追加到任务书末尾的「## 用户意见」（带时间，原话不动），并把 frontmatter `comments_pending` 设为 true；系统随即派一次 `revise_brief` 运行。处理：通读全部意见；按意见修改目标、步骤、交付物、特别要求（改写，不留两套）；在每条意见正下方写一段「**agent 回复 · <时间>**：改了什么、没改的为什么」；把 `comments_pending` 改为 false；状态保持 `awaiting_review` 等用户再看——除非用户在意见里明确说"可以 / 批准 / 开始"，那就 `approved` 并进入 B。运行中（`running`）的任务也可能收到意见：下一次运行开始时先读「用户意见」，按它调整，回复写在意见下面。
+6. **用户的意见**：用户在 dashboard 任务页写的意见会由程序追加到任务书末尾的「## 用户意见」（带时间，原话不动），并把 frontmatter `comments_pending` 设为 true；系统随即派一次 `revise_brief` 运行。处理：通读全部意见；按意见修改目标、步骤、交付物、特别要求（改写，不留两套）；在每条意见正下方写一段「**agent 回复 · <时间>**：改了什么、没改的为什么」；把 `comments_pending` 改为 false；状态保持 `awaiting_review` 等用户再看——除非用户在意见里明确说"可以 / 批准 / 开始"，那就 `approved` 并进入 B。已批准（`approved`）的任务书若还有未回复的意见，执行运行开工前先按它调整并回复。进行中或已完成（`running` / `done` / `waiting_answer` / `blocked`）的任务收到意见时，系统派 `address_comments` 运行，按 E 节处理。
 
 任务书模板：
 
@@ -127,6 +127,18 @@ created: 2026-10-02
 2. 判断停在哪一步（厚层未齐 / 等数值 / 审计被杀或进行中 / 审计报告已出未处理 / 复核未做或进行中 / 交接单未写 / 薄层未写 / 一致性未做或未处理 / 只差回写与 finish），从那一步继续；`rd finish --check <根> <lab>` 能直接列出收尾门槛还差什么。`notes.md` 只读与下一步直接相关的小节，不整体重读；已 commit 的东西不重算。
 3. Codex 作业还活着就 `--wait`；死了没结果就换个记录目录名重启。数值批量还在跑就核对进度、更新续跑单、**立刻结束运行**（不要在前台空等：登记过的作业一结束调度器就会再派，运行期间你占着课题的 agent 锁）。
 4. 收尾仍按 C 节；结束前更新 `resume.md`。连续三次续跑失败，调度器会把 lab 改成 `blocked` 让用户看。
+
+## E. 用户对结果的意见（任务已在进行或已完成）
+
+用户在任务页写的意见同样追加到任务书「## 用户意见」；任务状态是 `running` / `done` / `waiting_answer` / `blocked` 时，系统派一次 `address_comments` 运行（不等续跑：等数值的 lab 可能几天不续跑）。处理：
+
+1. 通读全部没有「agent 回复」的意见；读 `report.md`、`resume.md`（若有）和意见涉及的 notes 小节，不整体重读 notes。
+2. 每条意见归为一类：
+   - **提问、要求解释**：直接回答；读者也会有同样疑问的，把说明补进 `report.md` 的「边界」或 notes 对应小节。
+   - **要求补算、改分析、改结论**：`status` 改 `running`（已 `done` 的也改；`done` 只能再由 `rd finish` 写回），更新 `resume.md`，按 B/C 节做。改了厚层就重新审计并复核到 pass；改了结论就重写交接单、让 Codex 重写受影响的薄层并做一致性检查；最后 `rd finish`。一次运行做不完就留 `running` 并写清续跑单，调度器会续跑。
+   - **与你的判断有分歧、需要用户裁决**：按 rd-discussion 开讨论，不自己定。
+3. 在每条意见正下方写「**agent 回复 · <时间>**：做了什么、改了哪些文件、没改的为什么」；用户原话一字不动。
+4. frontmatter `comments_pending: false`；记 log；git commit。
 
 ### report.md 模板
 

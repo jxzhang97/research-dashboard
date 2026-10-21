@@ -38,6 +38,16 @@ PROMPTS = {
         " 薄层一致性检查（codex-audit.sh --kind consistency，--source 覆盖 notes、handoff、全部薄层输出）到 pass → 卡片两三句、index、log.md →"
         " `~/doc_unsyn/research-dashboard/rd finish . {id}` 通过才算 done（它会核对当前版本的审核报告与 doctor；不要自己改 status: done）；"
         "遇到必须由用户裁决的问题，按无人值守规则写讨论并把 status 改为 waiting_answer。"
+        "任务书末尾「## 用户意见」里若有还没有「agent 回复」的意见，开工前先按它调整，在意见正下方回复，并把 frontmatter 的 comments_pending 改为 false。"
+    ),
+    "address_comments": (
+        "用户在 dashboard 上对任务 labs/{id}/（「{title}」，状态 {status}）的结果提了意见，见任务书 brief.md 文末「## 用户意见」里还没有「agent 回复」的条目。"
+        "请按 rd-lab skill 的 E 节处理：通读全部意见；先读 report.md、resume.md（若有）和意见涉及的 notes 小节，不整体重读 notes。"
+        "每条意见归为三类之一并照做：(1) 提问或要求解释——直接回答，读者也会有同样疑问的把说明补进 report.md 的「边界」或 notes 对应小节；"
+        "(2) 要求补算、改分析或改结论——把 status 改为 running（已 done 的也改）、更新 resume.md、按 rd-lab B/C 节做：改了厚层就重新审计并复核到 pass，"
+        "改了结论就重写交接单、让 Codex 重写受影响的薄层并做一致性检查，最后 `~/doc_unsyn/research-dashboard/rd finish . {id}` 通过才回到 done；"
+        "一次运行做不完就留 running 并写清续跑单，调度器会续跑；(3) 与你的判断有分歧、需要用户裁决——按 rd-discussion 开讨论，不自己定。"
+        "在每条意见正下方写「**agent 回复 · <时间>**：做了什么、改了哪些文件、没改的为什么」，用户原话一字不动；把 frontmatter 的 comments_pending 改为 false；记 log，git commit。"
     ),
     "revise_brief": (
         "用户在 dashboard 上对任务书 labs/{id}/brief.md（「{title}」）提了意见，见文末「## 用户意见」里 comments_pending 之后的新条目。"

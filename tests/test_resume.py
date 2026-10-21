@@ -260,3 +260,35 @@ def test_resume_waits_for_registered_numerics(project_dir: Path):
         if sleeper.poll() is None:
             sleeper.kill()
             sleeper.wait()
+
+
+def test_comments_on_results_are_dispatched(project_dir: Path):
+    """任务进行中或已完成后用户在任务页写的意见：派 address_comments，不等续跑；待过目的仍是 revise_brief；批准的走 run_lab。"""
+    import os
+
+    from rd_core import config, cores
+    from rd_core.tick import PROMPTS, actionable
+
+    pr = Project(project_dir)
+    lab = "01-first-task"
+    _lab(project_dir, "done")
+    pr.comment_lab(lab, "图 2 的误差棒怎么来的？")
+    w = pr.pending_work()
+    item = next(x for x in w if x["kind"] == "address_comments")
+    assert item["status"] == "done" and "用户意见" in PROMPTS["address_comments"].format(**item)
+    # running 且登记的数值还活着：续跑会被挡，意见不被挡
+    _lab(project_dir, "running")
+    cores.claim(project_dir, 1, f"{lab} phase1", pid=os.getpid())
+    ready, deferred = actionable(pr, config.load(project_dir))
+    assert "address_comments" in [x["kind"] for x in ready]
+    assert "resume_lab" not in [x["kind"] for x in ready + deferred]
+    # 待过目的任务书：仍是 revise_brief
+    _lab(project_dir, "awaiting_review")
+    kinds = [x["kind"] for x in pr.pending_work()]
+    assert "revise_brief" in kinds and "address_comments" not in kinds
+    # 批准了：直接执行，run_lab 的提示里要求先处理未回复的意见
+    _lab(project_dir, "approved")
+    w = pr.pending_work()
+    kinds = [x["kind"] for x in w]
+    assert "run_lab" in kinds and "address_comments" not in kinds and "revise_brief" not in kinds
+    assert "用户意见" in PROMPTS["run_lab"].format(**next(x for x in w if x["kind"] == "run_lab"))

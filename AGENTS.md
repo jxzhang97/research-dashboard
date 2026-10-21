@@ -111,7 +111,7 @@
 ## 6. 任务流程
 
 1. **想法**：用户写在 `ideas/inbox/` 或 dashboard 速记。agent 按 `rd-idea` skill 整理进问题树，原话不动。
-2. **任务书**：用户请求升级（或 agent 判断该动手并征得同意）时，按 `rd-lab` skill 起草 `labs/NN-slug/brief.md`，用户原话原样保留，结合本文件和 PROJECT.md 写出目标、步骤、交付物、机器。状态 `awaiting_review`。**用户说了不用过目的，直接 `approved` 并开始。** 用户可以在 dashboard 的任务页对任务书写意见（追加到任务书的「## 用户意见」，原话不动）；系统会派一次 `revise_brief` 运行，agent 按意见修改任务书、在每条意见下回复，状态保持 `awaiting_review` 等用户再看。
+2. **任务书**：用户请求升级（或 agent 判断该动手并征得同意）时，按 `rd-lab` skill 起草 `labs/NN-slug/brief.md`，用户原话原样保留，结合本文件和 PROJECT.md 写出目标、步骤、交付物、机器。状态 `awaiting_review`。**用户说了不用过目的，直接 `approved` 并开始。** 用户可以在 dashboard 的任务页对任务书写意见（追加到任务书的「## 用户意见」，原话不动）；系统会派一次 `revise_brief` 运行，agent 按意见修改任务书、在每条意见下回复，状态保持 `awaiting_review` 等用户再看。任务进行中或已完成后，用户仍可在任务页对**结果**写意见：系统派 `address_comments` 运行，agent 回答或补做、在意见下回复，需要改结论的把任务重新打开（`running`）并重新收尾（rd-lab E 节）。
 3. **执行**：状态改 `running`，按任务书做；推导和讲解进 `notes.md`（`rd-notes`）；数值按第 5 节；中途的小结论随时写进 `report.md` 草稿。
 4. **收尾**（缺一不可，但每样只写一次；细节见 rd-lab C 节）：
    - 厚层齐：`notes.md`、`fig/`、`DATA.md`、`results/`、`sources/reading-map.md`（读了什么、没拿到什么）；

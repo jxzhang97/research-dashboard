@@ -922,14 +922,17 @@ class Project:
         for d in sorted(self.labs(), key=lambda x: x.id):
             st = d.meta.get("status")
             busy = self._run_for_lab(live, d.id) is not None
-            if st == "approved" and not busy:
+            if d.meta.get("comments_pending") and not busy and st in ("awaiting_review", "draft", "parked"):
+                add("revise_brief", d)
+            elif d.meta.get("comments_pending") and not busy and st in ("running", "done", "waiting_answer", "blocked"):
+                # 用户对进行中或已完成任务的结果提了意见：单独派一次运行处理，不等续跑（等数值的 lab 可能几天不续跑）
+                add("address_comments", d, status=st)
+            elif st == "approved" and not busy:
                 add("run_lab", d)
             elif st == "running" and not busy:
                 last = self.last_lab_run(d.id) or {}
                 add("resume_lab", d, last_run_id=last.get("id", "（没有记录）"), last_run_status=last.get("status", "?"),
                     last_run_result=" ".join(str(last.get("result") or "（无）").split())[:400], wake_note="")
-            elif d.meta.get("comments_pending") and st in ("awaiting_review", "draft", "parked") and not busy:
-                add("revise_brief", d)
         for d in self.ideas():
             if d.meta.get("promote_requested") and not d.meta.get("promoted_lab"):
                 add("promote_idea", d)
