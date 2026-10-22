@@ -15,7 +15,7 @@ collect() {  # 尾随参数：--expect/--source/--lab 带值透传，其余当�
   ARGS=()
   while [ $# -gt 0 ]; do
     case "$1" in
-      --expect|--source|--lab) ARGS+=("$1" "$2"); shift 2 ;;
+      --expect|--source|--lab|--model|--effort) ARGS+=("$1" "$2"); shift 2 ;;
       --*) ARGS+=("$1"); shift ;;
       *) ARGS+=(--image "$1"); shift ;;
     esac

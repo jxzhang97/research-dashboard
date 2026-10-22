@@ -119,6 +119,23 @@ def test_wait_returns_running_then_done(project_dir: Path, tmp_path: Path, monke
     assert st["state"] == "done"
 
 
+def test_per_job_model_effort_override_does_not_change_config(project_dir: Path, tmp_path: Path, monkeypatch):
+    fake = _fake_codex(tmp_path / "override", FAKE_OK)
+    monkeypatch.setenv("CODEX_BIN", str(fake))
+    config_path = project_dir / "config.toml"
+    before = config_path.read_bytes()
+    prompt = project_dir / "override-prompt.md"
+    prompt.write_text("{{MODEL}} {{EFFORT}}", encoding="utf-8")
+    result = codex.start(project_dir, "write", prompt, "override", model="gpt-6-astra", effort="high")
+    assert result["ok"]
+    record = Path(result["rec"])
+    job = json.loads((record / "job.json").read_text())
+    assert job["model"] == "gpt-6-astra" and job["effort"] == "high"
+    assert (record / "prompt.filled.md").read_text() == "gpt-6-astra high"
+    assert codex.wait(project_dir, "write", "override", max_seconds=30, poll=1)["state"] == "done"
+    assert config_path.read_bytes() == before
+
+
 def test_fail_closed_is_a_failure(project_dir: Path, tmp_path: Path, monkeypatch):
     fake = _fake_codex(tmp_path / "fc", FAKE_FAIL_CLOSED)
     res = _start(project_dir, fake, "t-fc", monkeypatch)

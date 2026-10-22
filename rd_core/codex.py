@@ -201,7 +201,8 @@ def _outcome(rec: Path) -> dict:
 
 # ---------- 启动 ----------
 def start(root: Path, kind: str, prompt: Path, name: str, images: list[Path] | None = None, lab: str = "",
-          expected: list[str] | None = None, sources: list[str] | None = None) -> dict:
+          expected: list[str] | None = None, sources: list[str] | None = None,
+          model: str | None = None, effort: str | None = None) -> dict:
     """组好记录目录，派一个独立会话的 worker 去跑 codex exec，立刻返回。
     expected：这次作业应产出的文件（相对课题根）；sources：它依据的源文件，启动时记哈希。"""
     if kind not in KINDS:
@@ -228,8 +229,8 @@ def start(root: Path, kind: str, prompt: Path, name: str, images: list[Path] | N
     shutil.copy(prompt, rec / "prompt.md")
     section = KINDS[kind][0]
     sec = config.load(root).get(section, {})
-    model = sec.get("model", "gpt-6-astra")
-    effort = sec.get("reasoning_effort", "xhigh")
+    model = model or sec.get("model", "gpt-6-astra")
+    effort = effort or sec.get("reasoning_effort", "xhigh")
     info = rec / "run_info.txt"
 
     codex, warn = find_codex()
@@ -442,7 +443,8 @@ def cli(args) -> int:
     root = Path(args.path).expanduser().resolve()
     if args.action == "start":
         res = start(root, args.kind, Path(args.prompt).expanduser(), args.name, [Path(i) for i in (args.image or [])], lab=args.lab or "",
-                    expected=args.expect or [], sources=args.source or [])
+                    expected=args.expect or [], sources=args.source or [],
+                    model=getattr(args, "model", None), effort=getattr(args, "effort", None))
         if not res["ok"]:
             print(json.dumps(res, ensure_ascii=False))
             return int(res["code"])
@@ -476,6 +478,8 @@ def add_parser(sub) -> None:
     p.add_argument("--prompt", help="提示词文件（start）")
     p.add_argument("--image", action="append", help="附图（start，可多次）")
     p.add_argument("--lab", help="所属 lab id（start，缺省从提示词推断）")
+    p.add_argument("--model", help="仅覆盖这次作业的模型，不修改课题配置")
+    p.add_argument("--effort", choices=["none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra"], help="仅覆盖这次作业的推理强度")
     p.add_argument("--expect", action="append", help="这次作业应产出的文件，相对课题根（start，可多次）；结束时缺失算失败，rd finish 据此找证据")
     p.add_argument("--source", action="append", help="这次作业依据的源文件（start，可多次）；记哈希，作业后被改过就算过期")
     p.add_argument("--sync", action="store_true", help="start 后一直等到结束（交互会话用）")
