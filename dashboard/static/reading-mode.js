@@ -6,6 +6,11 @@
   const english = () => catalog.enabled && requested === "en";
   const url = (lang) => { const u = new URL(location.href); u.searchParams.set("lang", lang); return u.href; };
   const words = {
+    "没有登记中的后台数值 · 给 AI 读：": "No registered background numerical jobs · AI-readable content: ",
+    "studio（$L\\ge9$ 的批量可按 AGENTS.md §5 交 pod）": "studio (batches with $L\\ge9$ may be submitted to pod under AGENTS.md §5)",
+    "意见（任务书或结果）":"Feedback on the plan or results",
+    "任务在进行或已完成：写下你对结果、报告或推导的意见。提交后系统会派一次运行处理：回答写在意见下面；需要补算或改结论的会重新打开任务（状态回到 running）并重新收尾。":"For ongoing or completed tasks, share feedback on the results, report, or derivation. After submission, an agent will review your feedback and reply below it. If further calculations or revised conclusions are needed, the task will reopen with status running and go through completion again.",
+    "已记下，agent 开始处理你的意见":"Feedback saved. The agent is starting to address it.",
     "pod（studio 只做后处理与画图）":"pod (postprocessing and plotting on studio)",
     "问题：":"Question: ",
     "已升级为":"Research task created:",
@@ -101,6 +106,7 @@
     "标签（针对某个 lab 的写 manual:<lab id>）":"Label (manual:<lab id> for a lab)",
   };
   const substitutions = [
+    [new RegExp("studio（\\$L\\\\ge9\\$ 的批量可按 AGENTS\\.md §5 交 pod）", "g"), "studio (batches with $L\\ge9$ may be submitted to pod under AGENTS.md §5)"],
     [/^找不到 /, "Not found: "], [/^加载失败：/, "Could not load: "],
     [/^只读：这个地址只能看，不能操作；但可以留名字投想法、向 agent 提问$/, "Read-only access. You can submit ideas or questions as a guest by leaving your name."],
     [/对应任务已按唯一方向修正、复核通过并收尾[:：]?/, "The related task has been corrected, reviewed and completed: "],
@@ -186,7 +192,11 @@
     "\\text{nat/格点}": "\\text{nat/site}",
     "\\rm 左": "\\rm left",
     "\\rm 右": "\\rm right",
-    "\\text{链间散布}": "\\text{between-chain spread}"
+    "\\text{链间散布}": "\\text{between-chain spread}",
+    "\\text{预言}": "\\text{prediction}",
+    "\\text{选择扇区}": "\\text{sector selection}",
+    "\\text{局域相关权重}": "\\text{local correlation weight}",
+    "\\text{轨道给出的振幅}": "\\text{amplitude from orbitals}"
   };
   function mathText(src) {
     if (!english()) return src;
