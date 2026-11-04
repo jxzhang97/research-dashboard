@@ -125,7 +125,9 @@ def completion_errors(root: Path, lab: str, project=None) -> list[str]:
 
 
 def doctor_problems(project) -> list[str]:
-    """`rd doctor` 的检查：断链、卡片缺节、read_depth、done 却没 report、idea parent 不存在。"""
+    """`rd doctor` 的检查：断链、卡片缺节、read_depth、done 却没 report、idea parent 不存在、
+    wiki 星图的先读关系（prereqs / part_of 指向不存在的页、成环）。"""
+    from . import wikimap
     problems = []
     table = project.link_table()
     for d in project.wiki_pages() + project.cards():
@@ -146,6 +148,7 @@ def doctor_problems(project) -> list[str]:
         p = d.meta.get("parent")
         if p and p not in ids:
             problems.append(f"idea parent 不存在: {d.path} → {p}")
+    problems += wikimap.problems(project)
     return problems
 
 

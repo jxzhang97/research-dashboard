@@ -234,3 +234,27 @@ button.small { font-size: 12px; padding: 2px 8px; }
 @media (max-width: 800px) { .english-reading .two { grid-template-columns: minmax(0, 1fr); } }
 @media (max-width: 600px) { .english-reading #toc-top .toc { grid-template-columns: minmax(0, 1fr); } }
 @media (max-width: 600px) { .english-reading .reference-panel .list .t { flex-basis: 100%; } }
+
+/* wiki 星图（rd_core/wikimap.py 算坐标，app.js 画） */
+.wiki-head { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; margin-bottom: 12px; }
+.wiki-head h1 { margin: 0; }
+.wiki-head .grow { flex: 1; }
+.seg { display: inline-flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+.seg button { border: 0; border-radius: 0; padding: 3px 12px; font-size: 13px; background: var(--panel); color: var(--muted); }
+.seg button.on { background: var(--accent-bg); color: var(--accent); }
+.starmap-wrap { border: 1px solid var(--line); border-radius: 10px; overflow-x: auto; line-height: 0; margin-bottom: 12px; }
+.starmap-wrap svg { display: block; margin: 0 auto; height: auto; }
+.starmap-wrap .st { cursor: pointer; }
+.starmap-wrap text { pointer-events: none; }
+.starmap-card { font-size: 14px; line-height: 1.8; }
+.smc-head { display: flex; justify-content: space-between; gap: 10px; flex-wrap: wrap; align-items: baseline; margin-bottom: 2px; }
+.smc-row { display: flex; gap: 10px; align-items: baseline; }
+.smc-row > .muted:first-child { flex: none; width: 6.5em; font-size: 13px; }
+.smc-row .smc-ans { margin: 0; opacity: 1; font-size: 14px; }
+.mapchip { cursor: pointer; margin: 2px 6px 2px 0; color: var(--text); }
+.mapchip:hover { text-decoration: none; background: var(--accent-bg); }
+.mapchip b { color: var(--accent); font-weight: 600; }
+.smc-go { margin: 8px 0 0; }
+.wiki-path { display: flex; gap: 4px 20px; flex-wrap: wrap; align-items: baseline; padding: 7px 12px; margin-bottom: 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); }
+/* 深色模式：纸面星图整体压暗一点，像挂在深色墙上的画 */
+@media (prefers-color-scheme: dark) { .starmap-wrap { filter: brightness(.86); } }

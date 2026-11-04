@@ -362,17 +362,152 @@
     if ($("#ok")) { $("#ok").onclick = act("approved"); $("#no").onclick = act("rejected"); }
   };
 
+  // ---------- wiki 星图 ----------
+  // 坐标由服务端 /api/wikimap 算好（rd_core/wikimap.py）；这里只画和处理点选。
+  // 配色取意紫禁城：分区色按顺序启用（第 k 区用第 k 色，相邻两色在正常视觉与红绿色弱下都能分开），
+  // 第 9 区起用淡墨；群青只用于选中与路线，不分给分区。t 是写字用的同色深一档（汉白玉底上对比度 ≥ 4.5）。
+  const MAP_SLOTS = [
+    { h: "#8F2D25", t: "#8F2D25", p: "红墙" }, { h: "#C29530", t: "#89691F", p: "黄琉璃瓦" },
+    { h: "#2F6C67", t: "#2F6C67", p: "梁枋上的青绿彩画" }, { h: "#8A7BAA", t: "#756890", p: "后妃袍服的雪青" },
+    { h: "#C04A2E", t: "#BD492D", p: "殿柱的朱漆" }, { h: "#3A8C8C", t: "#317878", p: "珐琅器上的松石绿" },
+    { h: "#8B4A2B", t: "#8B4A2B", p: "彩画里的赭石" }, { h: "#B08A4F", t: "#87693B", p: "朝服的香色" },
+  ];
+  const MAP_FOLD = { h: "#8A847B", t: "#5E5953" };
+  const MAP = { bg: "#F5F2EA", hi: "#2D4E86", ink: "#3A3530", edge: "#ABA59A", lab: "#3A3530" };
+  const SONG = "Songti SC, STSong, 'Noto Serif SC', serif";
+  const mapSlot = (k) => MAP_SLOTS[k] || MAP_FOLD;
+  const mapView = () => localStorage.getItem("rd.wikiView") || "map";
+  // 当前回答的第一句（公式里的句号不算）
+  const mapFirstSentence = (s) => { let inMath = false; for (let i = 0; i < s.length; i++) { if (s[i] === "$") inMath = !inMath; else if (!inMath && s[i] === "。") return s.slice(0, i + 1); } return s; };
+
+  function mapModel(data) {
+    const N = {}; data.nodes.forEach((n, i) => { N[n.id] = { ...n, order: i }; });
+    const anc = (i, s = new Set()) => { (N[i].prereqs || []).forEach((p) => { if (!s.has(p)) { s.add(p); anc(p, s); } }); return s; };
+    const route = (i) => [...anc(i)].sort((a, b) => N[a].depth - N[b].depth || N[a].order - N[b].order).concat(i);
+    return { N, anc, route };
+  }
+
+  function starMapSvg(data, M, sel) {
+    const { N } = M, W = data.width, H = data.height;
+    const aa = sel ? M.anc(sel) : new Set(), rl = sel ? M.route(sel) : [];
+    const near = new Set(sel ? [sel, ...N[sel].prereqs, ...N[sel].next, ...data.see.filter((s) => s.includes(sel)).flat()] : []);
+    const ff = ` font-family="${SONG}"`;
+    const seg = (a, b) => {
+      const p = N[a], q = N[b], dx = q.x - p.x, dy = q.y - p.y, l = Math.hypot(dx, dy) || 1, ra = p.r + 3, rb = q.r + 3;
+      return [p.x + dx * ra / l, p.y + dy * ra / l, q.x - dx * rb / l, q.y - dy * rb / l].map((v) => v.toFixed(1));
+    };
+    const line = (g, c, w, o, d) => `<line x1="${g[0]}" y1="${g[1]}" x2="${g[2]}" y2="${g[3]}" stroke="${c}" stroke-width="${w}" stroke-opacity="${o}"${d ? ` stroke-dasharray="${d}"` : ""}/>`;
+    const used = [...new Set(data.nodes.map((n) => n.region))];
+    let h = `<defs>${used.map((k) => { const c = mapSlot(k).h; return `<radialGradient id="smw${k}"><stop offset="0" stop-color="${c}" stop-opacity="0.24"/><stop offset="0.6" stop-color="${c}" stop-opacity="0.13"/><stop offset="1" stop-color="${c}" stop-opacity="0.03"/></radialGradient>`; }).join("")}</defs>`;
+    h += `<rect class="bgr" x="0" y="0" width="${W}" height="${H}" fill="${MAP.bg}"/><g pointer-events="none">`;
+    // 晕染：面积 ∝ 后面几页以它为前置
+    data.nodes.forEach((n) => { h += `<circle cx="${n.x}" cy="${n.y}" r="${n.halo}" fill="url(#smw${n.region})"/>`; });
+    h += `<rect x="8" y="8" width="${W - 16}" height="${H - 16}" fill="none" stroke="${MAP.ink}" stroke-opacity="0.45" stroke-width="1.4"/><rect x="13" y="13" width="${W - 26}" height="${H - 26}" fill="none" stroke="${MAP.ink}" stroke-opacity="0.3" stroke-width="0.6"/>`;
+    data.regions.forEach((r) => {
+      const c = mapSlot(r.index).t, y0 = r.lines.length > 1 ? 38 : 46;
+      h += `<text x="${r.x}" y="${y0}" text-anchor="middle" font-size="13" letter-spacing="${r.spacing}" fill="${c}"${ff}>${r.lines.map((t, j) => `<tspan x="${r.x}" dy="${j ? 16 : 0}">${esc(t)}</tspan>`).join("")}</text>`;
+    });
+    // 题注：分区用到了哪几种颜色就写哪几句
+    const ph = data.regions.filter((r) => r.index < MAP_SLOTS.length).map((r) => `<tspan fill="${MAP_SLOTS[r.index].t}">${MAP_SLOTS[r.index].p}</tspan>`);
+    if (ph.length) {
+      const tail = (data.regions.some((r) => r.index >= MAP_SLOTS.length) ? "，其余分区用淡墨" : "") + "，汉白玉作底。";
+      const att = `font-size="11" letter-spacing="0.5" fill="${MAP.ink}" fill-opacity="0.8"${ff}`;
+      if (ph.length <= 4) h += `<text x="26" y="${H - 28}" ${att}>颜色取意紫禁城：${ph.join("、")}${tail}</text>`;
+      else { const k = Math.ceil(ph.length / 2); h += `<text x="26" y="${H - 45}" ${att}>颜色取意紫禁城：${ph.slice(0, k).join("、")}、</text><text x="26" y="${H - 28}" ${att}>${ph.slice(k).join("、")}${tail}</text>`; }
+    }
+    // 卫星轨道
+    data.nodes.filter((n) => n.parent).forEach((n) => { const p = N[n.parent]; h += `<circle cx="${p.x}" cy="${p.y}" r="${Math.hypot(n.x - p.x, n.y - p.y).toFixed(1)}" fill="none" stroke="${MAP.edge}" stroke-opacity="0.8" stroke-width="0.8" stroke-dasharray="1 3"/>`; });
+    // 连线：平时只画直接的先读关系（总表页的不画）；没写 prereqs 的 wiki 用 [[链接]] 淡淡地连
+    if (sel || !data.has_prereqs) data.see.forEach(([a, b]) => { if (!sel || a === sel || b === sel) h += line(seg(a, b), MAP.edge, 1, sel ? 0.9 : 0.6, "2 4"); });
+    data.edges.forEach((e) => {
+      const a = e.from, b = e.to;
+      if (sel && b === sel) return h += line(seg(a, b), MAP.hi, 1.9, 1);
+      if (sel && a === sel) return h += line(seg(a, b), MAP.ink, 1.5, 0.85);
+      if (e.implied || N[b].hub) return;
+      if (sel && aa.has(a) && aa.has(b)) return h += line(seg(a, b), MAP.hi, 1, 0.6, "4 3");
+      h += line(seg(a, b), MAP.edge, 1, sel ? 0.22 : 0.85);
+    });
+    h += `</g>`;
+    data.nodes.forEach((n) => {
+      const c = mapSlot(n.region).h, r = n.r, dim = sel && !near.has(n.id) && !aa.has(n.id), up = n.parent && n.y < N[n.parent].y;
+      let g = `<g class="st" data-id="${esc(n.id)}" opacity="${dim ? 0.3 : 1}"><title>${esc(n.title)}</title><circle cx="${n.x}" cy="${n.y}" r="${r + 14}" fill="#000" fill-opacity="0"/>`;
+      g += n.hub ? `<polygon points="${n.x},${n.y - r - 2} ${n.x + r + 2},${n.y} ${n.x},${n.y + r + 2} ${n.x - r - 2},${n.y}" fill="${c}" stroke="${c}"/>` : `<circle cx="${n.x}" cy="${n.y}" r="${r}" fill="${c}"/>`;
+      g += `<circle cx="${n.x}" cy="${n.y}" r="${r + 3.2}" fill="none" stroke="${c}" stroke-opacity="0.45" stroke-width="0.7"/>`;
+      if (sel === n.id) g += `<circle cx="${n.x}" cy="${n.y}" r="${r + 6}" fill="none" stroke="${MAP.ink}" stroke-width="1.3"/>`;
+      const j = rl.indexOf(n.id);
+      if (j >= 0 && rl.length > 1) { const by = up ? n.y + r + 6 : n.y - r - 6; g += `<circle cx="${n.x + r + 6}" cy="${by}" r="7.5" fill="${MAP.hi}"/><text x="${n.x + r + 6}" y="${by}" text-anchor="middle" dominant-baseline="central" font-size="11" fill="${MAP.bg}">${j + 1}</text>`; }
+      const L = n.label;
+      g += `<text x="${L.x}" y="${L.y}" text-anchor="${L.anchor}" font-size="12" fill="${MAP.lab}"${ff}>${L.lines.map((t, k) => `<tspan x="${L.x}" dy="${k ? 14 : 0}">${esc(t)}</tspan>`).join("")}</text>`;
+      h += g + `</g>`;
+    });
+    return h;
+  }
+
+  function starMapCard(data, M, sel) {
+    if (!sel || !M.N[sel]) return `<span class="muted">点一颗星，看它的先读、读完可去和整条路线；双击直接打开那一页。</span>`;
+    const n = M.N[sel], rl = M.route(sel), reg = data.regions.find((r) => r.index === n.region);
+    const chipOf = (i, num) => `<a class="chip mapchip" data-go="${esc(i)}" title="${esc(M.N[i].title)}">${num ? `<b>${num}</b> ` : ""}${esc(M.N[i].short)}</a>`;
+    const where = [reg ? reg.name : "", n.parent ? `从属于「${M.N[n.parent].short}」` : "", n.hub ? "总表页" : ""].filter(Boolean).join(" · ");
+    return `<div class="smc-head"><a href="#/wiki/${esc(n.id)}"><b>${esc(n.title)}</b></a><span class="small muted">${esc(where)}</span></div>
+      ${n.answer ? `<div class="smc-row"><span class="muted">当前回答</span>${answerHtml(mapFirstSentence(n.answer), "answer smc-ans")}</div>` : ""}
+      <div class="smc-row"><span class="muted">分量</span><span>${n.desc ? `后面有 ${n.desc} 页以它为前置` : "后面暂无页以它为前置"} · 有 ${n.backlinks} 页链接到它</span></div>
+      <div class="smc-row"><span class="muted">先读</span><span>${n.prereqs.map((i) => chipOf(i)).join("") || "无，可直接读"}</span></div>
+      <div class="smc-row"><span class="muted">读完可去</span><span>${n.next.map((i) => chipOf(i)).join("") || "目前是前沿"}</span></div>
+      ${rl.length > 1 ? `<div class="smc-row"><span class="muted">读懂它的路线</span><span>${rl.map((i, j) => chipOf(i, j + 1)).join("")}</span></div>` : ""}
+      <p class="smc-go"><a class="btn primary" href="#/wiki/${esc(n.id)}">读这一页 →</a></p>`;
+  }
+
+  async function starMapPage(api) {
+    const data = await api("/api/wikimap").catch(() => null);
+    if (!data) return false;  // 服务还是旧版本（没有 /api/wikimap）：退回列表
+    const M = mapModel(data);
+    let sel = sessionStorage.getItem("rd.mapSel"); if (!M.N[sel]) sel = null;
+    const W = data.width;
+    const sub = data.nodes.length ? `${data.nodes.length} 个概念 · 从左往右读${data.has_prereqs ? " · 晕染越大，后面越多页靠它" : " · 还没有标注先读关系（prereqs），按索引分区排列"}` : "还没有概念页";
+    main.innerHTML = `<div class="wiki-head"><h1>Wiki</h1><span class="small muted">${sub}</span><span class="grow"></span>${mapToggle("map")}</div>
+      <div class="starmap-wrap" style="background:${MAP.bg}"><svg id="starmap" viewBox="0 0 ${W} ${data.height}" style="width:100%;min-width:${Math.round(W * 0.72)}px;max-width:${Math.round(W * 1.1)}px" font-family="${esc(SONG)}"></svg></div>
+      <div class="panel starmap-card" id="smcard"></div>
+      ${data.problems.length ? `<p class="small muted">星图数据有问题（rd doctor 也会报）：${data.problems.map(esc).join("；")}</p>` : ""}`;
+    const svg = $("#starmap"), card = $("#smcard");
+    const draw = () => {
+      svg.innerHTML = starMapSvg(data, M, sel);
+      card.innerHTML = starMapCard(data, M, sel); renderAnswers(card);
+      if (sel) sessionStorage.setItem("rd.mapSel", sel); else sessionStorage.removeItem("rd.mapSel");
+      svg.querySelectorAll(".st").forEach((el) => {
+        el.onclick = (e) => { e.stopPropagation(); sel = el.dataset.id; draw(); };
+        el.ondblclick = () => { location.hash = "#/wiki/" + el.dataset.id; };
+      });
+      svg.querySelector(".bgr").onclick = () => { sel = null; draw(); };
+      card.querySelectorAll("[data-go]").forEach((el) => { el.onclick = () => { sel = el.dataset.go; draw(); }; });
+    };
+    draw();
+    bindMapToggle();
+    return true;
+  }
+  const mapToggle = (cur) => `<span class="seg">${[["map", "星图"], ["list", "列表"]].map(([v, t]) => `<button data-view="${v}" class="${v === cur ? "on" : ""}">${t}</button>`).join("")}</span>`;
+  function bindMapToggle() {
+    document.querySelectorAll("[data-view]").forEach((b) => { b.onclick = () => { localStorage.setItem("rd.wikiView", b.dataset.view); pages.wiki(); }; });
+  }
+
   pages.wiki = async (slug) => {
     const api = pageApi();  // 绑定到本页：切走后请求永不返回，不再覆盖新页
     if (!slug && reader.english()) slug = "index";
-    const list = await api("/api/wiki");
+    if (!slug && mapView() === "map" && await starMapPage(api)) return;
+    const [list, map] = await Promise.all([api("/api/wiki"), slug && !reader.english() ? api("/api/wikimap").catch(() => null) : null]);
     const side = list.map((p) => `<a href="#/wiki/${esc(p.id)}" class="${p.id === slug ? "cur" : ""}">${esc(p.title)}</a>`).join("");
     let content = `<p class="muted">左侧选择一页。wiki 是当前理解的汇编，由 agent 维护并随进展重写；[[双括号]] 互相链接。课题到哪了看<a href="#/">首页</a>。</p>`;
-    main.innerHTML = `<h1>Wiki</h1><div class="two"><div class="side panel">${side || "<span class='muted'>还没有页面</span>"}</div><div id="content">${content}</div></div>`;
+    main.innerHTML = `<div class="wiki-head"><h1>Wiki</h1><span class="grow"></span>${!slug && !reader.english() ? mapToggle("list") : ""}</div><div class="two"><div class="side panel">${side || "<span class='muted'>还没有页面</span>"}</div><div id="content">${content}</div></div>`;
+    bindMapToggle();
     if (slug) {
       const d = await api(`/api/wiki/${slug}`);
       const back = (d.backlinks || []).map((b) => `<a href="#/wiki/${esc(b.id)}">${esc(b.title)}</a>`).join(" · ");
-      const c = $("#content"); c.innerHTML = `<h2 style="margin-top:0">${esc(d.title)}</h2><div class="meta"><span>更新：${esc(d.updated)}</span>${(d.meta.tags || []).map((t) => `<span class="chip">${esc(t)}</span>`).join("")}${(d.meta.audited_by || []).length ? `<span class="chip audit pass" title="${esc((d.meta.audited_by || []).join(", "))}">依据已审计</span>` : ""}</div><div id="toc-top"></div><div class="panel" id="body"></div>${back ? `<p class="small muted">反向链接：${back}</p>` : ""}`;
+      // 先读 · 读完可去 · 在星图中定位（来自星图数据；不在星图上的页不显示）
+      const node = map && map.nodes.find((n) => n.id === slug);
+      const T = node ? Object.fromEntries(map.nodes.map((n) => [n.id, n])) : {};
+      const links = (ids) => ids.map((i) => `<a href="#/wiki/${esc(i)}">${esc(T[i].short)}</a>`).join(" · ");
+      const path = node ? `<div class="wiki-path small"><span><span class="muted">先读</span> ${links(node.prereqs) || "无，可直接读"}</span><span><span class="muted">读完可去</span> ${links(node.next) || "目前是前沿"}</span><a href="#/wiki" id="locate">在星图中定位</a></div>` : "";
+      const c = $("#content"); c.innerHTML = `<h2 style="margin-top:0">${esc(d.title)}</h2><div class="meta"><span>更新：${esc(d.updated)}</span>${(d.meta.tags || []).map((t) => `<span class="chip">${esc(t)}</span>`).join("")}${(d.meta.audited_by || []).length ? `<span class="chip audit pass" title="${esc((d.meta.audited_by || []).join(", "))}">依据已审计</span>` : ""}</div>${path}<div id="toc-top"></div><div class="panel" id="body"></div>${back ? `<p class="small muted">反向链接：${back}</p>` : ""}`;
+      if ($("#locate")) $("#locate").onclick = () => { sessionStorage.setItem("rd.mapSel", slug); localStorage.setItem("rd.wikiView", "map"); };
       const body = render(d.body, dirOf(d.path), d.translation); $("#body").appendChild(body);
       const toc = tocFor(body, 5); if (toc) $("#toc-top").appendChild(toc);
     }

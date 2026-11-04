@@ -167,12 +167,39 @@ def _relative(root: Path, path: str | Path) -> str:
         raise ValueError(f"输出/源文件必须在课题目录内: {path}")
 
 
+# wiki 页 frontmatter 里给星图用的导航字段（rd_core/wikimap.py）。只改这些不算改了内容，审核不因此过期。
+_MAP_FIELD = re.compile(r"^(?:short|prereqs|part_of|hub|map)\s*:")
+
+
+def _content_bytes(f: Path, rel: str) -> bytes:
+    data = f.read_bytes()
+    if not (rel.startswith("wiki/") and rel.endswith(".md") and data.startswith(b"---")):
+        return data
+    text = data.decode("utf-8", errors="surrogateescape")
+    m = re.match(r"\A---[ \t]*\r?\n(.*?\r?\n)---[ \t]*(?:\r?\n|\Z)", text, re.S)
+    if not m:
+        return data
+    lines = m.group(1).splitlines(keepends=True)
+    keep, skipping = [], False
+    for ln in lines:
+        if _MAP_FIELD.match(ln):
+            skipping = True
+            continue
+        if skipping and ln[:1] in (" ", "\t", "-"):
+            continue  # 块状 YAML 列表的续行
+        skipping = False
+        keep.append(ln)
+    if len(keep) == len(lines):
+        return data
+    return (text[:m.start(1)] + "".join(keep) + text[m.end(1):]).encode("utf-8", errors="surrogateescape")
+
+
 def _hash(root: Path, paths) -> dict[str, str | None]:
-    """{相对路径: sha256}；文件不存在为 None。"""
+    """{相对路径: sha256}；文件不存在为 None。wiki 页去掉星图导航字段再算。"""
     out = {}
     for rel in paths:
         f = root / rel
-        out[rel] = hashlib.sha256(f.read_bytes()).hexdigest() if f.is_file() else None
+        out[rel] = hashlib.sha256(_content_bytes(f, rel)).hexdigest() if f.is_file() else None
     return out
 
 

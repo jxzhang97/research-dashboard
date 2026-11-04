@@ -19,7 +19,7 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, PlainTex
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from . import TEMPLATE_ROOT, config, cores, fm
+from . import TEMPLATE_ROOT, config, cores, fm, wikimap
 from .project import Project
 from .runner import Runner, new_run_id, stop_run
 from .tick import PROMPTS
@@ -387,6 +387,11 @@ def create_app(project: Project) -> FastAPI:
     @app.get("/api/wiki")
     def wiki_list():
         return [d.summary() for d in project.wiki_pages()]
+
+    @app.get("/api/wikimap")
+    def wiki_map():
+        """wiki 星图：分区、先读关系与算好的坐标（见 rd_core/wikimap.py）。"""
+        return wikimap.wiki_map(project)
 
     @app.get("/api/wiki/{slug:path}")
     def wiki_page(slug: str):
