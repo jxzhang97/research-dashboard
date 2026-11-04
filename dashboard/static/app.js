@@ -262,6 +262,31 @@
   }
   new MutationObserver(() => disableControls(main)).observe(main, { childList: true, subtree: true });
 
+  // ---------- 左栏折叠（wiki 页目录、文档页的章节目录与同文件夹） ----------
+  // 读具体一页时左栏默认收起，正文占满宽度；用户点过的开合状态按页面种类记在 localStorage，下次照旧。
+  function sideToggle(key, defaultOpen) {
+    const saved = localStorage.getItem("rd.side." + key);
+    let open = saved ? saved === "open" : defaultOpen;
+    const label = () => (open ? "◀ 收起目录" : "▶ 展开目录");
+    const tip = () => (open ? "收起左栏，正文占满宽度" : "展开左栏");
+    return {
+      open,
+      btn: `<button class="side-toggle small guest-ok" id="side-toggle" title="${tip()}">${label()}</button>`,
+      bind() {
+        const b = $("#side-toggle"), two = $("#two");
+        if (!b || !two) return;
+        if (!two.querySelector(".side")) { b.remove(); return; }
+        two.classList.toggle("side-collapsed", !open);
+        b.onclick = () => {
+          open = !open;
+          two.classList.toggle("side-collapsed", !open);
+          localStorage.setItem("rd.side." + key, open ? "open" : "closed");
+          b.textContent = label(); b.title = tip();
+        };
+      },
+    };
+  }
+
   // ---------- 页面 ----------
   const pages = {};
 
@@ -496,8 +521,10 @@
     const [list, map] = await Promise.all([api("/api/wiki"), slug && !reader.english() ? api("/api/wikimap").catch(() => null) : null]);
     const side = list.map((p) => `<a href="#/wiki/${esc(p.id)}" class="${p.id === slug ? "cur" : ""}">${esc(p.title)}</a>`).join("");
     let content = `<p class="muted">左侧选择一页。wiki 是当前理解的汇编，由 agent 维护并随进展重写；[[双括号]] 互相链接。课题到哪了看<a href="#/">首页</a>。</p>`;
-    main.innerHTML = `<div class="wiki-head"><h1>Wiki</h1><span class="grow"></span>${!slug && !reader.english() ? mapToggle("list") : ""}</div><div class="two"><div class="side panel">${side || "<span class='muted'>还没有页面</span>"}</div><div id="content">${content}</div></div>`;
+    const st = sideToggle("wiki", !slug);  // 看目录时展开，读具体一页时默认收起
+    main.innerHTML = `<div class="wiki-head"><h1>Wiki</h1>${slug ? st.btn : ""}<span class="grow"></span>${!slug && !reader.english() ? mapToggle("list") : ""}</div><div class="two" id="two"><div class="side panel">${side || "<span class='muted'>还没有页面</span>"}</div><div id="content">${content}</div></div>`;
     bindMapToggle();
+    if (slug) st.bind();
     if (slug) {
       const d = await api(`/api/wiki/${slug}`);
       const back = (d.backlinks || []).map((b) => `<a href="#/wiki/${esc(b.id)}">${esc(b.title)}</a>`).join(" · ");
@@ -588,13 +615,15 @@
         <span class="chip ${pend ? "open" : "done"}">${pend ? "发现待处理" : d.meta.handled ? "发现已处理" : "无待处理发现"}</span>
         ${d.meta.lab ? `<a href="#/labs/${esc(d.meta.lab)}">← 回到 lab</a>` : ""}</div>`;
     }
+    const st = sideToggle("doc", false);  // 文档页的章节目录与同文件夹默认收起，正文占满宽度
     main.innerHTML = `<p class="crumbs small">${crumbs.join(" / ")}</p><h1>${esc(title)}</h1>
-      <div class="meta"><span>更新：${esc(d.updated || "")}</span>${d.meta.status ? chip(d.meta.status) : ""}<a href="/api/file?path=${encodeURIComponent(path)}" target="_blank">原文件</a></div>
-      ${auditBanner}<div class="two"><div class="side panel" id="toc-side">${sib ? `<div class="small muted" style="margin-top:10px">同文件夹</div>${sib}` : ""}</div><div class="panel" id="body"></div></div>`;
+      <div class="meta"><span>更新：${esc(d.updated || "")}</span>${d.meta.status ? chip(d.meta.status) : ""}<a href="/api/file?path=${encodeURIComponent(path)}" target="_blank">原文件</a>${st.btn}</div>
+      ${auditBanner}<div class="two" id="two"><div class="side panel" id="toc-side">${sib ? `<div class="small muted" style="margin-top:10px">同文件夹</div>${sib}` : ""}</div><div class="panel" id="body"></div></div>`;
     const baseDir = base || d.meta.base || dirOf(path);
     const body = render(d.body, baseDir, d.translation); $("#body").appendChild(body);
     const toc = tocFor(body, 3); if (toc) $("#toc-side").prepend(toc);
     if (!toc && !sib) { $("#toc-side").remove(); $("#body").parentElement.style.gridTemplateColumns = "1fr"; }
+    st.bind();  // 没有左栏（既无目录也无同文件夹）时按钮自动去掉
     scrollToFrag(body, frag);
   };
 

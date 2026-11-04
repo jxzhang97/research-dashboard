@@ -71,6 +71,12 @@ details summary { cursor: pointer; color: var(--muted); }
 #toast.on { opacity: 1; }
 .two { display: grid; grid-template-columns: 280px 1fr; gap: 18px; }
 @media (max-width: 800px) { .two { grid-template-columns: 1fr; } header { flex-wrap: wrap; } }
+/* 左栏折叠：读具体一页时默认收起，正文占满宽度；按钮在页头 */
+.two.side-collapsed { grid-template-columns: minmax(0, 1fr) !important; }
+.two.side-collapsed > .side { display: none; }
+.side-toggle { font-size: 12px; padding: 2px 8px; color: var(--muted); background: var(--panel); border: 1px solid var(--line); border-radius: 8px; cursor: pointer; white-space: nowrap; }
+.side-toggle:hover { color: var(--accent); border-color: var(--accent); }
+.meta .side-toggle { margin-left: auto; }
 .side a { display: block; padding: 4px 0; border-bottom: 1px solid var(--line); }
 .side a.cur { color: var(--text); font-weight: 600; }
 /* 图：alt 当图注；lab 页画廊 */
