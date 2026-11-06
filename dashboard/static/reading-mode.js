@@ -6,6 +6,7 @@
   const english = () => catalog.enabled && requested === "en";
   const url = (lang) => { const u = new URL(location.href); u.searchParams.set("lang", lang); return u.href; };
   const words = {
+    "studio（L=3 全平面、自由谱/ED/HF 标线、后处理与画图、L=8 六点版两行）+ pod（L=6 全平面、费米型相界的 L=4,5,7 与 L=8 六点版一行（largemem）、玻色型相界的 L=9）": "studio (L=3 full plane, free spectrum/ED/HF reference lines, post-processing and plotting, two rows of the L=8 six-point version) + pod (L=6 full plane, L=4,5,7 along the fermionic phase boundary and one row of the L=8 six-point version (largemem), L=9 along the bosonic phase boundary)",
     "没有登记中的后台数值 · 给 AI 读：": "No registered background numerical jobs · AI-readable content: ",
     "studio（$L\\ge9$ 的批量可按 AGENTS.md §5 交 pod）": "studio (batches with $L\\ge9$ may be submitted to pod under AGENTS.md §5)",
     "意见（任务书或结果）":"Feedback on the plan or results",
@@ -197,7 +198,9 @@
     "\\text{预言}": "\\text{prediction}",
     "\\text{选择扇区}": "\\text{sector selection}",
     "\\text{局域相关权重}": "\\text{local correlation weight}",
-    "\\text{轨道给出的振幅}": "\\text{amplitude from orbitals}"
+    "\\text{轨道给出的振幅}": "\\text{amplitude from orbitals}",
+    "\\rm 末段": "\\rm final",
+    "\\text{为能带反转条件}": "\\text{ is the band-inversion condition}"
   };
   function mathText(src) {
     if (!english()) return src;
