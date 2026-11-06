@@ -89,7 +89,30 @@
   function protectMath(src) {
     const store = [];
     const keep = (m) => { store.push(m); return `MATHPH${store.length - 1}ENDPH`; };
-    src = src.replace(/\$\$[\s\S]+?\$\$/g, keep).replace(/\\\[[\s\S]+?\\\]/g, keep).replace(/\\\([\s\S]+?\\\)/g, keep)
+    let containers;
+    const keepDelimited = (math, offset) => {
+      const prefix = src.slice(src.lastIndexOf("\n", offset - 1) + 1, offset);
+      if (!math.includes("\n") || !prefix.includes(">")) return keep(math);
+      // The placeholder hides continuation lines from markdown-it. Remove only
+      // their enclosing quote markers before passing the TeX to KaTeX. Ask the
+      // block parser for the depth so nested lists/quotes and code stay distinct.
+      containers ||= md.parse(src, {}).filter((t) => t.map && ["blockquote_open", "fence", "code_block"].includes(t.type));
+      const line = src.slice(0, offset).split("\n").length - 1;
+      const enclosing = containers.filter((t) => t.map[0] <= line && line < t.map[1]);
+      if (enclosing.some((t) => t.type !== "blockquote_open")) return keep(math);
+      const depth = enclosing.length;
+      return keep(math.split("\n").map((text, i) => {
+        if (!i) return text;
+        for (let level = 0; level < depth; level++) {
+          const marker = text.match(/^[ \t]*>[ \t]?/);
+          if (!marker) break; // Markdown also permits lazy continuation lines.
+          text = text.slice(marker[0].length);
+        }
+        return text;
+      }).join("\n"));
+    };
+    // One pass keeps source offsets valid for all three multiline delimiters.
+    src = src.replace(/\$\$[\s\S]+?\$\$|\\\[[\s\S]+?\\\]|\\\([\s\S]+?\\\)/g, keepDelimited)
       .replace(/(^|[^\\$])\$(?!\s)([^$\n]+?)(?<!\s)\$(?!\d)/g, (m, pre, body) => pre + keep("$" + body + "$"));
     return { src, store };
   }
