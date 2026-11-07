@@ -261,6 +261,7 @@
     const running = (OVERVIEW.queue.current ? 1 : 0) + OVERVIEW.queue.pending.length;
     const counts = { ...a.counts, runs: running };
     document.querySelectorAll(".badge").forEach((b) => { const n = counts[b.dataset.badge] || 0; b.textContent = n; b.classList.toggle("on", n > 0); });
+    if ($("#nav-mine")) $("#nav-mine").hidden = !OVERVIEW.mine;
     // 本机其他课题的 dashboard：同一主机、不同端口
     try {
       const others = (await api("/api/projects")).filter((p) => p.name !== OVERVIEW.project.name && p.exists);
@@ -313,6 +314,138 @@
   // ---------- 页面 ----------
   const pages = {};
 
+  // ---------- 我的下一步（Project Notes 里本课题那一页的 next_step；网页、Obsidian、rd next 改的是同一个文件） ----------
+  function myNext(n, standalone) {
+    const ro = !!OVERVIEW.readonly;
+    if (!n || (ro && !n.next_step && !n.next_plan)) return null;
+    const box = document.createElement("div");
+    box.className = "mynext" + (standalone ? " solo" : "");
+    const tools = ro ? "" : `${n.obsidian ? `<a href="${esc(n.obsidian)}" title="在 Obsidian 里打开 Project Notes 的这一页">Project Notes</a>` : ""}<button class="small" id="mn-edit">${n.next_step ? "改" : "写"}</button>`;
+    box.innerHTML = `<div class="mn-head"><span class="mn-label">${reader.english() ? "My next step" : "我的下一步"}</span>${n.updated ? `<span>更新 ${esc(n.updated)}</span>` : ""}<span class="mn-tools">${tools}</span></div>
+      <div class="mn-text" id="mn-text">${n.next_step ? esc(n.next_step) : `<span class="mn-empty">还没写。这里写的和 Project Notes 里的 next_step 是同一份。</span>`}</div>`;
+    if (n.next_plan) { const plan = document.createElement("div"); plan.className = "mn-plan"; plan.appendChild(render(n.next_plan)); box.appendChild(plan); }
+    const edit = box.querySelector("#mn-edit");
+    if (edit) edit.onclick = () => {
+      const t = box.querySelector("#mn-text");
+      t.innerHTML = `<div class="mn-form"><input id="mn-input" maxlength="300" placeholder="接下来要做什么，一句话"><button class="primary small" id="mn-save">保存</button><button class="small" id="mn-cancel">取消</button></div>`;
+      const inp = t.querySelector("#mn-input"); inp.value = n.next_step || ""; inp.focus();
+      const restore = () => { t.innerHTML = n.next_step ? esc(n.next_step) : `<span class="mn-empty">还没写。这里写的和 Project Notes 里的 next_step 是同一份。</span>`; };
+      const save = async () => {
+        try { const out = await api("/api/notes/next", { text: inp.value }); Object.assign(n, out); OVERVIEW.notes = out; box.replaceWith(myNext(n, standalone) || document.createElement("div")); toast("已写进 Project Notes"); }
+        catch (e) { toast("没有写成：" + e.message); }
+      };
+      t.querySelector("#mn-save").onclick = save; t.querySelector("#mn-cancel").onclick = restore;
+      inp.onkeydown = (e) => { if (e.key === "Enter" && !e.isComposing) save(); else if (e.key === "Escape") restore(); };
+    };
+    return box;
+  }
+
+  // ---------- 我的理解（课题负责人自己的物理图像，挂在出处那一节之后；rd_core/mine.py） ----------
+  // 只读：理解由 agent 在用户批准措辞后经 rd mine 写入，网页不提供编辑。楷体 + 朱色细竖线 + 小字标签；引的那句话下面划朱色虚线。
+  let MINE = null, MINE_AT = 0;
+  async function mineItems(fresh) {
+    if (!fresh && MINE && Date.now() - MINE_AT < 30000) return MINE;
+    try { MINE = (await apiBg("/api/mine")).items || []; } catch (e) { MINE = MINE || []; }
+    MINE_AT = Date.now(); return MINE;
+  }
+  // 与 rd_core/mine.py 的 plain() 同一套规则：去掉公式、markdown 记号和空白再比对
+  const MINE_SKIP = /[\s*`#>|\\]/;
+  const plainQuote = (s) => String(s || "").replace(/\$\$[\s\S]+?\$\$|\\\[[\s\S]+?\\\]|\\\([\s\S]+?\\\)|\$[^$\n]+?\$/g, "")
+    .replace(/\[\[([^\]|#]+)(?:#[^\]|]*)?(?:\|([^\]]*))?\]\]/g, (_, t, l) => l || t).replace(/!?\[([^\]]*)\]\([^)]*\)/g, "$1")
+    .replace(/^[ \t]*(?:>[ \t]?)*(?:[-+*]|\d+[.)])[ \t]+/gm, "").replace(/<[^>]+>/g, "").replace(/[\s*`#>|\\]/g, "");
+  const MINE_HL = window.CSS && CSS.highlights && window.Highlight ? new Highlight() : null;
+  if (MINE_HL) CSS.highlights.set("rd-mine", MINE_HL);
+  const mineRoute = (page) => {
+    const p = page.split("/");
+    if (p[0] === "wiki" && page.endsWith(".md")) return "#/wiki/" + page.slice(5, -3);
+    if (p[0] === "labs" && p.length === 3 && p[2] === "report.md") return "#/labs/" + p[1];
+    if (p[0] === "references" && p[1] === "cards" && p.length === 3) return "#/refs/" + p[2].slice(0, -3);
+    return docRoute(page);
+  };
+  // 节标题 → 页内锚点 id：与 render() 给标题编 id 的方式相同（英文阅读时 reading-mode 在译文标题前放同名锚点）
+  function headingSlug(text) {
+    const { src, store } = protectMath(text);
+    const tmp = document.createElement("div"); tmp.innerHTML = restoreMath(md.renderInline(wikilinks(src)), store);
+    return slugId(tmp.textContent);
+  }
+  function mineSection(div, section) {
+    if (!section) return null;
+    const anchor = div.querySelector(`[id="${CSS.escape(headingSlug(section))}"]`);
+    const h = anchor && anchor.classList.contains("translation-anchor") ? anchor.nextElementSibling : anchor;
+    if (!h || !/^H[1-6]$/.test(h.tagName)) return null;
+    const stop = (n) => n && /^H[1-6]$/.test(n.tagName) && +n.tagName[1] <= +h.tagName[1];
+    const nodes = []; let n = h.nextElementSibling;
+    while (n && !stop(n) && !(n.classList.contains("translation-anchor") && stop(n.nextElementSibling))) { nodes.push(n); n = n.nextElementSibling; }
+    return { h, nodes, end: n };
+  }
+  function mineQuote(roots, quote) {
+    const want = plainQuote(quote); if (want.length < 2) return null;
+    const chars = [], at = [];
+    for (const root of roots) {
+      const w = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, { acceptNode: (t) => t.parentElement && t.parentElement.closest(".katex, .katex-error, .mine, .translation-info") ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT });
+      for (let t; (t = w.nextNode());) for (let i = 0; i < t.data.length; i++) if (!MINE_SKIP.test(t.data[i])) { chars.push(t.data[i]); at.push([t, i]); }
+    }
+    const k = chars.join("").indexOf(want); if (k < 0) return null;
+    const r = document.createRange(); r.setStart(at[k][0], at[k][1]); r.setEnd(at[k + want.length - 1][0], at[k + want.length - 1][1] + 1);
+    return r;
+  }
+  function mineBlock(it, note) {
+    const box = document.createElement("aside"); box.className = "mine"; box.id = "mine-" + it.id;
+    box.innerHTML = `<div class="mine-label">${reader.english() ? "My understanding" : "我的理解"}</div>`;
+    box.appendChild(render(it.text));
+    if (note) { const n = document.createElement("div"); n.className = "mine-note"; n.textContent = note; box.appendChild(n); }
+    return box;
+  }
+  // 把挂在 path 这一页上的理解插进渲染好的正文 div，像夹批一样紧跟出处：引了句子就放在那句话所在段落之后
+  // （长节里放节末会离原句好几屏）；没引句子或句子找不到，放在那一节末尾；节也找不到放页末并注明原在哪一节
+  async function attachMine(div, path) {
+    const list = (await mineItems()).filter((it) => it.page === path)
+      .sort((a, b) => (a.created || "").localeCompare(b.created || "") || a.id.localeCompare(b.id));  // 同一节里先写的在前
+    if (!list.length || !div.isConnected) return;
+    for (const it of list) {
+      const sec = mineSection(div, it.section);
+      const range = it.quote ? mineQuote(sec ? sec.nodes : [div], it.quote) : null;
+      if (range && MINE_HL) MINE_HL.add(range);
+      if (range) {
+        let blk = range.endContainer.parentElement; while (blk.parentElement && blk.parentElement !== div) blk = blk.parentElement;
+        if (blk.parentElement === div) {
+          while (blk.nextElementSibling && blk.nextElementSibling.classList.contains("mine")) blk = blk.nextElementSibling;  // 同一段的几条按先后排
+          blk.after(mineBlock(it)); continue;
+        }
+      }
+      if (sec) { const box = mineBlock(it); sec.end ? sec.end.before(box) : sec.h.parentElement.appendChild(box); continue; }
+      div.appendChild(mineBlock(it, it.section ? (reader.english() ? `Originally under “${it.section}”` : `原在「${it.section}」一节`) : ""));
+    }
+    const go = sessionStorage.getItem("rd.mineGo"); const el = go && div.querySelector(`[id="${CSS.escape("mine-" + go)}"]`);
+    if (el) {
+      sessionStorage.removeItem("rd.mineGo");
+      setTimeout(() => { el.scrollIntoView({ block: "center" }); el.classList.add("flash"); setTimeout(() => el.classList.remove("flash"), 1800); }, 120);
+    }
+  }
+
+  pages.mine = async () => {
+    const api = pageApi();  // 绑定到本页：切走后请求永不返回，不再覆盖新页
+    const items = (await api("/api/mine")).items || [];
+    MINE = items; MINE_AT = Date.now();
+    const groups = new Map();  // 按出处分组；items 已按更新时间排好，组的先后跟着最新的一条
+    for (const it of items) { if (!groups.has(it.page)) groups.set(it.page, []); groups.get(it.page).push(it); }
+    const inline = (t) => render(t).innerHTML.replace(/^<p>|<\/p>\s*$/g, "");
+    main.innerHTML = `<h1>我的理解</h1><p class="muted small mine-intro">读 wiki 和推导时形成的物理图像，用我自己的话写。每一条也挂在正文里出处的后面。</p>
+      ${items.length ? "" : `<div class="panel muted">还没有。</div>`}<div id="mine-list"></div>`;
+    const wrap = $("#mine-list");
+    for (const [page, arr] of groups) {
+      const sec = document.createElement("section"); sec.className = "panel mine-group";
+      sec.innerHTML = `<h2><a href="${mineRoute(page)}">${esc(arr[0].page_title)}</a></h2>`;
+      for (const it of arr) {
+        const head = document.createElement("div"); head.className = "mine-src";
+        head.innerHTML = `<b class="mine-title">${esc(it.title)}</b><a href="${mineRoute(page)}" data-mine="${esc(it.id)}">${it.section ? inline(it.section) : "全文"}</a>${it.quote ? `<span class="mine-quote">「${inline(clip(it.quote, 90))}」</span>` : ""}<span class="muted">${esc(it.updated)}</span>`;
+        sec.append(head, mineBlock(it));
+      }
+      wrap.appendChild(sec);
+    }
+    wrap.querySelectorAll("[data-mine]").forEach((a) => { a.onclick = () => sessionStorage.setItem("rd.mineGo", a.dataset.mine); });
+  };
+
   pages.home = async () => {
     const api = pageApi();  // 绑定到本页：切走后请求永不返回，不再覆盖新页
     await refreshOverview();
@@ -333,6 +466,7 @@
     main.innerHTML = `
       <div class="row">
         <div class="col" style="flex:2">
+          ${o.status ? "" : `<div class="panel" id="mynext-solo" hidden></div>`}
           ${o.status ? `<div class="panel status" id="status"></div>` : `<div class="panel"><p class="muted">还没有 <code>STATUS.md</code>（课题状态页）。agent 在下次收尾时会建立它；也可以 <code>rd update</code> 补一个空模板。</p></div>`}
         </div>
         <div class="col">
@@ -349,15 +483,17 @@
         </div>
       </div>
       <details class="panel"><summary>最近动态（${o.log.length} 条）</summary><ul class="list small" data-original-text>${log}</ul></details>`;
+    const mn = myNext(o.notes, !o.status);
     if (o.status) {
       const box = $("#status");
       box.innerHTML = `<div class="meta"><span>课题状态 · 更新 ${esc(o.status.updated)}</span><a href="${docRoute("STATUS.md")}">全文</a></div>`;
+      if (mn) box.prepend(mn);
       box.appendChild(render(o.status.body, "", o.status.translation));
       if (reader.english()) {
         const intro = document.createElement("a"); intro.href = docRoute("PROJECT.md"); intro.textContent = "Project aims and model";
         box.querySelector(".meta").appendChild(intro);
       }
-    }
+    } else if (mn) { const solo = $("#mynext-solo"); solo.appendChild(mn); solo.hidden = false; }
   };
 
   pages.refs = async (key) => {
@@ -396,6 +532,7 @@
       <div class="panel" id="body"></div>`;
     const body = render(d.body, dirOf(d.path), d.translation); $("#body").appendChild(body);
     const toc = tocFor(body, 5); if (toc) $("#body").prepend(toc);
+    attachMine(body, d.path);
   };
 
   pages.inbox = async (key) => {
@@ -560,6 +697,7 @@
       if ($("#locate")) $("#locate").onclick = () => { sessionStorage.setItem("rd.mapSel", slug); localStorage.setItem("rd.wikiView", "map"); };
       const body = render(d.body, dirOf(d.path), d.translation); $("#body").appendChild(body);
       const toc = tocFor(body, 5); if (toc) $("#toc-top").appendChild(toc);
+      attachMine(body, d.path);
     }
   };
 
@@ -597,7 +735,7 @@
       ${d.data ? `<details class="panel"><summary>数据去向 DATA.md</summary><div id="data"></div></details>` : ""}
       <details class="panel"><summary>文件 (${(d.files || []).length})</summary><ul class="list small">${files}</ul></details>`;
     $("#brief").appendChild(render(d.body, labDir, d.translation));
-    if (d.report) $("#report").appendChild(render(d.report.body, labDir, d.report.translation));
+    if (d.report) { const rep = render(d.report.body, labDir, d.report.translation); $("#report").appendChild(rep); attachMine(rep, labDir + "/report.md"); }
     if (d.data) $("#data").appendChild(render(d.data.body, labDir, d.data.translation));
     if ($("#approve")) $("#approve").onclick = async () => { await api(`/api/labs/${encodeURIComponent(id)}/approve`, {}); toast("已批准，agent 开始执行"); pages.lab(id); refreshOverview(); };
     if ($("#park")) $("#park").onclick = async () => { await api(`/api/labs/${encodeURIComponent(id)}/status/parked`, {}); pages.lab(id); };
@@ -648,6 +786,7 @@
     if (!toc && !sib) { $("#toc-side").remove(); $("#body").parentElement.style.gridTemplateColumns = "1fr"; }
     st.bind();  // 没有左栏（既无目录也无同文件夹）时按钮自动去掉
     scrollToFrag(body, frag);
+    attachMine(body, path);
   };
 
   pages.discussion = async (id) => {
@@ -900,6 +1039,7 @@
   async function route() {
     const seq = ++routeSeq;  // 让还在路上的上一页作废（见 api()）
     if (window._es) { window._es.close(); window._es = null; }
+    if (MINE_HL) MINE_HL.clear();  // 上一页「我的理解」引文的划线
     if (window._ideasResize) { window.removeEventListener("resize", window._ideasResize); window._ideasResize = null; }  // 想法页的重绘监听随页面注销
     // 切走之后才出的错不往 main 里写
     const fail = (e) => { if (seq !== routeSeq) return; main.innerHTML = `<p class="muted">出错了：${esc(e.message)}</p>`; };

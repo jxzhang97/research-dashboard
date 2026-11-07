@@ -9,6 +9,7 @@
 3. `wiki/index.md` 和 `wiki/notation.md`：概念页目录和记号。
 4. `log.md` 最近 20 条：别人（包括上一次的你）刚做了什么。
 5. 与当前任务相关的 `labs/`、`ideas/`、`discussion/` 文件。
+6. 用户的下一步：`rd next <课题目录>` 打印 Project Notes 里本课题那一页的 `next_step` 与「Next Plan」（见第 6 节末）。
 
 例行文书任务（整理想法、只凭摘要筛 arXiv）按提示词给的精简清单读，不必通读 wiki 页、卡片和 lab notes；续跑一个 lab 时先读它的 `resume.md`，不整体重读 notes。
 
@@ -121,6 +122,16 @@
    - 卡片「与本课题的联系」加两三句；wiki `index.md` 加新页链接；有新问题就写 discussion；`log.md` 追加；
    - `~/doc_unsyn/research-dashboard/rd finish <课题根> <lab id>`：它核对当前版本的两份通过报告、薄层来自写作作业、doctor 干净，通过才把状态改 `done`（**不要手改 done**）；git commit。
 
+**用户的下一步与 Project Notes**：用户在 `~/Documents/Project Notes`（Obsidian 题目库）里每个题目一页，课题目录或上一级目录里的 `*.notes.md` 是指向它的快捷方式。那一页归用户：`next_step`（一句话的下一步）显示在 dashboard 首页「我的下一步」，网页、Obsidian、`rd next` 改的是同一个文件；`dashboard`、`rd_waiting`、`rd_arxiv`、`rd_running` 由网页自动写；其余（Thoughts、Next Plan、status、coauthor）agent 不改。
+- 用户在对话里说接下来要做什么（"我接下来要…""下一步先…"），用 `rd next <课题目录> "<一句话>"` 写进去：保留原意，可以润色成通顺的一句，不添用户没说的内容。
+- 起草任务书、写 STATUS「等你决定」时参考用户的下一步；agent 自己的建议写在 STATUS，不写进 `next_step`。
+
+**我的理解**：用户读 wiki、推导时形成的物理图像，用用户自己的口吻，像夹批一样紧跟出处（引了句子就放在那句话所在段落之后，没引句子放在那一节末尾；网页上是楷体加朱色细竖线，引的那句话下面划朱色虚线；汇总页 `#/mine`；访客也看得到）。尽量引一句原文，读者才知道是读到哪里想到的。每条一个文件，存在 Project Notes 里本题目那一页旁边的「我的理解/」文件夹，Obsidian 里同一份。
+- 用户在对话里说"我对某某有个理解""帮我记成我的理解"时：只润色措辞、改正说错的地方，不添用户没说的内容，不加 AI 的评论或"未必全对"之类的标注；先把润色稿和出处（哪一页、哪一节、引哪句话）给用户看，讨论措辞，**用户明确同意后**再写。
+- 写入只用 `rd mine <课题目录> --page <页面> --section "<节标题>" --quote "<引的那句话>" --title "<短标题>" --text-file -`（正文从标准输入给）。出处对不上它会拒绝并列出可选标题；`rd mine <课题目录> --headings <页面>` 列出一页的标题。改已有的一条用 `--id`。写 Project Notes 在课题目录之外，沙箱里会被拦，按提示申请权限即可。
+- 理解原文不写进 wiki、notes 或任何页面，agent 也不改它；用户要改或删才动。改写 wiki/notes 后跑 `rd mine <课题目录> --check`，出处对不上的只改 page/section/quote 重新挂好，不动正文。
+- lab 收尾时，若新结果明显支持、补充或冲突于某条理解，在 STATUS「等你决定」里提一句并链接那条理解；不在理解旁边写任何东西。
+
 ## 7. 什么时候、怎么向用户提问
 
 - **该问的**：两条物理上都说得通的路线要选一条；idea 有两种读法；推导结果和用户 notes 或 PROJECT.md 矛盾；需要用户补充只有他知道的信息。
@@ -151,6 +162,8 @@ rd free-cores <课题目录>                 # 现在能用几个核
 rd jobs claim <课题目录> --cores N --label X --pid P / rd jobs release <课题目录> --id J
 rd doctor <课题目录>                     # 断链、卡片缺节、状态异常
 rd tick <课题目录>                       # 处理所有待办（回答、审批、升级）
+rd next <课题目录> ["一句话"]           # 用户的下一步（Project Notes 的 next_step）：不带文字是读，带文字是写
+rd mine <课题目录> [--page … --section … --quote … --title … --text-file -]   # 我的理解：不带参数是列出；--check 核对出处；--headings <页面> 列标题
 rd finish <课题目录> <lab id> [--check]  # 收尾门槛：当前版本有通过的推导审核与一致性报告、薄层来自写作作业、doctor 干净，才标 done
 rd cluster status|init|push|submit|jobs|pull|inventory|cancel <课题目录> …   # 集群（Slurm）：空位、目录、推代码、提交、状态、拉结果、清单
 ```

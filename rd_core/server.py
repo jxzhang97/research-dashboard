@@ -19,7 +19,7 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, PlainTex
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from . import TEMPLATE_ROOT, config, cores, fm, wikimap
+from . import TEMPLATE_ROOT, config, cores, fm, mine, pnotes, wikimap
 from .project import Project
 from .runner import Runner, new_run_id, stop_run
 from .tick import PROMPTS
@@ -117,6 +117,22 @@ def start_watcher(project: Project, rq: RunQueue) -> None:
                     rq.submit_tick()
             except Exception:  # noqa: BLE001
                 pass
+
+    threading.Thread(target=loop, daemon=True).start()
+
+
+def start_notes_mirror(project: Project) -> None:
+    """每 5 分钟把网页地址和摘要（几项等你、哪个 lab 在跑）写进 Project Notes 里本课题那一页；值没变不写。
+    大课题算一次摘要要一秒多，所以不频繁；第一次等 90 秒，别跟刚重启时的冷启动抢。"""
+
+    def loop():
+        time.sleep(90)
+        while True:
+            try:
+                pnotes.mirror(project)
+            except Exception:  # noqa: BLE001
+                pass
+            time.sleep(300)
 
     threading.Thread(target=loop, daemon=True).start()
 
@@ -261,6 +277,7 @@ def create_app(project: Project) -> FastAPI:
     rq = RunQueue(project)
     start_watcher(project, rq)
     start_digest_timer(project, rq)
+    start_notes_mirror(project)
 
     @app.middleware("http")
     async def readonly_guard(request: Request, call_next):
@@ -306,6 +323,8 @@ def create_app(project: Project) -> FastAPI:
             lines.append(f"## {sec}")
             lines += [f"- [{t['title']}]({base}/md/{quote(t['path'])})" for t in items]
             lines.append("")
+        if mine.count(project):
+            lines += ["## 我的理解（课题负责人自己的物理图像）", f"- [我的理解]({base}/md/{quote(mine.AI_PATH)})", ""]
         return "\n".join(lines)
 
     @app.get("/")
@@ -319,6 +338,23 @@ def create_app(project: Project) -> FastAPI:
     app.mount("/static", StaticFiles(directory=str(STATIC)), name="static")
 
     # ---------- 总览 ----------
+    def _notes():
+        try:
+            return pnotes.read(project)
+        except Exception:  # noqa: BLE001  笔记读不了不该拖垮首页
+            return None
+
+    @app.post("/api/notes/next")
+    def notes_next(body: AnswerIn):
+        if not pnotes.find_note(project):
+            raise HTTPException(404, "没有找到 Project Notes 里本课题那一页")
+        try:
+            out = pnotes.set_next(project, body.text)
+        except RuntimeError as e:
+            raise HTTPException(409, str(e))
+        project.append_log("用户", f"下一步：{' '.join(body.text.split()) or '（清空）'}")
+        return out
+
     @app.get("/api/overview")
     def overview(request: Request):
         cfg = config.load(project.root)
@@ -333,12 +369,22 @@ def create_app(project: Project) -> FastAPI:
             "queue": rq.snapshot(), "runs": project.runs(8), "host": config.hostname(), "digest": digest_status(project),
             "project_md": pm.read_text(encoding="utf-8") if pm.exists() else "",
             "status": project.status_doc(),
+            "notes": _notes(),
+            "mine": mine.count(project),
             "counts": {
                 "cards": len(project.cards()), "wiki": len(project.wiki_pages()), "labs": project.lab_count(),
                 "discussion": len(project.discussions()), "ideas": len([i for i in project.ideas() if not i.id.startswith("inbox/")]),
                 "inbox": len([i for i in project.inbox() if i.meta.get("status") == "pending"]),
             },
         }
+
+    @app.get("/api/mine")
+    def mine_items():
+        """「我的理解」：只读。写入只经 rd mine（agent 在用户批准措辞后调用），网页上没有编辑入口。"""
+        try:
+            return {"items": mine.items(project)}
+        except OSError:
+            return {"items": []}
 
     @app.get("/api/links")
     def links():
@@ -676,10 +722,14 @@ def create_app(project: Project) -> FastAPI:
                     out += ["\n\n---\n", project.ai_markdown(t["path"], base, table)]
                 except (OSError, PermissionError):
                     continue
+        if mine.count(project):
+            out += ["\n\n# ═══ 我的理解 ═══\n", f"<!-- {mine.AI_PATH} -->", mine.ai_markdown(project, base)]
         return PlainTextResponse("\n".join(out), media_type="text/markdown; charset=utf-8")
 
     @app.get("/md/{path:path}")
     def md_page(path: str, request: Request):
+        if path == mine.AI_PATH:
+            return PlainTextResponse(mine.ai_markdown(project, _base(request)), media_type="text/markdown; charset=utf-8")
         if not project.ai_allowed(path):
             raise HTTPException(404)
         try:

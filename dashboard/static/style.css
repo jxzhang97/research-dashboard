@@ -8,22 +8,25 @@
   --badge: #b8432a; --code-bg: #efe9dd; --wall: #8f2d25; --primary: #2d4e86; --primary-text: #fbf9f4;
   --font: -apple-system, "PingFang SC", "Helvetica Neue", "Noto Sans SC", sans-serif;
   --serif: "Songti SC", STSong, "Noto Serif SC", serif;
+  --kai: Palatino, "Palatino Linotype", "Kaiti SC", STKaiti, KaiTi, "Songti SC", STSong, serif;  /* 楷体只给用户自己的话；西文与数字用 Palatino，免得楷体自带的等宽西文显得生硬 */
+  --zhu: #b8432a;  /* 朱：标出用户自己的话（取意朱批） */
 }
 @media (prefers-color-scheme: dark) {
   /* 夜里的宫城：墨色作底、汉白玉色写字，群青、琉璃黄、青绿、朱漆各提亮一档 */
   :root { --bg: #1a1815; --panel: #23201c; --text: #e8e2d6; --muted: #a89f91; --line: #3a342d;
     --accent: #93acda; --accent-bg: #26324a; --warn: #ddb766; --warn-bg: #3a311c; --warn-line: #9c7c3a;
     --ok: #78b6ac; --ok-bg: #1e3330; --danger: #e58a76; --danger-bg: #3d2420; --kind: #b7a8d6; --kind-bg: #302a3d;
-    --code-bg: #2b2722; --wall: #d77360; --primary: #3d5f9c; }
+    --code-bg: #2b2722; --wall: #d77360; --primary: #3d5f9c; --zhu: #e0876f; }
 }
 * { box-sizing: border-box; }
 body { margin: 0; font-family: var(--font); background: var(--bg); color: var(--text); font-size: 15px; line-height: 1.55; }
 a { color: var(--accent); text-decoration: none; }
 a:hover { text-decoration: underline; }
 header { display: flex; align-items: center; gap: 18px; padding: 10px 20px; border-bottom: 1px solid var(--line); background: var(--panel); position: sticky; top: 0; z-index: 5; }
-.brand { font-weight: 700; font-size: 17px; color: var(--wall); font-family: var(--serif); }
-nav { display: flex; gap: 4px; flex: 1; }
-nav a { padding: 6px 12px; border-radius: 8px; color: var(--text); position: relative; }
+.brand { font-weight: 700; font-size: 17px; color: var(--wall); font-family: var(--serif); white-space: nowrap; }
+#host { white-space: nowrap; }
+nav { display: flex; flex-wrap: wrap; gap: 4px; flex: 1; }
+nav a { padding: 6px 12px; border-radius: 8px; color: var(--text); position: relative; white-space: nowrap; }  /* 窄窗口里整项换行，不把「首页」断成两行 */
 nav a.active { background: var(--accent-bg); color: var(--accent); }
 .badge { display: none; position: absolute; top: 1px; right: 2px; min-width: 17px; height: 17px; padding: 0 5px; border-radius: 9px; background: var(--badge); color: #fff; font-size: 11px; line-height: 17px; text-align: center; font-weight: 600; }
 .badge.on { display: inline-block; }
@@ -116,6 +119,18 @@ details summary { cursor: pointer; color: var(--muted); }
 details.panel > summary { font-weight: 600; color: var(--text); }
 details.panel[open] > summary { margin-bottom: 10px; }
 .status h1 { font-size: 20px; }
+/* 我的下一步：用户自己的话用楷体，朱色小字标出，下面一条细线与课题状态隔开 */
+.mynext { padding-bottom: 12px; margin-bottom: 12px; border-bottom: 1px solid var(--line); }
+.mynext.solo { padding-bottom: 0; margin-bottom: 0; border-bottom: 0; }
+.mn-head { display: flex; align-items: baseline; gap: 10px; font-size: 13px; color: var(--muted); }
+.mn-label { font-family: var(--serif); font-size: 14px; color: var(--zhu); letter-spacing: 1px; }
+.mn-tools { margin-left: auto; display: flex; align-items: baseline; gap: 10px; }
+.mn-text { font-family: var(--kai); font-size: 18px; line-height: 1.7; margin-top: 4px; }
+.mn-empty { font-family: var(--font); font-size: 13px; color: var(--muted); }
+.mn-plan { font-family: var(--kai); font-size: 16px; margin-top: 4px; }
+.mn-plan .md { max-width: none; }
+.mn-form { display: flex; gap: 8px; align-items: center; }
+.mn-form input { flex: 1; font-family: var(--kai); font-size: 17px; padding: 4px 10px; }
 .status .md h2 { font-size: 16px; margin-top: 18px; }
 .answer .md { line-height: 1.5; max-width: none; }
 .answer .md p { margin: 0; }
@@ -276,3 +291,24 @@ button.small { font-size: 12px; padding: 2px 8px; }
 .wiki-path { display: flex; gap: 4px 20px; flex-wrap: wrap; align-items: baseline; padding: 7px 12px; margin-bottom: 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); }
 /* 深色模式：纸面星图整体压暗一点，像挂在深色墙上的画 */
 @media (prefers-color-scheme: dark) { .starmap-wrap { filter: brightness(.86); } }
+
+/* 我的理解：课题负责人自己的话，要一眼认出来。整块反色、缩进一格、圆角，楷体正文，左上一枚朱印式小签（取朱批之意）。
+   浅色：梁枋彩画的青绿作底、宣纸色写字（对比度 5.8）；深色：宣纸作底、焦墨写字（13.1），块里沿用浅色那一套颜色。
+   块里重设颜色变量，链接、代码、表格跟着换；各组文字对比度 ≥ 4.5。 */
+.mine { --text: #fbf9f4; --muted: #d5e5e0; --accent: #dce6f7; --warn: #f8e4ae; --code-bg: rgba(255, 255, 255, .14); --line: rgba(255, 255, 255, .28);
+  margin: 16px 0 20px 24px; padding: 12px 20px 10px; border-radius: 8px; background: #2f6c67; color: var(--text); }
+@media (prefers-color-scheme: dark) {
+  .mine { --text: #2a2621; --muted: #6e665b; --accent: #2d4e86; --warn: #7a5a14; --code-bg: #efe9dd; --line: #e3dacb; background: #f3efe6; }
+}
+.mine-label { display: inline-block; margin-bottom: 6px; padding: 1px 8px; border-radius: 3px; background: #b8432a; color: #fbf9f4;
+  font-family: var(--serif); font-size: 12px; letter-spacing: 2px; }
+.mine .md { font-family: var(--kai); font-size: 16.5px; line-height: 1.8; max-width: none; color: var(--text); }
+.mine .md > :first-child { margin-top: 2px; } .mine .md > :last-child { margin-bottom: 4px; }
+.mine-note { font-size: 12px; color: var(--muted); margin-bottom: 4px; }
+.mine.flash { animation: mineflash 1.8s ease-out; }
+@keyframes mineflash { from { box-shadow: 0 0 0 5px color-mix(in srgb, #b8432a 45%, transparent); } to { box-shadow: 0 0 0 0 transparent; } }
+::highlight(rd-mine) { text-decoration: underline dashed var(--zhu); text-underline-offset: 4px; background-color: color-mix(in srgb, var(--zhu) 6%, transparent); }
+.mine-group h2 { font-size: 18px; margin: 2px 0 8px; }
+.mine-src { display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap; font-size: 13px; color: var(--muted); margin-top: 12px; }
+.mine-title { font-family: var(--serif); font-size: 15px; color: var(--text); font-weight: 600; }
+.mine-group .mine { margin-top: 6px; }

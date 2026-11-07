@@ -90,6 +90,13 @@ DEFAULTS: dict = {
         # 访客投稿层：任何人都能留名字速记想法、向 agent 提问；投稿先进 inbox/讨论区等课题负责人放行，agent 才处理
         "guest_submissions": False,
     },
+    "notes": {
+        # Project Notes（Obsidian 题目库）里本课题那一页。空 = 自动找：课题目录或上一级目录里同步工具放的 *.notes.md 快捷方式；
+        # 也可写绝对路径或相对课题目录的路径；"off" = 不联动。首页「我的下一步」读写它的 next_step，网页把地址与摘要写进 dashboard / rd_waiting / rd_arxiv / rd_running 字段
+        "path": "",
+        # 写进那一页的网页地址。空 = 自动：Tailscale 机器名 + 端口（两台 Mac 和手机都能打开）
+        "url": "",
+    },
 }
 
 

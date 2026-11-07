@@ -40,6 +40,8 @@
     "卡片":"Reference notes", "还没有卡片":"No reference notes yet", "已通过，agent 将下载并精读":"Approved. The paper will be downloaded and read in full.",
     "通过，下载并精读":"Approve and read in full",
     "首页":"Overview", "文献":"References", "讨论":"Discussions", "想法":"Ideas", "任务":"Activity", "课题":"Project",
+    "我的理解":"My understanding", "还没有。":"None yet.",
+    "读 wiki 和推导时形成的物理图像，用我自己的话写。每一条也挂在正文里出处的后面。":"The project owner's own physical picture, formed while reading the Wiki and derivations, in their own words. Each entry also appears in the text, right after the passage it refers to.",
     "◀ 收起目录":"◀ Hide sidebar", "▶ 展开目录":"▶ Show sidebar", "收起左栏，正文占满宽度":"Hide the sidebar so the text uses the full width", "展开左栏":"Show the sidebar",
     "加载中…":"Loading…", "目录":"Contents", "全文":"Full page", "课题状态":"Project overview", "课题总纲":"Project aims",
     "草稿":"Draft", "待过目":"Awaiting review", "已批准":"Approved", "进行中":"In progress", "等你回答":"Awaiting your answer",
