@@ -334,7 +334,7 @@ def create_app(project: Project) -> FastAPI:
             "project_md": pm.read_text(encoding="utf-8") if pm.exists() else "",
             "status": project.status_doc(),
             "counts": {
-                "cards": len(project.cards()), "wiki": len(project.wiki_pages()), "labs": len(project.labs()),
+                "cards": len(project.cards()), "wiki": len(project.wiki_pages()), "labs": project.lab_count(),
                 "discussion": len(project.discussions()), "ideas": len([i for i in project.ideas() if not i.id.startswith("inbox/")]),
                 "inbox": len([i for i in project.inbox() if i.meta.get("status") == "pending"]),
             },

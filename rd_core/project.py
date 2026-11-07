@@ -269,13 +269,19 @@ class Project:
         return table
 
     # ---------- labs ----------
-    def labs(self) -> list[Doc]:
-        docs = []
+    def _lab_dirs(self) -> list[Path]:
         labs_dir = self.root / "labs"
-        if labs_dir.exists():
-            for d in sorted(labs_dir.iterdir()):
-                if d.is_dir() and (d / "brief.md").exists() and not d.name.startswith("."):
-                    docs.append(self._lab_doc(d))
+        if not labs_dir.exists():
+            return []
+        return [d for d in sorted(labs_dir.iterdir()) if d.is_dir() and (d / "brief.md").exists() and not d.name.startswith(".")]
+
+    def lab_count(self) -> int:
+        return len(self._lab_dirs())
+
+    def labs(self) -> list[Doc]:
+        # 审计证据要把全部 codex 作业记录读一遍（大课题几百份），每次列表只读一次、各 lab 共用
+        evidence = self._audit_evidence()
+        docs = [self._lab_doc(d, evidence) for d in self._lab_dirs()]
         docs.sort(key=lambda d: d.id, reverse=True)
         self._annotate_runs(docs)
         return docs
@@ -380,6 +386,8 @@ class Project:
         from .workflow import SHARED_PAGES, stale_sources
         ignore = SHARED_PAGES if done else ()
         out = []
+        if evidence is None:
+            evidence = self._audit_evidence()
         for p in sorted((d / "audit").rglob("*.md")) if (d / "audit").exists() else []:
             rel_in = p.relative_to(d / "audit").parts
             if p.name.startswith("prompt") or "scratch" in rel_in[:-1]:
@@ -388,7 +396,7 @@ class Project:
             if not meta.get("kind"):
                 continue
             rel = self.rel(p)
-            hashes = (evidence if evidence is not None else self._audit_evidence()).get(rel)
+            hashes = evidence.get(rel)
             counts = meta.get("counts") or {}
             pending = (not meta.get("handled")) and (meta.get("verdict", "pass") != "pass" or any(int(v or 0) for v in counts.values()))
             out.append({"path": rel, "name": str(p.relative_to(d / "audit")), "kind": meta.get("kind"), "verdict": meta.get("verdict", "pass"),
@@ -410,7 +418,7 @@ class Project:
             latest[a["kind"]] = a
         return latest
 
-    def _lab_doc(self, d: Path) -> Doc:
+    def _lab_doc(self, d: Path, evidence: dict | None = None) -> Doc:
         doc = self._read_doc("lab", d / "brief.md", id_=d.name)
         doc.meta.setdefault("status", "draft")
         doc.extra["has_report"] = (d / "report.md").exists()
@@ -420,7 +428,9 @@ class Project:
         pdfs = sorted(str(p.relative_to(d)) for p in d.rglob("*.pdf")
                       if not any(part.startswith(".") or part in ("results", "writing-test") for part in p.relative_to(d).parts))
         doc.extra["pdfs"] = pdfs[:20]
-        doc.extra["audit"] = self._audit_summary(self._audits(d, self._audit_evidence(), done=doc.meta.get("status") == "done"))
+        if evidence is None:
+            evidence = self._audit_evidence()
+        doc.extra["audit"] = self._audit_summary(self._audits(d, evidence, done=doc.meta.get("status") == "done"))
         doc.extra["question"] = doc.extra["answer"] = ""
         doc.extra["notes"] = ""
         if doc.extra["has_report"]:
@@ -433,7 +443,8 @@ class Project:
 
     def lab(self, lab_id: str) -> Doc:
         d = self.safe_path(f"labs/{lab_id}")
-        doc = self._lab_doc(d)
+        evidence = self._audit_evidence()
+        doc = self._lab_doc(d, evidence)
         self._annotate_runs([doc])
         doc.extra["has_resume"] = (d / "resume.md").exists()
         doc.extra["jobs"] = []
@@ -461,7 +472,7 @@ class Project:
         files.sort(key=lambda f: f["name"])
         doc.extra["files"] = files[:500]
         doc.extra["images"] = images[:200]  # lab 页的图画廊：fig/ 里的图都能看到，图注来自 report.md / notes.md 的 alt 文字
-        doc.extra["audits"] = self._audits(d, done=doc.meta.get("status") == "done")
+        doc.extra["audits"] = self._audits(d, evidence, done=doc.meta.get("status") == "done")
         # 收尾门槛（rd finish）现在还差什么；done 的 lab 不再重算
         if doc.extra["has_report"] and doc.meta.get("status") != "done":
             from .workflow import completion_errors
@@ -898,9 +909,13 @@ class Project:
         return "\n".join(head) + "\n\n" + body.strip() + "\n"
 
     # ---------- 待处理工作项（tick 用） ----------
-    def pending_work(self) -> list[dict]:
+    def pending_work(self, kinds: set[str] | None = None) -> list[dict]:
         """待办工作项。任何一项只要已有排队或运行中的记录（label 为 kind:id）就不再列出：
-        网页动作、文件监视、launchd 兜底 tick 相隔几秒各扫一次时，同一项不会被派两次。"""
+        网页动作、文件监视、launchd 兜底 tick 相隔几秒各扫一次时，同一项不会被派两次。
+        kinds 给了就只算这几类（首页的「待消化的回答」只看讨论，不必把 lab 全读一遍）。"""
+        def want(*ks: str) -> bool:
+            return kinds is None or any(k in kinds for k in ks)
+
         live = self.live_runs()
         live_labels = {str(m.get("label", "")) for m in live}
         work = []
@@ -909,17 +924,18 @@ class Project:
             if f"{kind}:{d.id}" not in live_labels:
                 work.append({"kind": kind, "id": d.id, "path": d.path, "title": d.title, **extra})
 
-        for d in self.discussions():
+        for d in self.discussions() if want("digest_answer", "answer_user_question") else []:
             if d.meta["status"] == "answered":
                 add("digest_answer", d)
             elif d.meta["status"] == "open" and (d.meta.get("asked_by") == "user" or (d.meta.get("asked_by") == "guest" and d.meta.get("approved"))):
                 add("answer_user_question", d)  # 访客的提问要负责人放行（approved）才答
-        for d in self.inbox():
+        for d in self.inbox() if want("ingest_reference") else []:
             if d.meta.get("status") == "approved":
                 add("ingest_reference", d)
         # lab：已批准的派执行；running 但没有活着的运行的派续跑（上次运行被额度/超时/自己提前结束打断）。
         # lab 的"活着"按 label 后缀匹配，手工的 resume_lab:<id>、审计 audit_*:<id> 也算。旧 lab 先。
-        for d in sorted(self.labs(), key=lambda x: x.id):
+        lab_kinds = ("revise_brief", "address_comments", "run_lab", "resume_lab")
+        for d in sorted(self.labs(), key=lambda x: x.id) if want(*lab_kinds) else []:
             st = d.meta.get("status")
             busy = self._run_for_lab(live, d.id) is not None
             if d.meta.get("comments_pending") and not busy and st in ("awaiting_review", "draft", "parked"):
@@ -933,11 +949,11 @@ class Project:
                 last = self.last_lab_run(d.id) or {}
                 add("resume_lab", d, last_run_id=last.get("id", "（没有记录）"), last_run_status=last.get("status", "?"),
                     last_run_result=" ".join(str(last.get("result") or "（无）").split())[:400], wake_note="")
-        for d in self.ideas():
+        for d in self.ideas() if want("promote_idea", "triage_idea") else []:
             if d.meta.get("promote_requested") and not d.meta.get("promoted_lab"):
                 add("promote_idea", d)
             elif d.id.startswith("inbox/") and not d.meta.get("triaged"):
                 if d.meta.get("source") == "guest" and not d.meta.get("triage_approved"):
                     continue  # 访客投的想法要负责人放行才整理，免得花额度
                 add("triage_idea", d)
-        return work
+        return work if kinds is None else [w for w in work if w["kind"] in kinds]

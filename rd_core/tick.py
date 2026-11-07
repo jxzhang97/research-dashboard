@@ -97,7 +97,7 @@ DIGEST_PROMPT = (
 
 
 def answered_threads(project: Project) -> list[dict]:
-    return [w for w in project.pending_work() if w["kind"] == "digest_answer"]
+    return project.pending_work({"digest_answer"})
 
 
 def run_digest(project: Project, dry_run: bool = False) -> dict | None:
