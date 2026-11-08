@@ -297,7 +297,7 @@ def cmd_next(args):
 
 
 def cmd_mine(args):
-    """「我的理解」：列出、核对出处、新增或改写一条。只在用户批准了措辞之后写（见 AGENTS.md 第 6 节末）。"""
+    """「我的理解」：列出、核对出处、新增、改写、加挂一处、去掉一处、合并重复。只在用户批准了措辞之后写（见 AGENTS.md 第 6 节末）。"""
     from . import mine
     proj = _project(args.path)
     if args.headings:
@@ -311,32 +311,53 @@ def cmd_mine(args):
         return
     if args.check:
         bad = mine.check(proj)
-        for it, why in bad:
-            print(f"✗ {it['id']}（{it['page']} ·「{it['section']}」）：{why}")
-        print("出处都对得上" if not bad else f"{len(bad)} 条对不上：只改 page/section/quote 重新挂好（rd mine --id … --section … --quote …），不动正文")
+        for it, k, why in bad:
+            pl = it["places"][k - 1]
+            print(f"✗ {it['id']} 第 {k} 处（{pl['page']} ·「{pl['section']}」）：{why}")
+        print("出处都对得上" if not bad else f"{len(bad)} 处对不上：只改出处重新挂好（--id … --drop-place N 再 --add-place …），不动正文")
         sys.exit(1 if bad else 0)
     text = args.text
     if args.text_file:
         text = sys.stdin.read() if args.text_file == "-" else Path(args.text_file).read_text(encoding="utf-8")
-    if not (args.id or args.page):
-        for it in mine.items(proj):
-            print(f"{it['id']}  {it['page']} ·「{it['section'] or '全文'}」 {it['updated']}\n    {it['title']}")
-        print(f"文件夹：{mine.mine_dir(proj)}")
-        return
-    old = None
-    if args.id:
-        old = next((it for it in mine.items(proj) if it["id"] == args.id), None)
-        if not old:
-            print(f"没有这一条：{args.id}"); sys.exit(1)
-    pick = lambda new, key: new if new is not None else (old or {}).get(key, "")
+
+    def where(it):
+        return "；".join(f"{pl['page']} ·「{pl['section'] or '全文'}」" for pl in it["places"])
+
+    def done(it, what):
+        proj.append_log("用户", f"我的理解{what}：{it['title']}（{where(it)}）")
+        print(f"已写：{mine.mine_dir(proj) / (it['id'] + '.md')}")
+        for k, pl in enumerate(it["places"], 1):
+            print(f"  第 {k} 处 网页 {mine.route(pl['page'])}（「{pl['section'] or '全文'}」）")
+
     try:
-        it = mine.save(proj, page=pick(args.page, "page"), section=pick(args.section, "section"), quote=pick(args.quote, "quote"),
+        if args.merge:
+            it = mine.merge(proj, args.merge, text=text, title=args.title)
+            print(f"已合并成一条，其余几份移到 {mine.mine_dir(proj) / '.merged'}")
+            return done(it, "（合并）")
+        if args.id and args.add_place:
+            if not args.page:
+                print("--add-place 要和 --page/--section/--quote 一起给"); sys.exit(1)
+            return done(mine.add_place(proj, args.id, args.page, args.section or "", args.quote or ""), "（加挂一处）")
+        if args.id and args.drop_place:
+            return done(mine.drop_place(proj, args.id, args.drop_place), "（去掉一处）")
+        if not (args.id or args.page):
+            for it in mine.items(proj):
+                print(f"{it['id']}  {it['updated']}  {it['title']}")
+                for k, pl in enumerate(it["places"], 1):
+                    print(f"    {k}. {pl['page']} ·「{pl['section'] or '全文'}」")
+            print(f"文件夹：{mine.mine_dir(proj)}")
+            return
+        old = mine._get(proj, args.id) if args.id else None
+        pick = lambda new, key: new if new is not None else (old or {}).get(key, "")
+        places = None
+        if old:  # 改写：给了 --page/--section/--quote 就换第一处，其余各处保留
+            first = {k: pick(getattr(args, k), k) for k in ("page", "section", "quote")}
+            places = [first] + old["places"][1:]
+        it = mine.save(proj, page=args.page, section=args.section or "", quote=args.quote or "", places=places,
                        title=pick(args.title, "title"), text=pick(text, "text"), id=args.id)
+        done(it, "（改）" if args.id else "")
     except ValueError as e:
         print(f"没有写：{e}"); sys.exit(1)
-    proj.append_log("用户", f"我的理解{'（改）' if args.id else ''}：{it['title']}（{it['page']} ·「{it['section'] or '全文'}」）")
-    print(f"已写：{mine.mine_dir(proj) / (it['id'] + '.md')}")
-    print(f"网页：{mine.route(it['page'])}（挂在「{it['section'] or '全文'}」之后）")
 
 
 def main(argv=None):
@@ -357,11 +378,14 @@ def main(argv=None):
     p = sub.add_parser("scheduler", help="launchd 定时任务"); p.add_argument("action", choices=["install", "uninstall", "status"]); p.add_argument("path"); p.set_defaults(fn=cmd_scheduler)
     p = sub.add_parser("doctor", help="检查断链、缺节、状态"); p.add_argument("path"); p.set_defaults(fn=cmd_doctor)
     p = sub.add_parser("finish", help="收尾门槛：核对当前版本的推导审核、薄层一致性检查与 doctor，通过才把 lab 标为 done"); p.add_argument("path"); p.add_argument("lab"); p.add_argument("--check", action="store_true", help="只检查不改状态"); p.set_defaults(fn=cmd_finish)
-    p = sub.add_parser("mine", help="用户的「我的理解」：不带参数是列出；--page/--section/--quote/--title/--text 新增；--id 改写已有一条；--check 核对出处")
+    p = sub.add_parser("mine", help="用户的「我的理解」：不带参数是列出；--page/--section/--quote/--title/--text 新增；--id 改写；--id --add-place 再挂一处；--merge 合并重复；--check 核对出处")
     p.add_argument("path"); p.add_argument("--page", help="出处页面（项目内路径，如 wiki/kondo.md、labs/03-x/notes.md）")
     p.add_argument("--section", help="出处那一节的标题（原文；说得出唯一一个标题即可）"); p.add_argument("--quote", help="引的那句话（原文里连续的一段，公式可省略；可空）")
     p.add_argument("--title", help="短标题"); p.add_argument("--text", help="理解正文（markdown，公式用 $…$）"); p.add_argument("--text-file", help="从文件读正文；- 表示标准输入")
-    p.add_argument("--id", help="改写已有的一条（只改给出的字段）"); p.add_argument("--check", action="store_true", help="核对每条的出处还在不在")
+    p.add_argument("--id", help="改写已有的一条（只改给出的字段；--page/--section/--quote 换的是第一处）"); p.add_argument("--check", action="store_true", help="核对每条每处出处还在不在")
+    p.add_argument("--add-place", action="store_true", help="和 --id、--page/--section/--quote 一起：同一条理解再挂到一处（不要另写一份）")
+    p.add_argument("--drop-place", type=int, metavar="N", help="和 --id 一起：去掉第 N 处出处")
+    p.add_argument("--merge", nargs="+", metavar="ID", help="把同一条理解的几份合成一份（出处合并；正文不同时要给 --text/--text-file）")
     p.add_argument("--headings", metavar="PAGE", help="列出这一页可挂的标题"); p.set_defaults(fn=cmd_mine)
     p = sub.add_parser("next", help="用户的下一步：读或写 Project Notes 里本课题那一页的 next_step"); p.add_argument("path"); p.add_argument("text", nargs="?", help="新的下一步（一句话；传空字符串则清空）"); p.set_defaults(fn=cmd_next)
     from .codex import add_parser as _codex_parser

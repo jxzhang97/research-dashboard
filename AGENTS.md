@@ -128,8 +128,8 @@
 
 **我的理解**：用户读 wiki、推导时形成的物理图像，用用户自己的口吻，像夹批一样紧跟出处（引了句子就放在那句话所在段落之后，没引句子放在那一节末尾；网页上是楷体加朱色细竖线，引的那句话下面划朱色虚线；汇总页 `#/mine`；访客也看得到）。尽量引一句原文，读者才知道是读到哪里想到的。每条一个文件，存在 Project Notes 里本题目那一页旁边的「我的理解/」文件夹，Obsidian 里同一份。
 - 用户在对话里说"我对某某有个理解""帮我记成我的理解"时：只润色措辞、改正说错的地方，不添用户没说的内容，不加 AI 的评论或"未必全对"之类的标注；先把润色稿和出处（哪一页、哪一节、引哪句话）给用户看，讨论措辞，**用户明确同意后**再写。
-- 写入只用 `rd mine <课题目录> --page <页面> --section "<节标题>" --quote "<引的那句话>" --title "<短标题>" --text-file -`（正文从标准输入给）。出处对不上它会拒绝并列出可选标题；`rd mine <课题目录> --headings <页面>` 列出一页的标题。改已有的一条用 `--id`。写 Project Notes 在课题目录之外，沙箱里会被拦，按提示申请权限即可。
-- 理解原文不写进 wiki、notes 或任何页面，agent 也不改它；用户要改或删才动。改写 wiki/notes 后跑 `rd mine <课题目录> --check`，出处对不上的只改 page/section/quote 重新挂好，不动正文。
+- 写入只用 `rd mine <课题目录> --page <页面> --section "<节标题>" --quote "<引的那句话>" --title "<短标题>" --text-file -`（正文从标准输入给）。出处对不上它会拒绝并列出可选标题；`rd mine <课题目录> --headings <页面>` 列出一页的标题。改已有的一条用 `--id`。**同一条理解要挂在几处时只写一份**：先写一处，再用 `rd mine <课题目录> --id <id> --add-place --page … --section … --quote …` 加挂（`--drop-place N` 去掉一处）；发现已有重复的几份，用 `--merge <id1> <id2> …` 合成一份（正文不同时先和用户定好合并后的正文，再加 `--text-file -`）。写 Project Notes 在课题目录之外，沙箱里会被拦，按提示申请权限即可。
+- 理解原文不写进 wiki、notes 或任何页面，agent 也不改它；用户要改或删才动。改写 wiki/notes 后跑 `rd mine <课题目录> --check`，出处对不上的只重新挂（`--drop-place` 那一处再 `--add-place` 到对的位置），不动正文。
 - lab 收尾时，若新结果明显支持、补充或冲突于某条理解，在 STATUS「等你决定」里提一句并链接那条理解；不在理解旁边写任何东西。
 
 ## 7. 什么时候、怎么向用户提问
@@ -163,7 +163,7 @@ rd jobs claim <课题目录> --cores N --label X --pid P / rd jobs release <课�
 rd doctor <课题目录>                     # 断链、卡片缺节、状态异常
 rd tick <课题目录>                       # 处理所有待办（回答、审批、升级）
 rd next <课题目录> ["一句话"]           # 用户的下一步（Project Notes 的 next_step）：不带文字是读，带文字是写
-rd mine <课题目录> [--page … --section … --quote … --title … --text-file -]   # 我的理解：不带参数是列出；--check 核对出处；--headings <页面> 列标题
+rd mine <课题目录> [--page … --section … --quote … --title … --text-file -]   # 我的理解：不带参数是列出；--id … --add-place 再挂一处；--merge 合并重复；--check 核对出处；--headings <页面> 列标题
 rd finish <课题目录> <lab id> [--check]  # 收尾门槛：当前版本有通过的推导审核与一致性报告、薄层来自写作作业、doctor 干净，才标 done
 rd cluster status|init|push|submit|jobs|pull|inventory|cancel <课题目录> …   # 集群（Slurm）：空位、目录、推代码、提交、状态、拉结果、清单
 ```

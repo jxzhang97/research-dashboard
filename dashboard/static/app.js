@@ -389,61 +389,69 @@
     const r = document.createRange(); r.setStart(at[k][0], at[k][1]); r.setEnd(at[k + want.length - 1][0], at[k + want.length - 1][1] + 1);
     return r;
   }
-  function mineBlock(it, note) {
-    const box = document.createElement("aside"); box.className = "mine"; box.id = "mine-" + it.id;
+  // 一条理解可以挂在几处（it.places，第一处为主）；块的 id 是 mine-<条目>-<第几处>，从汇总页或「也挂在」点过来时据此滚到那一块
+  const placeLabel = (pl, inline) => `${esc(pl.page_title || pl.page)} › ${pl.section ? inline(pl.section) : (reader.english() ? "whole page" : "全文")}`;
+  const inlineMd1 = (t) => render(t).innerHTML.replace(/^<p>|<\/p>\s*$/g, "");
+  const goMine = (a) => { a.onclick = () => sessionStorage.setItem("rd.mineGo", `${a.dataset.mine}:${a.dataset.k || 0}`); };
+  function mineBlock(it, note, k = -1) {
+    const box = document.createElement("aside"); box.className = "mine"; if (k >= 0) box.id = `mine-${it.id}-${k}`;
     box.innerHTML = `<div class="mine-label">${reader.english() ? "My understanding" : "我的理解"}</div>`;
     box.appendChild(render(it.text));
     if (note) { const n = document.createElement("div"); n.className = "mine-note"; n.textContent = note; box.appendChild(n); }
+    const others = (it.places || []).map((pl, j) => [pl, j]).filter(([, j]) => k >= 0 && j !== k);
+    if (others.length) {
+      const also = document.createElement("div"); also.className = "mine-also";
+      also.innerHTML = (reader.english() ? "Also at: " : "也挂在：") + others.map(([pl, j]) => `<a href="${mineRoute(pl.page)}" data-mine="${esc(it.id)}" data-k="${j}">${placeLabel(pl, inlineMd1)}</a>`).join("；");
+      also.querySelectorAll("a").forEach(goMine); box.appendChild(also);
+    }
     return box;
   }
   // 把挂在 path 这一页上的理解插进渲染好的正文 div，像夹批一样紧跟出处：引了句子就放在那句话所在段落之后
   // （长节里放节末会离原句好几屏）；没引句子或句子找不到，放在那一节末尾；节也找不到放页末并注明原在哪一节
   async function attachMine(div, path) {
-    const list = (await mineItems()).filter((it) => it.page === path)
-      .sort((a, b) => (a.created || "").localeCompare(b.created || "") || a.id.localeCompare(b.id));  // 同一节里先写的在前
-    if (!list.length || !div.isConnected) return;
-    for (const it of list) {
-      const sec = mineSection(div, it.section);
-      const range = it.quote ? mineQuote(sec ? sec.nodes : [div], it.quote) : null;
+    const hits = [];
+    for (const it of await mineItems()) (it.places || [it]).forEach((pl, k) => { if (pl.page === path) hits.push({ it, pl, k }); });
+    hits.sort((a, b) => (a.it.created || "").localeCompare(b.it.created || "") || a.it.id.localeCompare(b.it.id) || a.k - b.k);  // 同一节里先写的在前
+    if (!hits.length || !div.isConnected) return;
+    for (const { it, pl, k } of hits) {
+      const sec = mineSection(div, pl.section);
+      const range = pl.quote ? mineQuote(sec ? sec.nodes : [div], pl.quote) : null;
       if (range && MINE_HL) MINE_HL.add(range);
       if (range) {
         let blk = range.endContainer.parentElement; while (blk.parentElement && blk.parentElement !== div) blk = blk.parentElement;
         if (blk.parentElement === div) {
           while (blk.nextElementSibling && blk.nextElementSibling.classList.contains("mine")) blk = blk.nextElementSibling;  // 同一段的几条按先后排
-          blk.after(mineBlock(it)); continue;
+          blk.after(mineBlock(it, "", k)); continue;
         }
       }
-      if (sec) { const box = mineBlock(it); sec.end ? sec.end.before(box) : sec.h.parentElement.appendChild(box); continue; }
-      div.appendChild(mineBlock(it, it.section ? (reader.english() ? `Originally under “${it.section}”` : `原在「${it.section}」一节`) : ""));
+      if (sec) { const box = mineBlock(it, "", k); sec.end ? sec.end.before(box) : sec.h.parentElement.appendChild(box); continue; }
+      div.appendChild(mineBlock(it, pl.section ? (reader.english() ? `Originally under “${pl.section}”` : `原在「${pl.section}」一节`) : "", k));
     }
-    const go = sessionStorage.getItem("rd.mineGo"); const el = go && div.querySelector(`[id="${CSS.escape("mine-" + go)}"]`);
+    const go = (sessionStorage.getItem("rd.mineGo") || "").replace(/^(.*?)(?::(\d+))?$/, (_, id, k) => `${id}-${k || 0}`);
+    const el = go && div.querySelector(`[id="${CSS.escape("mine-" + go)}"]`);
     if (el) {
       sessionStorage.removeItem("rd.mineGo");
       setTimeout(() => { el.scrollIntoView({ block: "center" }); el.classList.add("flash"); setTimeout(() => el.classList.remove("flash"), 1800); }, 120);
     }
   }
 
+  // 汇总页：每条理解只出现一次，最近改过的在前；上面列出它挂的各处（点了直接滚到正文里那一块）
   pages.mine = async () => {
     const api = pageApi();  // 绑定到本页：切走后请求永不返回，不再覆盖新页
     const items = (await api("/api/mine")).items || [];
     MINE = items; MINE_AT = Date.now();
-    const groups = new Map();  // 按出处分组；items 已按更新时间排好，组的先后跟着最新的一条
-    for (const it of items) { if (!groups.has(it.page)) groups.set(it.page, []); groups.get(it.page).push(it); }
-    const inline = (t) => render(t).innerHTML.replace(/^<p>|<\/p>\s*$/g, "");
     main.innerHTML = `<h1>我的理解</h1><p class="muted small mine-intro">读 wiki 和推导时形成的物理图像，用我自己的话写。每一条也挂在正文里出处的后面。</p>
       ${items.length ? "" : `<div class="panel muted">还没有。</div>`}<div id="mine-list"></div>`;
     const wrap = $("#mine-list");
-    for (const [page, arr] of groups) {
-      const sec = document.createElement("section"); sec.className = "panel mine-group";
-      sec.innerHTML = `<h2><a href="${mineRoute(page)}">${esc(arr[0].page_title)}</a></h2>`;
-      for (const it of arr) {
-        const head = document.createElement("div"); head.className = "mine-src";
-        head.innerHTML = `<b class="mine-title">${esc(it.title)}</b><a href="${mineRoute(page)}" data-mine="${esc(it.id)}">${it.section ? inline(it.section) : "全文"}</a>${it.quote ? `<span class="mine-quote">「${inline(clip(it.quote, 90))}」</span>` : ""}<span class="muted">${esc(it.updated)}</span>`;
-        sec.append(head, mineBlock(it));
-      }
+    for (const it of items) {
+      const sec = document.createElement("section"); sec.className = "panel mine-entry";
+      const places = (it.places || [it]).map((pl, k) => `<li><a href="${mineRoute(pl.page)}" data-mine="${esc(it.id)}" data-k="${k}">${placeLabel(pl, inlineMd1)}</a>${pl.quote ? `<span class="mine-quote">「${inlineMd1(clip(pl.quote, 90))}」</span>` : ""}</li>`).join("");
+      sec.innerHTML = `<div class="mine-head"><b class="mine-title">${esc(it.title)}</b><span class="muted small">${esc(it.updated)}</span></div>
+        <div class="mine-places-label muted">${reader.english() ? "Appears at" : "出处"}</div><ul class="mine-places">${places}</ul>`;
+      sec.appendChild(mineBlock(it));
       wrap.appendChild(sec);
     }
-    wrap.querySelectorAll("[data-mine]").forEach((a) => { a.onclick = () => sessionStorage.setItem("rd.mineGo", a.dataset.mine); });
+    wrap.querySelectorAll("[data-mine]").forEach(goMine);
   };
 
   pages.home = async () => {

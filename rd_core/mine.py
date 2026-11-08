@@ -149,23 +149,33 @@ def _page_title(project, page: str, cache: dict) -> str:
     return cache[page]
 
 
+def _place(page, section="", quote="") -> dict:
+    return {"page": norm_page(str(page or "")), "section": str(section or ""), "quote": " ".join(str(quote or "").split())}
+
+
 def _read(p: Path) -> dict | None:
+    """一条理解。出处可以有几处：frontmatter 的 page/section/quote 是第一处，also 里是其余各处（同一条理解挂在几个地方，文件只有一份）。"""
     try:
         meta, body = fm.read(p)
     except OSError:
         return None
     if not meta.get("page"):
         return None
+    places = [_place(meta["page"], meta.get("section"), meta.get("quote"))]
+    for a in meta.get("also") or []:
+        if isinstance(a, dict) and a.get("page"):
+            places.append(_place(a["page"], a.get("section"), a.get("quote")))
+    first = places[0]
     return {
-        "id": p.stem, "title": str(meta.get("title") or p.stem), "page": norm_page(str(meta["page"])),
-        "section": str(meta.get("section") or ""), "quote": str(meta.get("quote") or ""), "text": body.strip(),
+        "id": p.stem, "title": str(meta.get("title") or p.stem), "page": first["page"], "section": first["section"], "quote": first["quote"],
+        "places": places, "text": body.strip(),
         "created": str(meta.get("created") or ""), "updated": str(meta.get("updated") or meta.get("created") or ""),
         "project": str(meta.get("project") or ""),
     }
 
 
 def items(project) -> list[dict]:
-    """本课题的全部理解，最近改过的在前。同一个文件夹若被几个课题共用，按 frontmatter 的 project 分开。"""
+    """本课题的全部理解，最近改过的在前；每条只出现一次，places 列出它挂的各处。同一个文件夹若被几个课题共用，按 frontmatter 的 project 分开。"""
     d = mine_dir(project)
     if not d.is_dir():
         return []
@@ -178,7 +188,9 @@ def items(project) -> list[dict]:
         it = _read(p)
         if not it or (it["project"] and name and it["project"] != name):
             continue
-        it["page_title"] = _page_title(project, it["page"], titles)
+        for pl in it["places"]:
+            pl["page_title"] = _page_title(project, pl["page"], titles)
+        it["page_title"] = it["places"][0]["page_title"]
         out.append(it)
     out.sort(key=lambda it: (it["updated"], it["created"], it["id"]), reverse=True)
     return out
@@ -197,10 +209,25 @@ def _atomic_write(path: Path, text: str) -> None:
     os.replace(tmp, path)
 
 
-def save(project, *, page: str, section: str, quote: str = "", title: str, text: str, id: str | None = None) -> dict:
-    """新增一条（id 为空）或整条改写已有的一条（created 保留）。出处先核对，对不上就抛 ValueError、什么也不写。"""
-    page = norm_page(page)
-    raw = locate(project, page, section, quote, loose=True)
+def _same(a: dict, b: dict) -> bool:
+    return (a["page"], a["section"], plain(a["quote"])) == (b["page"], b["section"], plain(b["quote"]))
+
+
+def save(project, *, title: str, text: str, page: str | None = None, section: str = "", quote: str = "",
+         places: list[dict] | None = None, id: str | None = None, created: str | None = None) -> dict:
+    """新增一条（id 为空）或整条改写已有的一条（created 保留）。places 给出全部出处（第一处为主），不给就用 page/section/quote 一处。
+    每处出处先核对，有一处对不上就抛 ValueError、什么也不写；重复的出处只留一个。"""
+    if places is None:
+        places = [{"page": page, "section": section, "quote": quote}]
+    resolved: list[dict] = []
+    for pl in places:
+        pg = norm_page(pl.get("page") or "")
+        raw = locate(project, pg, pl.get("section") or "", pl.get("quote") or "", loose=True)
+        new = _place(pg, raw, pl.get("quote") or "")
+        if not any(_same(new, r) for r in resolved):
+            resolved.append(new)
+    if not resolved:
+        raise ValueError("至少要有一处出处")
     text = (text or "").strip()
     title = " ".join((title or "").split())
     if not text:
@@ -214,35 +241,80 @@ def save(project, *, page: str, section: str, quote: str = "", title: str, text:
         p = d / f"{id}.md"
         if not p.is_file():
             raise ValueError(f"没有这一条：{id}")
-        old = _read(p) or {}
-        created = old.get("created") or today
+        created = created or (_read(p) or {}).get("created") or today
     else:
-        created = today
+        created = created or today
         base = f"{today}-{_slug(title)}"
         p, n = d / f"{base}.md", 2
         while p.exists():
             p, n = d / f"{base}-{n}.md", n + 1
-    url = pnotes.dashboard_url(project) + "/" + route(page)
+    first = resolved[0]
+    url = pnotes.dashboard_url(project) + "/" + route(first["page"])
     head = [
-        f"title: {_q(title)}", f"project: {_q(_project_name(project))}", f"page: {_q(page)}", f"section: {_q(raw)}",
-        f"quote: {_q(' '.join(quote.split()))}", f"dashboard: {_q(url)}", f"created: {created}", f"updated: {today}",
-        "tags:", "  - 我的理解",
+        f"title: {_q(title)}", f"project: {_q(_project_name(project))}", f"page: {_q(first['page'])}", f"section: {_q(first['section'])}",
+        f"quote: {_q(first['quote'])}", f"dashboard: {_q(url)}", f"created: {created}", f"updated: {today}",
     ]
+    if len(resolved) > 1:
+        head.append("also:")
+        for pl in resolved[1:]:
+            head += [f"  - page: {_q(pl['page'])}", f"    section: {_q(pl['section'])}", f"    quote: {_q(pl['quote'])}"]
+    head += ["tags:", "  - 我的理解"]
     _atomic_write(p, "---\n" + "\n".join(head) + "\n---\n\n" + text + "\n")
     ensure_index(project)
-    out = _read(p)
-    out["page_title"] = _page_title(project, page, {})
+    return next(it for it in items(project) if it["id"] == p.stem)
+
+
+def _get(project, id: str) -> dict:
+    it = _read(mine_dir(project) / f"{id}.md")
+    if not it:
+        raise ValueError(f"没有这一条：{id}")
+    return it
+
+
+def add_place(project, id: str, page: str, section: str = "", quote: str = "") -> dict:
+    """把已有的一条理解再挂到一处；正文不动。"""
+    it = _get(project, id)
+    return save(project, title=it["title"], text=it["text"], places=it["places"] + [{"page": page, "section": section, "quote": quote}], id=id)
+
+
+def drop_place(project, id: str, n: int) -> dict:
+    """去掉第 n 处出处（从 1 数）；只剩一处时不许去。"""
+    it = _get(project, id)
+    if not 1 <= n <= len(it["places"]):
+        raise ValueError(f"这一条只有 {len(it['places'])} 处出处")
+    if len(it["places"]) == 1:
+        raise ValueError("只剩这一处出处了，不能去掉")
+    return save(project, title=it["title"], text=it["text"], places=[pl for k, pl in enumerate(it["places"], 1) if k != n], id=id)
+
+
+def merge(project, ids: list[str], text: str | None = None, title: str | None = None) -> dict:
+    """把同一条理解的几份合成一份：出处合在一起，留第一份的文件名和最早的 created；其余几份移到「我的理解/.merged/」，不删。
+    几份正文不完全一样时必须给出合并后的正文。"""
+    if len(ids) < 2:
+        raise ValueError("至少要给两条")
+    its = [_get(project, i) for i in ids]
+    if text is None:
+        if len({it["text"] for it in its}) > 1:
+            raise ValueError("这几条的正文不完全一样：先和用户定好合并后的正文，再用 --text 或 --text-file 给出")
+        text = its[0]["text"]
+    created = min((it["created"] for it in its if it["created"]), default=None)
+    out = save(project, title=title or its[0]["title"], text=text, places=[pl for it in its for pl in it["places"]], id=ids[0], created=created)
+    d = mine_dir(project)
+    (d / ".merged").mkdir(exist_ok=True)
+    for it in its[1:]:
+        os.replace(d / f"{it['id']}.md", d / ".merged" / f"{it['id']}.md")
     return out
 
 
-def check(project) -> list[tuple[dict, str]]:
-    """出处对不上的理解（页面被改写、标题改名、引的句子被删）：(条目, 原因)。"""
+def check(project) -> list[tuple[dict, int, str]]:
+    """出处对不上的地方（页面被改写、标题改名、引的句子被删）：(条目, 第几处（从 1 数）, 原因)。"""
     bad = []
     for it in items(project):
-        try:
-            locate(project, it["page"], it["section"], it["quote"])
-        except ValueError as e:
-            bad.append((it, str(e).splitlines()[0]))
+        for k, pl in enumerate(it["places"], 1):
+            try:
+                locate(project, pl["page"], pl["section"], pl["quote"])
+            except ValueError as e:
+                bad.append((it, k, str(e).splitlines()[0]))
     return bad
 
 
@@ -271,15 +343,13 @@ def ensure_index(project) -> bool:
 
 
 def ai_markdown(project, base: str) -> str:
-    """给 AI 读：全部理解按出处分组，带出处链接。"""
+    """给 AI 读：每条理解一次，列出它挂的各处出处（带链接）。"""
     name = _project_name(project)
-    out = [f"# 我的理解（{name}）", "", "课题负责人读 wiki、推导时形成的物理图像，用自己的话写。每条注明出处（哪一页、哪一节、引的哪句话）。", ""]
-    groups: dict[str, list[dict]] = {}
+    out = [f"# 我的理解（{name}）", "", "课题负责人读 wiki、推导时形成的物理图像，用自己的话写。每条注明出处（哪一页、哪一节、引的哪句话）；同一条可能挂在几处。", ""]
     for it in items(project):
-        groups.setdefault(it["page"], []).append(it)
-    for page, arr in groups.items():
-        out += [f"## {arr[0]['page_title']}", "", f"出处页面：{base}/md/{urlquote(page)}", ""]
-        for it in arr:
-            src = f"「{it['section']}」一节" if it["section"] else "全文"
-            out += [f"### {it['title']}", "", f"> {src}" + (f"，引：「{it['quote']}」" if it["quote"] else "") + f" · {it['updated']}", "", it["text"], ""]
+        out += [f"## {it['title']}", "", f"更新 {it['updated']}。出处：", ""]
+        for pl in it["places"]:
+            src = f"「{pl['section']}」一节" if pl["section"] else "全文"
+            out.append(f"- [{pl['page_title']}]({base}/md/{urlquote(pl['page'])}) · {src}" + (f"，引：「{pl['quote']}」" if pl["quote"] else ""))
+        out += ["", it["text"], ""]
     return "\n".join(out)

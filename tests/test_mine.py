@@ -129,7 +129,7 @@ def test_check_reports_moved_anchor(project_dir: Path, page: Path):
     assert mine.check(pr) == []
     page.write_text(PAGE.replace("## 1. 两种屏蔽", "## 1. 屏蔽的两种情形"), encoding="utf-8")
     bad = mine.check(pr)
-    assert len(bad) == 1 and "没有这个标题" in bad[0][1]
+    assert len(bad) == 1 and bad[0][1] == 1 and "没有这个标题" in bad[0][2]
 
 
 def test_api_and_ai_export(project_dir: Path, page: Path):
@@ -143,7 +143,7 @@ def test_api_and_ai_export(project_dir: Path, page: Path):
     assert c.get("/api/overview").json()["mine"] == 1
     assert "/md/%E6%88%91%E7%9A%84%E7%90%86%E8%A7%A3.md" in c.get("/llms.txt").text
     md = c.get("/md/我的理解.md").text
-    assert "### 屏蔽云的图像" in md and "「1. 两种屏蔽」一节" in md and TEXT in md
+    assert "## 屏蔽云的图像" in md and "「1. 两种屏蔽」一节" in md and TEXT in md
     assert "屏蔽云的图像" in c.get("/llms-full.txt").text
 
 
@@ -163,3 +163,54 @@ def test_cli_add_list_check(project_dir: Path, page: Path, monkeypatch, capsys):
     assert e.value.code == 1 and "没有写" in capsys.readouterr().out
     cli.main(["mine", str(project_dir), "--headings", "wiki/kondo.md"])
     assert "  1. 两种屏蔽" in capsys.readouterr().out
+
+
+def test_one_understanding_in_several_places(project_dir: Path, tmp_path: Path, page: Path):
+    note = vault_note(tmp_path, project_dir)
+    pr = Project(project_dir)
+    it = add(pr)
+    two = mine.add_place(pr, it["id"], "wiki/kondo.md", "细节", "更细的东西")
+    assert two["id"] == it["id"] and [pl["section"] for pl in two["places"]] == ["1. 两种屏蔽", "细节"]
+    assert mine.add_place(pr, it["id"], "wiki/kondo.md", "细节", "更细的东西")["places"] == two["places"]  # 同一处不挂两次
+    f = note.parent / "我的理解" / f"{it['id']}.md"
+    meta, body = fm.read(f)
+    assert meta["page"] == "wiki/kondo.md" and meta["also"] == [{"page": "wiki/kondo.md", "section": "细节", "quote": "更细的东西"}]
+    assert body.strip() == TEXT and mine.count(pr) == 1 and mine.check(pr) == []
+    with pytest.raises(ValueError, match="没有这个标题"):
+        mine.add_place(pr, it["id"], "wiki/kondo.md", "无此节")
+    one = mine.drop_place(pr, it["id"], 1)
+    assert [pl["section"] for pl in one["places"]] == ["细节"]
+    with pytest.raises(ValueError, match="只剩这一处"):
+        mine.drop_place(pr, it["id"], 1)
+
+
+def test_merge_duplicates(project_dir: Path, page: Path):
+    pr = Project(project_dir)
+    a = add(pr)
+    b = add(pr, section="细节", quote="更细的东西")
+    assert b["id"].endswith("-2") and mine.count(pr) == 2
+    c = add(pr, title="别的", section="两种屏蔽的比较", quote="", text="不同的正文")
+    with pytest.raises(ValueError, match="正文不完全一样"):
+        mine.merge(pr, [a["id"], c["id"]])
+    m = mine.merge(pr, [a["id"], b["id"]])
+    assert m["id"] == a["id"] and len(m["places"]) == 2 and m["text"] == TEXT
+    d = project_dir / "我的理解"
+    assert not (d / f"{b['id']}.md").exists() and (d / ".merged" / f"{b['id']}.md").is_file()  # 不删，移到 .merged
+    assert mine.count(pr) == 2  # 合并后的一条 + 「别的」
+
+
+def test_api_and_cli_with_places(project_dir: Path, page: Path, capsys):
+    pr = Project(project_dir)
+    it = add(pr)
+    cli.main(["mine", str(project_dir), "--id", it["id"], "--add-place", "--page", "wiki/kondo.md", "--section", "细节", "--quote", "更细的东西"])
+    assert "第 2 处" in capsys.readouterr().out
+    items = TestClient(create_app(pr)).get("/api/mine").json()["items"]
+    assert len(items) == 1 and [pl["section"] for pl in items[0]["places"]] == ["1. 两种屏蔽", "细节"]
+    assert items[0]["places"][1]["page_title"] == "近藤屏蔽"
+    md = TestClient(create_app(pr)).get("/md/我的理解.md").text
+    assert md.count("## 屏蔽云的图像") == 1 and md.count("近藤屏蔽](") == 2
+    b = add(pr, section="两种屏蔽的比较", quote="")
+    cli.main(["mine", str(project_dir), "--merge", it["id"], b["id"]])
+    assert "已合并" in capsys.readouterr().out and mine.count(pr) == 1 and len(mine.items(pr)[0]["places"]) == 3
+    cli.main(["mine", str(project_dir), "--id", it["id"], "--drop-place", "3"])
+    assert len(mine.items(pr)[0]["places"]) == 2
