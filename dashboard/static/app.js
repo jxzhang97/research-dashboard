@@ -261,7 +261,7 @@
     const running = (OVERVIEW.queue.current ? 1 : 0) + OVERVIEW.queue.pending.length;
     const counts = { ...a.counts, runs: running };
     document.querySelectorAll(".badge").forEach((b) => { const n = counts[b.dataset.badge] || 0; b.textContent = n; b.classList.toggle("on", n > 0); });
-    if ($("#nav-mine")) $("#nav-mine").hidden = !OVERVIEW.mine;
+    if ($("#nav-mine")) $("#nav-mine").hidden = !(OVERVIEW.mine || OVERVIEW.mynotes);
     // 本机其他课题的 dashboard：同一主机、不同端口
     try {
       const others = (await api("/api/projects")).filter((p) => p.name !== OVERVIEW.project.name && p.exists);
@@ -340,8 +340,8 @@
     return box;
   }
 
-  // ---------- 我的理解（课题负责人自己的物理图像，挂在出处那一节之后；rd_core/mine.py） ----------
-  // 只读：理解由 agent 在用户批准措辞后经 rd mine 写入，网页不提供编辑。楷体 + 朱色细竖线 + 小字标签；引的那句话下面划朱色虚线。
+  // ---------- 批注（课题负责人随手写下的物理图像，挂在出处那一节之后；rd_core/mine.py） ----------
+  // 只读：批注由 agent 在用户批准措辞后经 rd mine 写入，网页不提供编辑。楷体 + 朱色细竖线 + 小字标签；引的那句话下面划朱色虚线。
   let MINE = null, MINE_AT = 0;
   async function mineItems(fresh) {
     if (!fresh && MINE && Date.now() - MINE_AT < 30000) return MINE;
@@ -389,13 +389,13 @@
     const r = document.createRange(); r.setStart(at[k][0], at[k][1]); r.setEnd(at[k + want.length - 1][0], at[k + want.length - 1][1] + 1);
     return r;
   }
-  // 一条理解可以挂在几处（it.places，第一处为主）；块的 id 是 mine-<条目>-<第几处>，从汇总页或「也挂在」点过来时据此滚到那一块
+  // 一条批注可以挂在几处（it.places，第一处为主）；块的 id 是 mine-<条目>-<第几处>，从汇总页或「也挂在」点过来时据此滚到那一块
   const placeLabel = (pl, inline) => `${esc(pl.page_title || pl.page)} › ${pl.section ? inline(pl.section) : (reader.english() ? "whole page" : "全文")}`;
   const inlineMd1 = (t) => render(t).innerHTML.replace(/^<p>|<\/p>\s*$/g, "");
   const goMine = (a) => { a.onclick = () => sessionStorage.setItem("rd.mineGo", `${a.dataset.mine}:${a.dataset.k || 0}`); };
   function mineBlock(it, note, k = -1) {
     const box = document.createElement("aside"); box.className = "mine"; if (k >= 0) box.id = `mine-${it.id}-${k}`;
-    box.innerHTML = `<div class="mine-label">${reader.english() ? "My understanding" : "我的理解"}</div>`;
+    box.innerHTML = `<div class="mine-label">${reader.english() ? "Annotation" : "批注"}</div>`;
     box.appendChild(render(it.text));
     if (note) { const n = document.createElement("div"); n.className = "mine-note"; n.textContent = note; box.appendChild(n); }
     const others = (it.places || []).map((pl, j) => [pl, j]).filter(([, j]) => k >= 0 && j !== k);
@@ -406,7 +406,7 @@
     }
     return box;
   }
-  // 把挂在 path 这一页上的理解插进渲染好的正文 div，像夹批一样紧跟出处：引了句子就放在那句话所在段落之后
+  // 把挂在 path 这一页上的批注插进渲染好的正文 div，像夹批一样紧跟出处：引了句子就放在那句话所在段落之后
   // （长节里放节末会离原句好几屏）；没引句子或句子找不到，放在那一节末尾；节也找不到放页末并注明原在哪一节
   async function attachMine(div, path) {
     const hits = [];
@@ -435,24 +435,83 @@
     }
   }
 
-  // 汇总页：每条理解只出现一次，最近改过的在前；上面列出它挂的各处（点了直接滚到正文里那一块）
-  pages.mine = async () => {
+  // ---------- 我的笔记：正文（mynotes/ 里的 LaTeX，rd_core/mynotes.py）和批注在同一页，顶上切换 ----------
+  // #/mine/notes（正文，可带 ?label=sec:… 跳到那一节）、#/mine/annotations（批注）；不带时有正文就先看正文
+  const fileUrl = (path, v) => `/api/file?path=${encodeURIComponent(path)}${v ? `&v=${v}` : ""}`;
+  pages.mine = async (rest) => {
     const api = pageApi();  // 绑定到本页：切走后请求永不返回，不再覆盖新页
-    const items = (await api("/api/mine")).items || [];
+    const [tabRaw, qs] = String(rest || "").split("?");
+    const [st, items] = await Promise.all([api("/api/mynotes").catch(() => ({ exists: false })), api("/api/mine").then((r) => r.items || [])]);
     MINE = items; MINE_AT = Date.now();
-    main.innerHTML = `<h1>我的理解</h1><p class="muted small mine-intro">读 wiki 和推导时形成的物理图像，用我自己的话写。每一条也挂在正文里出处的后面。</p>
+    const tab = tabRaw === "notes" || tabRaw === "annotations" ? tabRaw : (st.exists ? "notes" : "annotations");
+    main.classList.toggle("full", tab === "notes" && !!st.pdf);  // PDF 用全宽
+    main.innerHTML = `<div class="wiki-head"><h1>我的笔记</h1><span class="seg mynotes-tabs">
+        <button data-tab="notes" class="${tab === "notes" ? "on" : ""}">正文</button><button data-tab="annotations" class="${tab === "annotations" ? "on" : ""}">批注${items.length ? ` · ${items.length}` : ""}</button></span></div>
+      <div id="mynotes-body"></div>`;
+    main.querySelectorAll(".mynotes-tabs button").forEach((b) => { b.onclick = () => { location.hash = "#/mine/" + b.dataset.tab; }; });
+    if (tab === "notes") notesTab($("#mynotes-body"), st, new URLSearchParams(qs || ""));
+    else annotationsTab($("#mynotes-body"), items, st);
+  };
+
+  // 正文：状态条（编译时间、待你看的标记、红线版、对照清单、inbox）+ 左目录右 PDF
+  function notesTab(body, st, params) {
+    if (!st.exists) {
+      body.innerHTML = `<div class="panel muted">这个课题还没有正文笔记。agent 用 <code>rd mynotes init &lt;课题目录&gt;</code> 建好骨架以后，你把手写稿放进 <code>mynotes/inbox/</code>，说一句放到哪一节就行。</div>`;
+      return;
+    }
+    const pdf = st.pdf ? fileUrl(st.pdf, st.pdf_v) : "";
+    const m = st.marks || {};
+    const chips = [st.pdf ? `<span class="muted small">编译于 ${esc(st.built.replace("T", " ").slice(0, 16))}${st.pages ? ` · ${st.pages} 页` : ""}</span>` : `<span class="chip pending">还没有编译过</span>`];
+    if (st.stale) chips.push(`<span class="chip pending" title="源文件改过，PDF 还是旧的：rd mynotes build（要在装了 TeX 的机器上跑）">PDF 不是最新</span>`);
+    if (m.orange || m.cmt) chips.push(`<span class="chip pending" title="橙色是 agent 补的细节，蓝色是 agent 要问你的；你批准后橙色变成正文">这一批待你看：${[m.orange ? `橙色补充 ${m.orange} 处` : "", m.cmt ? `问题 ${m.cmt} 个` : ""].filter(Boolean).join("、")}</span>`);
+    const links = [];
+    if (pdf) links.push(`<a href="${pdf}" target="_blank" rel="noopener">打开 PDF</a>`);
+    if (st.redline) links.push(`<a href="${fileUrl(st.redline, st.redline_v)}" target="_blank" rel="noopener" title="和上次接受的版本比：新增的加波浪下划线，删掉的划红线">红线版</a>`);
+    (st.reviews || []).filter((r) => r.status === "pending").forEach((r) => links.push(`<a href="${docRoute(r.path)}" title="这一批的对照清单：手写原稿与正文的对应、补了什么、没写进去的建议">对照清单：${esc(r.title)}</a>`));
+    let extra = "";
+    if ((st.questions || []).length) extra += `<details class="mynotes-more"><summary>agent 的问题（${st.questions.length}）</summary><ul>${st.questions.map((q) => `<li><code>${esc(q.file)}:${q.line}</code> ${esc(q.text)}</li>`).join("")}</ul></details>`;
+    if ((st.inbox || []).length) extra += `<div class="mynotes-more small">inbox 里 ${st.inbox.length} 份待整理：${st.inbox.map((f) => `<a href="${fileUrl(f.path)}" target="_blank" rel="noopener">${esc(f.name)}</a>`).join("、")}</div>`;
+    const done = (st.reviews || []).filter((r) => r.status !== "pending");
+    if (done.length) extra += `<details class="mynotes-more small"><summary>已接受的批次（${done.length}）</summary><ul>${done.map((r) => `<li><a href="${docRoute(r.path)}">${esc(r.date)} ${esc(r.title)}</a></li>`).join("")}</ul></details>`;
+    const toc = (st.toc || []).map((t) => `<a href="#" data-page="${t.page || 1}" data-label="${esc(t.label || "")}" class="lv${t.level}">${t.num ? `<span class="num">${esc(t.num)}.</span> ` : ""}${inlineMd1(t.title)}</a>`).join("");
+    body.innerHTML = `<div class="panel mynotes-status"><div class="mn-row">${chips.join("")}<span class="grow"></span>${links.join("")}</div>${extra}</div>` + (pdf
+      ? `<div class="two mynotes-two"><div class="side panel mynotes-toc"><div class="small muted">目录</div>${toc || `<span class="muted small">还没有小节</span>`}</div>
+          <div class="mynotes-pdf"><iframe id="mynotes-frame" title="正文 PDF" src="${pdf}"></iframe></div></div>`
+      : `<div class="panel muted">还没有 PDF。agent 写好一批后编译（<code>rd mynotes build</code>，要在装了 TeX 的机器上），PDF 经 iCloud 同步过来就会显示在这里。${(st.sections || []).length ? `<br>已有的节：${st.sections.map(esc).join("、")}` : ""}</div>`);
+    const frame = $("#mynotes-frame");
+    const go = (a) => {
+      body.querySelectorAll(".mynotes-toc a.cur").forEach((x) => x.classList.remove("cur")); a.classList.add("cur");
+      if (frame) frame.src = `${pdf}#page=${a.dataset.page}`;
+    };
+    body.querySelectorAll(".mynotes-toc a[data-page]").forEach((a) => { a.onclick = (e) => { e.preventDefault(); go(a); }; });
+    const want = params.get("label");
+    const target = want && body.querySelector(`.mynotes-toc a[data-label="${CSS.escape(want)}"]`);
+    if (target) go(target);
+  }
+
+  // 批注：每条只出现一次，最近改过的在前；上面列出它挂的各处（点了直接滚到原文里那一块）；收进正文的标出是哪一节
+  function annotationsTab(body, items, st) {
+    const where = (label) => { const t = (st.toc || []).find((x) => x.label === label); return t ? `${t.num ? t.num + ". " : ""}${t.title}` : label; };
+    const anyIn = items.some((it) => it.in_notes);
+    const openOnly = anyIn && sessionStorage.getItem("rd.mineOpenOnly") === "1";
+    body.innerHTML = `<p class="muted small mine-intro">读 wiki 和推导时随手写下的物理图像，用我自己的话写；每一条也挂在原文出处的后面。整理成形的收进正文。</p>
+      ${anyIn ? `<label class="small mine-filter"><input type="checkbox" id="mine-open-only" ${openOnly ? "checked" : ""}> 只看还没收进正文的</label>` : ""}
       ${items.length ? "" : `<div class="panel muted">还没有。</div>`}<div id="mine-list"></div>`;
+    const cb = $("#mine-open-only");
+    if (cb) cb.onchange = () => { sessionStorage.setItem("rd.mineOpenOnly", cb.checked ? "1" : "0"); annotationsTab(body, items, st); };
     const wrap = $("#mine-list");
     for (const it of items) {
+      if (openOnly && it.in_notes) continue;
       const sec = document.createElement("section"); sec.className = "panel mine-entry";
       const places = (it.places || [it]).map((pl, k) => `<li><a href="${mineRoute(pl.page)}" data-mine="${esc(it.id)}" data-k="${k}">${placeLabel(pl, inlineMd1)}</a>${pl.quote ? `<span class="mine-quote">「${inlineMd1(clip(pl.quote, 90))}」</span>` : ""}</li>`).join("");
-      sec.innerHTML = `<div class="mine-head"><b class="mine-title">${esc(it.title)}</b><span class="muted small">${esc(it.updated)}</span></div>
+      const inNotes = it.in_notes ? `<a class="chip done" href="#/mine/notes?label=${encodeURIComponent(it.in_notes)}" title="这条已经整理进正文，以正文为准">已收进正文 · ${inlineMd1(where(it.in_notes))}</a>` : "";
+      sec.innerHTML = `<div class="mine-head"><b class="mine-title">${esc(it.title)}</b><span class="muted small">${esc(it.updated)}</span>${inNotes}</div>
         <div class="mine-places-label muted">${reader.english() ? "Appears at" : "出处"}</div><ul class="mine-places">${places}</ul>`;
       sec.appendChild(mineBlock(it));
       wrap.appendChild(sec);
     }
     wrap.querySelectorAll("[data-mine]").forEach(goMine);
-  };
+  }
 
   pages.home = async () => {
     const api = pageApi();  // 绑定到本页：切走后请求永不返回，不再覆盖新页
@@ -1047,7 +1106,7 @@
   async function route() {
     const seq = ++routeSeq;  // 让还在路上的上一页作废（见 api()）
     if (window._es) { window._es.close(); window._es = null; }
-    if (MINE_HL) MINE_HL.clear();  // 上一页「我的理解」引文的划线
+    if (MINE_HL) MINE_HL.clear();  // 上一页批注引文的划线
     if (window._ideasResize) { window.removeEventListener("resize", window._ideasResize); window._ideasResize = null; }  // 想法页的重绘监听随页面注销
     // 切走之后才出的错不往 main 里写
     const fail = (e) => { if (seq !== routeSeq) return; main.innerHTML = `<p class="muted">出错了：${esc(e.message)}</p>`; };

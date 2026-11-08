@@ -75,11 +75,11 @@ def test_save_writes_beside_note_and_indexes_once(project_dir: Path, tmp_path: P
     note = vault_note(tmp_path, project_dir)
     pr = Project(project_dir)
     it = add(pr)
-    f = note.parent / "我的理解" / f"{it['id']}.md"
+    f = note.parent / "批注" / f"{it['id']}.md"
     assert f.is_file() and it["id"] == f"{date.today().isoformat()}-屏蔽云的图像"
     meta, body = fm.read(f)
     assert meta["page"] == "wiki/kondo.md" and meta["section"] == "1. 两种屏蔽" and meta["project"] == "demo"
-    assert meta["quote"] == "杂质自旋被完全屏蔽，$T_K$ 以下形成单态" and meta["tags"] == ["我的理解"]
+    assert meta["quote"] == "杂质自旋被完全屏蔽，$T_K$ 以下形成单态" and meta["tags"] == ["批注"]
     assert meta["dashboard"].endswith("/#/wiki/kondo") and body.strip() == TEXT
     text = note.read_text(encoding="utf-8")
     assert text.count(mine.INDEX_MARK) == 1 and "```dataview" in text and compatible(text)
@@ -100,25 +100,25 @@ def test_save_refuses_bad_anchor(project_dir: Path, page: Path):
         add(pr, page="wiki/none.md")
     with pytest.raises(ValueError, match="不在课题目录"):
         add(pr, page="../x.md")
-    assert not (project_dir / "我的理解").exists() or not any((project_dir / "我的理解").iterdir())
+    assert not (project_dir / "批注").exists() or not any((project_dir / "批注").iterdir())
 
 
 def test_without_note_and_rewrite_keeps_created(project_dir: Path, page: Path):
     pr = Project(project_dir)
     it = add(pr)
-    f = project_dir / "我的理解" / f"{it['id']}.md"
+    f = project_dir / "批注" / f"{it['id']}.md"
     assert f.is_file()
     text = f.read_text(encoding="utf-8").replace(f"created: {date.today().isoformat()}", "created: 2026-01-02")
     f.write_text(text, encoding="utf-8")
     again = add(pr, id=it["id"], text="改过的说法。")
     assert again["id"] == it["id"] and again["created"] == "2026-01-02" and again["text"] == "改过的说法。"
-    assert len(list((project_dir / "我的理解").glob("*.md"))) == 1
+    assert len(list((project_dir / "批注").glob("*.md"))) == 1
 
 
 def test_items_skip_other_projects(project_dir: Path, page: Path):
     pr = Project(project_dir)
     it = add(pr)
-    f = project_dir / "我的理解" / f"{it['id']}.md"
+    f = project_dir / "批注" / f"{it['id']}.md"
     f.write_text(f.read_text(encoding="utf-8").replace('project: "demo"', 'project: "别的课题"'), encoding="utf-8")
     assert mine.items(pr) == []
 
@@ -136,13 +136,14 @@ def test_api_and_ai_export(project_dir: Path, page: Path):
     pr = Project(project_dir)
     c = TestClient(create_app(pr))
     assert c.get("/api/overview").json()["mine"] == 0 and c.get("/api/mine").json() == {"items": []}
-    assert "我的理解" not in c.get("/llms.txt").text
+    assert "/md/%E6%89%B9%E6%B3%A8.md" not in c.get("/llms.txt").text
     add(pr)
     items = c.get("/api/mine").json()["items"]
     assert len(items) == 1 and items[0]["page_title"] == "近藤屏蔽" and items[0]["section"] == "1. 两种屏蔽"
     assert c.get("/api/overview").json()["mine"] == 1
-    assert "/md/%E6%88%91%E7%9A%84%E7%90%86%E8%A7%A3.md" in c.get("/llms.txt").text
-    md = c.get("/md/我的理解.md").text
+    assert "/md/%E6%89%B9%E6%B3%A8.md" in c.get("/llms.txt").text
+    md = c.get("/md/批注.md").text
+    assert c.get("/md/我的理解.md").text == md  # 改名前给出去的地址仍可用
     assert "## 屏蔽云的图像" in md and "「1. 两种屏蔽」一节" in md and TEXT in md
     assert "屏蔽云的图像" in c.get("/llms-full.txt").text
 
@@ -152,7 +153,7 @@ def test_cli_add_list_check(project_dir: Path, page: Path, monkeypatch, capsys):
     cli.main(["mine", str(project_dir), "--page", "./wiki/kondo.md", "--section", "细节", "--quote", "更细的东西", "--title", "细节里的图像", "--text-file", "-"])
     out = capsys.readouterr().out
     assert "已写" in out and "#/wiki/kondo" in out
-    assert "我的理解：细节里的图像" in (project_dir / "log.md").read_text(encoding="utf-8")
+    assert "批注：细节里的图像" in (project_dir / "log.md").read_text(encoding="utf-8")
     cli.main(["mine", str(project_dir)])
     assert "细节里的图像" in capsys.readouterr().out
     with pytest.raises(SystemExit) as e:
@@ -172,7 +173,7 @@ def test_one_understanding_in_several_places(project_dir: Path, tmp_path: Path, 
     two = mine.add_place(pr, it["id"], "wiki/kondo.md", "细节", "更细的东西")
     assert two["id"] == it["id"] and [pl["section"] for pl in two["places"]] == ["1. 两种屏蔽", "细节"]
     assert mine.add_place(pr, it["id"], "wiki/kondo.md", "细节", "更细的东西")["places"] == two["places"]  # 同一处不挂两次
-    f = note.parent / "我的理解" / f"{it['id']}.md"
+    f = note.parent / "批注" / f"{it['id']}.md"
     meta, body = fm.read(f)
     assert meta["page"] == "wiki/kondo.md" and meta["also"] == [{"page": "wiki/kondo.md", "section": "细节", "quote": "更细的东西"}]
     assert body.strip() == TEXT and mine.count(pr) == 1 and mine.check(pr) == []
@@ -194,7 +195,7 @@ def test_merge_duplicates(project_dir: Path, page: Path):
         mine.merge(pr, [a["id"], c["id"]])
     m = mine.merge(pr, [a["id"], b["id"]])
     assert m["id"] == a["id"] and len(m["places"]) == 2 and m["text"] == TEXT
-    d = project_dir / "我的理解"
+    d = project_dir / "批注"
     assert not (d / f"{b['id']}.md").exists() and (d / ".merged" / f"{b['id']}.md").is_file()  # 不删，移到 .merged
     assert mine.count(pr) == 2  # 合并后的一条 + 「别的」
 
@@ -207,10 +208,53 @@ def test_api_and_cli_with_places(project_dir: Path, page: Path, capsys):
     items = TestClient(create_app(pr)).get("/api/mine").json()["items"]
     assert len(items) == 1 and [pl["section"] for pl in items[0]["places"]] == ["1. 两种屏蔽", "细节"]
     assert items[0]["places"][1]["page_title"] == "近藤屏蔽"
-    md = TestClient(create_app(pr)).get("/md/我的理解.md").text
+    md = TestClient(create_app(pr)).get("/md/批注.md").text
     assert md.count("## 屏蔽云的图像") == 1 and md.count("近藤屏蔽](") == 2
     b = add(pr, section="两种屏蔽的比较", quote="")
     cli.main(["mine", str(project_dir), "--merge", it["id"], b["id"]])
     assert "已合并" in capsys.readouterr().out and mine.count(pr) == 1 and len(mine.items(pr)[0]["places"]) == 3
     cli.main(["mine", str(project_dir), "--id", it["id"], "--drop-place", "3"])
     assert len(mine.items(pr)[0]["places"]) == 2
+
+
+def test_migrates_legacy_folder_tags_and_index(project_dir: Path, tmp_path: Path, page: Path):
+    """2026-11-07 前叫「我的理解」：第一次读到时文件夹、标签、Project Notes 里的 Dataview 块自动改名，正文和用户写的别的东西不动。"""
+    note = vault_note(tmp_path, project_dir)
+    pr = Project(project_dir)
+    it = add(pr)
+    new = note.parent / "批注"
+    old = note.parent / "我的理解"
+    new.rename(old)
+    f = old / f"{it['id']}.md"
+    f.write_text(f.read_text(encoding="utf-8").replace("  - 批注", "  - 我的理解"), encoding="utf-8")
+    (old / ".merged").mkdir()
+    (old / ".merged" / "x.md").write_text("---\ntitle: x\npage: wiki/kondo.md\ntags:\n  - 我的理解\n---\n\n旧的\n", encoding="utf-8")
+    text = note.read_text(encoding="utf-8").replace(mine.INDEX_BLOCK.strip("\n"), mine.LEGACY_INDEX_BLOCK.strip("\n")) + "\n我自己写在后面的话\n"
+    note.write_text(text, encoding="utf-8")
+    assert mine.LEGACY_INDEX_MARK in note.read_text(encoding="utf-8")
+    items = mine.items(pr)
+    assert [x["id"] for x in items] == [it["id"]] and items[0]["text"] == TEXT
+    assert not old.exists() and (new / f"{it['id']}.md").is_file()
+    assert fm.read(new / f"{it['id']}.md")[0]["tags"] == ["批注"] and fm.read(new / ".merged" / "x.md")[0]["tags"] == ["批注"]
+    after = note.read_text(encoding="utf-8")
+    assert mine.LEGACY_INDEX_MARK not in after and after.count(mine.INDEX_MARK) == 1 and "## 批注" in after
+    assert "我自己写在后面的话" in after and compatible(after)
+    add(pr, title="第二条", section="细节", quote="")
+    assert note.read_text(encoding="utf-8").count(mine.INDEX_MARK) == 1
+
+
+def test_in_notes_mark(project_dir: Path, page: Path, capsys):
+    """批注收进正文后标上正文那一节的 label；改写正文、加挂出处都保留这个标记；给空字符串取消。"""
+    pr = Project(project_dir)
+    it = add(pr)
+    cli.main(["mine", str(project_dir), "--id", it["id"], "--in-notes", "sec:kondo-cloud"])
+    assert "已收进正文 sec:kondo-cloud" in capsys.readouterr().out
+    assert mine.items(pr)[0]["in_notes"] == "sec:kondo-cloud"
+    mine.save(pr, title="新标题", text="改过的正文", places=it["places"], id=it["id"])
+    mine.add_place(pr, it["id"], "wiki/kondo.md", "细节", "")
+    got = mine.items(pr)[0]
+    assert got["in_notes"] == "sec:kondo-cloud" and got["title"] == "新标题" and len(got["places"]) == 2
+    md = TestClient(create_app(pr)).get("/md/批注.md").text
+    assert "已收进正文" in md
+    cli.main(["mine", str(project_dir), "--id", it["id"], "--in-notes", ""])
+    assert mine.items(pr)[0]["in_notes"] == ""

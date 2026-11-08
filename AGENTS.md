@@ -27,6 +27,7 @@
 | `src/` | 从 lab 沉淀出的可复用代码 | agent |
 | `discussion/` | 需要用户裁决的问题，以及用户向 agent 提的问题 | 双方 |
 | `ideas/` | 问题树；`ideas/inbox/` 是用户的原始速记 | 用户写原话，agent 整理 |
+| `mynotes/` | **我的笔记**的正文：用户自己的 LaTeX 笔记（按用户的逻辑和记号），手写稿放 `mynotes/inbox/`；见第 6 节末与 `rd-mynotes` | 用户；agent 只按 rd-mynotes 照录、补细节 |
 | `log.md` | 时间线，只追加 | 双方 |
 | `.dashboard/` | 运行记录（含 `writing/` 里 Codex 写作步的提示词与输出）、作业登记、本机配置，不是内容 | 程序 |
 
@@ -82,6 +83,7 @@
 ## 3. Notation
 
 - `wiki/notation.md` 是全课题记号的唯一来源。写任何公式前先对照它；文献用了不同记号，卡片里给出对应表，正文仍用课题记号。
+- **课题有「我的笔记」（`mynotes/notation.tex`）且已登记了记号时，它在上游**：同一个量 `wiki/notation.md` 要和它写法一致；不一致时按笔记改 notation.md，再按下一条同步 wiki、卡片、notes。从 lab 推导往笔记里搬内容，一律换成笔记的记号。笔记的 notation.tex 只由用户定，agent 不为了迁就 dashboard 去改它。
 - 用户改了 `notation.md` 后，受影响的 wiki、卡片、notes 要同步改；已导出的旧 PDF 不重编，只在对应 `report.md` 顶部标一行"记号已于 <日期> 更新，PDF 用的是旧记号：…"。
 - 发现 notation 内部矛盾或与 PROJECT.md 冲突：不悄悄改，写进 discussion 让用户裁决。
 
@@ -126,11 +128,15 @@
 - 用户在对话里说接下来要做什么（"我接下来要…""下一步先…"），用 `rd next <课题目录> "<一句话>"` 写进去：保留原意，可以润色成通顺的一句，不添用户没说的内容。
 - 起草任务书、写 STATUS「等你决定」时参考用户的下一步；agent 自己的建议写在 STATUS，不写进 `next_step`。
 
-**我的理解**：用户读 wiki、推导时形成的物理图像，用用户自己的口吻，像夹批一样紧跟出处（引了句子就放在那句话所在段落之后，没引句子放在那一节末尾；网页上是楷体加朱色细竖线，引的那句话下面划朱色虚线；汇总页 `#/mine`；访客也看得到）。尽量引一句原文，读者才知道是读到哪里想到的。每条一个文件，存在 Project Notes 里本题目那一页旁边的「我的理解/」文件夹，Obsidian 里同一份。
-- 用户在对话里说"我对某某有个理解""帮我记成我的理解"时：只润色措辞、改正说错的地方，不添用户没说的内容，不加 AI 的评论或"未必全对"之类的标注；先把润色稿和出处（哪一页、哪一节、引哪句话）给用户看，讨论措辞，**用户明确同意后**再写。
-- 写入只用 `rd mine <课题目录> --page <页面> --section "<节标题>" --quote "<引的那句话>" --title "<短标题>" --text-file -`（正文从标准输入给）。出处对不上它会拒绝并列出可选标题；`rd mine <课题目录> --headings <页面>` 列出一页的标题。改已有的一条用 `--id`。**同一条理解要挂在几处时只写一份**：先写一处，再用 `rd mine <课题目录> --id <id> --add-place --page … --section … --quote …` 加挂（`--drop-place N` 去掉一处）；发现已有重复的几份，用 `--merge <id1> <id2> …` 合成一份（正文不同时先和用户定好合并后的正文，再加 `--text-file -`）。写 Project Notes 在课题目录之外，沙箱里会被拦，按提示申请权限即可。
-- 理解原文不写进 wiki、notes 或任何页面，agent 也不改它；用户要改或删才动。改写 wiki/notes 后跑 `rd mine <课题目录> --check`，出处对不上的只重新挂（`--drop-place` 那一处再 `--add-place` 到对的位置），不动正文。
-- lab 收尾时，若新结果明显支持、补充或冲突于某条理解，在 STATUS「等你决定」里提一句并链接那条理解；不在理解旁边写任何东西。
+**我的笔记**：用户自己的内容都在网页「我的笔记」一页（`#/mine`），顶上切换「正文」和「批注」。正文是 `mynotes/` 里的 LaTeX，按用户自己的逻辑整理、可以拿去发表；批注是读 dashboard 时随手写下的短评，挂在出处后面。两者都以用户为准：和 agent 写的页面说法不同时，不改用户的，在 STATUS「等你决定」里提出来。
+
+**正文（mynotes/）**：用户给手写稿、Mathematica 导出或一段文字，要整理进笔记时，按 `rd-mynotes` skill 做：照录用户的内容（黑色），只补中间步骤、衔接、未定义的符号、引用四类细节（橙色 `\orange{}`），不加新论证、不调顺序、不删用户的话，问题用蓝色 `\cmt{}`；每批交红线版和 `mynotes/review/` 对照清单，用户批准后 `rd mynotes accept` 再 git commit。写之前读 Project Notes 根目录的 `我的笔记文风.md` 和 `mynotes/STYLE.md`、对照 `mynotes/notation.tex`。用户没要求时不往正文里写任何东西，lab 收尾也不碰它。
+
+**批注**（2026-11-07 前叫「我的理解」，旧文件夹第一次读到时自动改名）：用户读 wiki、推导时形成的物理图像，用用户自己的口吻，像夹批一样紧跟出处（引了句子就放在那句话所在段落之后，没引句子放在那一节末尾；网页上是楷体加朱色细竖线，引的那句话下面划朱色虚线；汇总在「我的笔记 › 批注」；访客也看得到）。尽量引一句原文，读者才知道是读到哪里想到的。每条一个文件，存在 Project Notes 里本题目那一页旁边的「批注/」文件夹，Obsidian 里同一份。
+- 用户在对话里说"我对某某有个理解""帮我记成批注""记成我的理解"时：只润色措辞、改正说错的地方，不添用户没说的内容，不加 AI 的评论或"未必全对"之类的标注；先把润色稿和出处（哪一页、哪一节、引哪句话）给用户看，讨论措辞，**用户明确同意后**再写。
+- 写入只用 `rd mine <课题目录> --page <页面> --section "<节标题>" --quote "<引的那句话>" --title "<短标题>" --text-file -`（正文从标准输入给）。出处对不上它会拒绝并列出可选标题；`rd mine <课题目录> --headings <页面>` 列出一页的标题。改已有的一条用 `--id`。**同一条批注要挂在几处时只写一份**：先写一处，再用 `rd mine <课题目录> --id <id> --add-place --page … --section … --quote …` 加挂（`--drop-place N` 去掉一处）；发现已有重复的几份，用 `--merge <id1> <id2> …` 合成一份（正文不同时先和用户定好合并后的正文，再加 `--text-file -`）。写 Project Notes 在课题目录之外，沙箱里会被拦，按提示申请权限即可。
+- 批注原文不写进 wiki、notes 或任何页面，agent 也不改它；用户要改或删才动。用户让把某条批注整理进正文时按 rd-mynotes 做，接受之后 `rd mine <课题目录> --id <id> --in-notes <正文那一节的 label>` 标上「已收进正文」，批注本身不删。改写 wiki/notes 后跑 `rd mine <课题目录> --check`，出处对不上的只重新挂（`--drop-place` 那一处再 `--add-place` 到对的位置），不动正文。
+- lab 收尾时，若新结果明显支持、补充或冲突于某条批注或正文里的说法，在 STATUS「等你决定」里提一句并链接；不在批注旁边、不在正文里写任何东西。
 
 ## 7. 什么时候、怎么向用户提问
 
@@ -163,7 +169,8 @@ rd jobs claim <课题目录> --cores N --label X --pid P / rd jobs release <课�
 rd doctor <课题目录>                     # 断链、卡片缺节、状态异常
 rd tick <课题目录>                       # 处理所有待办（回答、审批、升级）
 rd next <课题目录> ["一句话"]           # 用户的下一步（Project Notes 的 next_step）：不带文字是读，带文字是写
-rd mine <课题目录> [--page … --section … --quote … --title … --text-file -]   # 我的理解：不带参数是列出；--id … --add-place 再挂一处；--merge 合并重复；--check 核对出处；--headings <页面> 列标题
+rd mine <课题目录> [--page … --section … --quote … --title … --text-file -]   # 批注：不带参数是列出；--id … --add-place 再挂一处；--merge 合并重复；--id … --in-notes LABEL 标已收进正文；--check 核对出处；--headings <页面> 列标题
+rd mynotes init|build|redline|accept|status <课题目录>   # 我的笔记的正文（mynotes/）：建骨架 / 编译 / 和上次接受的版本比 / 接受这一批 / 状态
 rd finish <课题目录> <lab id> [--check]  # 收尾门槛：当前版本有通过的推导审核与一致性报告、薄层来自写作作业、doctor 干净，才标 done
 rd cluster status|init|push|submit|jobs|pull|inventory|cancel <课题目录> …   # 集群（Slurm）：空位、目录、推代码、提交、状态、拉结果、清单
 ```

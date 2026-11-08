@@ -1,0 +1,99 @@
+% 版式与通用宏：沿用课题负责人自己的 LaTeX 母版（revtex4-2、颜色设置不改）。
+% 课题专用的记号宏不放这里，放 notation.tex。
+
+% cancel automatic upper case in the section title
+\makeatletter
+\def\@hangfrom@section#1#2#3{\normalsize\@hangfrom{#1#2}#3}%\MakeTextUppercase{#3}}%
+\def\@hangfroms@section#1#2{\normalsize#1#2}%\MakeTextUppercase{#2}}%
+\makeatother
+
+\RequirePackage[usenames, dvipsnames, x11names]{xcolor}
+% Useful packages
+\usepackage{amsmath,amsfonts,amssymb,bm}
+\usepackage{graphicx,color,soul}
+\usepackage[normalem]{ulem}
+\usepackage{dsfont}
+\usepackage{enumerate}
+\usepackage{multirow}
+\usepackage{longtable}
+\usepackage[colorlinks=true, allcolors=blue]{hyperref}
+
+\hypersetup{
+    colorlinks=true,
+    citecolor=Green,
+    linkcolor=Red,
+    urlcolor=NavyBlue
+}
+\graphicspath{{figs/}}
+
+% new command = nc
+\newcommand{\nc}{\newcommand}
+% dirac notation
+\nc{\ket}[1]{|#1\rangle}
+\nc{\bra}[1]{\langle#1|}
+\nc{\ketbra}[2]{|#1\rangle\!\langle#2|}
+\nc{\braket}[2]{\langle#1|#2\rangle}
+\nc{\braoprket}[3]{\langle#1|#2|#3\rangle}
+\nc{\opr}[1]{\operatorname{#1}}
+\nc{\avg}[1]{\langle#1\rangle}
+\nc{\ketbrasame}[1]{|#1\rangle\!\langle#1|}
+\nc{\tr}{\opr{tr}}
+\nc{\E}{\mathbb{E}}
+\nc{\var}{\opr{Var}}
+\nc{\up}{\uparrow}
+\nc{\dn}{\downarrow}
+\nc{\bd}[1]{\boldsymbol{#1}}
+\nc{\zjx}[1]{\textcolor{violet}{\textbf{#1}}}
+\nc{\jx}[1]{\textcolor{violet}{\textbf{[JX: #1]}}}
+\nc{\red}[1]{\textcolor{red}{#1}}
+
+\newcommand{\diag}[2]{\vcenter{\hbox{\includegraphics[height=#2]{#1}}}}
+\newcommand{\figref}[1]{Fig.\,\ref{#1}}
+\newcommand{\figsref}[1]{Figs.\,\ref{#1}}
+\newcommand{\secref}[1]{Sec.\,\ref{#1}}
+\newcommand{\eqnref}[1]{Eq.\,\eqref{#1}}
+\newcommand{\eqnsref}[1]{Eqs.\,\eqref{#1}}
+\newcommand{\appref}[1]{Appendix~\ref{#1}}
+\renewcommand{\Im}{\mathop{\mathrm{Im}}}
+\renewcommand{\Re}{\mathop{\mathrm{Re}}}
+\nc{\sgn}{\operatorname{sgn}}
+\nc{\HC}{\mathrm{H.c.}}
+\nc{\Tr}{\mathrm{Tr}}
+\nc{\ba}{\mathbf{a}}
+\nc{\bb}{\mathbf{b}}
+\nc{\bk}{\mathbf{k}}
+\nc{\bq}{\mathbf{q}}
+\nc{\br}{\mathbf{r}}
+\nc{\bQ}{\mathbf{Q}}
+
+% ---------------------------------------------------------------------------
+% 审阅标记（颜色沿用母版）。每一批增补：你手写的内容照常写（黑色），
+% agent 补的细节用橙色，agent 要问你的用蓝色。你批准后 rd mynotes accept
+% 去掉橙色标记（变成正文）；还有蓝色问题没答时 accept 会拒绝。
+%   \orange{...}                             agent 补的细节（句子、短公式）
+%   \begin{orangeblock} ... \end{orangeblock}  agent 补的整段，可以含行间公式
+%   \cmt{...}                                agent 的问题或存疑
+%   \jx{...}                                 你自己的批注，accept 不动它
+\nc{\cmt}[1]{\textcolor{blue}{\textbf{[#1]}}}
+\DeclareRobustCommand{\orange}[1]{\textcolor{BurntOrange}{\textbf{\boldmath #1}}}
+\newenvironment{orangeblock}{\par\color{BurntOrange}\bfseries\boldmath}{\par}
+
+% ---------------------------------------------------------------------------
+% 记号表：notation.tex 里每个 \notation{符号}{含义}{定义处} 记一行，
+% 文末 \printnotation 打成一张表（还没有记号时什么也不印）。
+\makeatletter
+\newif\if@rdnotation
+\newcommand\rd@notationrows{}
+\newcommand{\notation}[3]{\global\@rdnotationtrue\g@addto@macro\rd@notationrows{#1 & #2 & #3\\}}
+\newcommand{\printnotation}{%
+  \if@rdnotation
+    \section*{Notation}
+    \begin{longtable}{l p{0.58\textwidth} l}
+      \hline
+      Symbol & Meaning & Defined in\\
+      \hline
+      \rd@notationrows
+      \hline
+    \end{longtable}
+  \fi}
+\makeatother

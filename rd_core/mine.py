@@ -1,12 +1,12 @@
-"""「我的理解」：用户自己对某一节内容的物理图像，用用户的口吻写。
+"""「批注」：用户读 wiki、推导时随手写下的自己的物理图像，挂在某一节或某一句后面，用用户的口吻写。
 
-每条一个 markdown 文件，放在 Project Notes 里本课题那一页旁边的「我的理解/」文件夹
-（找不到那一页时放在课题目录的「我的理解/」）。网页和 Obsidian 读的是同一份。
+每条一个 markdown 文件，放在 Project Notes 里本课题那一页旁边的「批注/」文件夹
+（找不到那一页时放在课题目录的「批注/」）。网页和 Obsidian 读的是同一份。
 frontmatter 记出处：page（项目内路径）、section（节标题原文）、quote（引的那句话，可空）。
 网页像夹批一样把它紧跟在出处后面：引了句子就放在那句话所在段落之后（句子下面划朱色虚线），没引句子放在那一节末尾；另有汇总页 #/mine。
 
-理解只由 agent 在用户批准措辞之后用 `rd mine` 写入；网页只显示，没有编辑入口。
-理解原文不写进 wiki 或 notes，所以 agent 改写那些页面时碰不到它。
+批注只由 agent 在用户批准措辞之后用 `rd mine` 写入；网页只显示，没有编辑入口。
+批注原文不写进 wiki 或 notes，所以 agent 改写那些页面时碰不到它。
 """
 
 from __future__ import annotations
@@ -14,15 +14,21 @@ from __future__ import annotations
 import json
 import os
 import re
+import shutil
 from datetime import date
 from pathlib import Path
 from urllib.parse import quote as urlquote
 
 from . import config, fm, pnotes
 
-DIRNAME = "我的理解"
-AI_PATH = "我的理解.md"  # 给 AI 读的出口 /md/我的理解.md
-INDEX_MARK = "<!-- rd:我的理解 -->"
+DIRNAME = "批注"
+AI_PATH = "批注.md"  # 给 AI 读的出口 /md/批注.md
+INDEX_MARK = "<!-- rd:批注 -->"
+TAG = "批注"
+# 2026-11-07 前叫「我的理解」：旧文件夹、旧标签、旧 Dataview 块在第一次读到时自动改名（_migrate），旧的 AI 出口地址仍可用
+LEGACY_DIRNAME = "我的理解"
+LEGACY_AI_PATH = "我的理解.md"
+LEGACY_INDEX_MARK = "<!-- rd:我的理解 -->"
 
 _MATH = re.compile(r"\$\$[\s\S]+?\$\$|\\\[[\s\S]+?\\\]|\\\([\s\S]+?\\\)|\$[^$\n]+?\$")
 _WIKILINK = re.compile(r"\[\[([^\]|#]+)(?:#[^\]|]*)?(?:\|([^\]]*))?\]\]")
@@ -108,7 +114,56 @@ def locate(project, page: str, section: str, quote: str = "", loose: bool = Fals
 
 def mine_dir(project) -> Path:
     note = pnotes.find_note(project)
-    return (note.parent if note else Path(project.root)) / DIRNAME
+    d = (note.parent if note else Path(project.root)) / DIRNAME
+    old = d.with_name(LEGACY_DIRNAME)
+    if old.is_dir():
+        _migrate(old, d)
+    if note:
+        _migrate_index(note)
+    return d
+
+
+def _migrate(old: Path, new: Path) -> None:
+    """旧名「我的理解/」→「批注/」：文件夹改名，各条（含 .merged 里的）frontmatter 的标签跟着改；正文不动。
+    新文件夹已经在了（另一台机器经 iCloud 先建了）就把旧文件夹里的各条搬过去，同名的不覆盖、留在原处。"""
+    try:
+        if not new.exists():
+            os.rename(old, new)
+        else:
+            for p in [*old.glob("*.md"), *old.glob(".merged/*.md")]:
+                dst = new / p.relative_to(old)
+                if not dst.exists():
+                    dst.parent.mkdir(exist_ok=True)
+                    os.replace(p, dst)
+            for d in (old / ".merged", old):
+                if d.is_dir() and not [x for x in d.iterdir() if x.name != ".DS_Store"]:
+                    shutil.rmtree(d)
+    except OSError:
+        return  # 另一台机器（iCloud）或另一个进程同时在改：下次再说
+    for p in [*new.glob("*.md"), *new.glob(".merged/*.md")]:
+        try:
+            s = p.read_text(encoding="utf-8")
+        except OSError:
+            continue
+        head, sep, rest = s.partition("\n---\n")
+        if sep and f"\n  - {LEGACY_DIRNAME}" in head:
+            _atomic_write(p, head.replace(f"\n  - {LEGACY_DIRNAME}", f"\n  - {TAG}") + sep + rest)
+
+
+def _migrate_index(note: Path) -> bool:
+    """Project Notes 那一页里旧的「## 我的理解」Dataview 块换成新的；用户在块前后写的东西不动。"""
+    try:
+        before = note.read_text(encoding="utf-8")
+    except OSError:
+        return False
+    if LEGACY_INDEX_MARK not in before:
+        return False
+    after = before.replace(LEGACY_INDEX_BLOCK.strip("\n"), INDEX_BLOCK.strip("\n"))
+    if after == before:  # 块被用户改过：只换各个可辨认的部分
+        for a, b in [("## 我的理解\n", "## 批注\n"), (LEGACY_INDEX_MARK, INDEX_MARK), ('file.link AS "理解"', 'file.link AS "批注"'),
+                     (f'this.file.folder + "/{LEGACY_DIRNAME}"', f'this.file.folder + "/{DIRNAME}"')]:
+            after = after.replace(a, b)
+    return pnotes._write(note, before, after)
 
 
 def _project_name(project) -> str:
@@ -121,7 +176,7 @@ def _q(s: str) -> str:
 
 def _slug(title: str) -> str:
     s = re.sub(r"[^\w一-鿿]+", "-", title).strip("-_")
-    return (s[:40].rstrip("-_") or "理解")
+    return (s[:40].rstrip("-_") or "批注")
 
 
 def route(page: str) -> str:
@@ -154,7 +209,7 @@ def _place(page, section="", quote="") -> dict:
 
 
 def _read(p: Path) -> dict | None:
-    """一条理解。出处可以有几处：frontmatter 的 page/section/quote 是第一处，also 里是其余各处（同一条理解挂在几个地方，文件只有一份）。"""
+    """一条批注。出处可以有几处：frontmatter 的 page/section/quote 是第一处，also 里是其余各处（同一条批注挂在几个地方，文件只有一份）。"""
     try:
         meta, body = fm.read(p)
     except OSError:
@@ -171,11 +226,12 @@ def _read(p: Path) -> dict | None:
         "places": places, "text": body.strip(),
         "created": str(meta.get("created") or ""), "updated": str(meta.get("updated") or meta.get("created") or ""),
         "project": str(meta.get("project") or ""),
+        "in_notes": str(meta.get("in_notes") or ""),  # 已收进正文（mynotes）：正文里那一节的 \label，空 = 还没有
     }
 
 
 def items(project) -> list[dict]:
-    """本课题的全部理解，最近改过的在前；每条只出现一次，places 列出它挂的各处。同一个文件夹若被几个课题共用，按 frontmatter 的 project 分开。"""
+    """本课题的全部批注，最近改过的在前；每条只出现一次，places 列出它挂的各处。同一个文件夹若被几个课题共用，按 frontmatter 的 project 分开。"""
     d = mine_dir(project)
     if not d.is_dir():
         return []
@@ -214,9 +270,9 @@ def _same(a: dict, b: dict) -> bool:
 
 
 def save(project, *, title: str, text: str, page: str | None = None, section: str = "", quote: str = "",
-         places: list[dict] | None = None, id: str | None = None, created: str | None = None) -> dict:
+         places: list[dict] | None = None, id: str | None = None, created: str | None = None, in_notes: str | None = None) -> dict:
     """新增一条（id 为空）或整条改写已有的一条（created 保留）。places 给出全部出处（第一处为主），不给就用 page/section/quote 一处。
-    每处出处先核对，有一处对不上就抛 ValueError、什么也不写；重复的出处只留一个。"""
+    每处出处先核对，有一处对不上就抛 ValueError、什么也不写；重复的出处只留一个。in_notes 为 None 时保留原值。"""
     if places is None:
         places = [{"page": page, "section": section, "quote": quote}]
     resolved: list[dict] = []
@@ -231,9 +287,9 @@ def save(project, *, title: str, text: str, page: str | None = None, section: st
     text = (text or "").strip()
     title = " ".join((title or "").split())
     if not text:
-        raise ValueError("理解的正文是空的")
+        raise ValueError("批注的正文是空的")
     if not title:
-        raise ValueError("要给这条理解起一个短标题（Obsidian 里的文件名和汇总页用）")
+        raise ValueError("要给这条批注起一个短标题（Obsidian 里的文件名和汇总页用）")
     d = mine_dir(project)
     d.mkdir(parents=True, exist_ok=True)
     today = date.today().isoformat()
@@ -241,7 +297,10 @@ def save(project, *, title: str, text: str, page: str | None = None, section: st
         p = d / f"{id}.md"
         if not p.is_file():
             raise ValueError(f"没有这一条：{id}")
-        created = created or (_read(p) or {}).get("created") or today
+        old = _read(p) or {}
+        created = created or old.get("created") or today
+        if in_notes is None:
+            in_notes = old.get("in_notes") or ""
     else:
         created = created or today
         base = f"{today}-{_slug(title)}"
@@ -258,7 +317,9 @@ def save(project, *, title: str, text: str, page: str | None = None, section: st
         head.append("also:")
         for pl in resolved[1:]:
             head += [f"  - page: {_q(pl['page'])}", f"    section: {_q(pl['section'])}", f"    quote: {_q(pl['quote'])}"]
-    head += ["tags:", "  - 我的理解"]
+    if in_notes:
+        head.append(f"in_notes: {_q(in_notes)}")
+    head += ["tags:", f"  - {TAG}"]
     _atomic_write(p, "---\n" + "\n".join(head) + "\n---\n\n" + text + "\n")
     ensure_index(project)
     return next(it for it in items(project) if it["id"] == p.stem)
@@ -272,9 +333,15 @@ def _get(project, id: str) -> dict:
 
 
 def add_place(project, id: str, page: str, section: str = "", quote: str = "") -> dict:
-    """把已有的一条理解再挂到一处；正文不动。"""
+    """把已有的一条批注再挂到一处；正文不动。"""
     it = _get(project, id)
     return save(project, title=it["title"], text=it["text"], places=it["places"] + [{"page": page, "section": section, "quote": quote}], id=id)
+
+
+def set_in_notes(project, id: str, label: str) -> dict:
+    """标记这条批注已收进正文（mynotes 里那一节的 \\label）；label 为空则取消标记。正文、出处都不动。"""
+    it = _get(project, id)
+    return save(project, title=it["title"], text=it["text"], places=it["places"], id=id, in_notes=(label or "").strip())
 
 
 def drop_place(project, id: str, n: int) -> dict:
@@ -288,7 +355,7 @@ def drop_place(project, id: str, n: int) -> dict:
 
 
 def merge(project, ids: list[str], text: str | None = None, title: str | None = None) -> dict:
-    """把同一条理解的几份合成一份：出处合在一起，留第一份的文件名和最早的 created；其余几份移到「我的理解/.merged/」，不删。
+    """把同一条批注的几份合成一份：出处合在一起，留第一份的文件名和最早的 created；其余几份移到「批注/.merged/」，不删。
     几份正文不完全一样时必须给出合并后的正文。"""
     if len(ids) < 2:
         raise ValueError("至少要给两条")
@@ -318,12 +385,24 @@ def check(project) -> list[tuple[dict, int, str]]:
     return bad
 
 
-INDEX_BLOCK = f"""
+LEGACY_INDEX_BLOCK = """
 ## 我的理解
+
+<!-- rd:我的理解 -->
+```dataview
+TABLE WITHOUT ID file.link AS "理解", page AS "页面", section AS "节", updated AS "更新"
+WHERE file.folder = this.file.folder + "/我的理解"
+SORT updated DESC
+```
+"""
+
+
+INDEX_BLOCK = f"""
+## 批注
 
 {INDEX_MARK}
 ```dataview
-TABLE WITHOUT ID file.link AS "理解", page AS "页面", section AS "节", updated AS "更新"
+TABLE WITHOUT ID file.link AS "批注", page AS "页面", section AS "节", updated AS "更新"
 WHERE file.folder = this.file.folder + "/{DIRNAME}"
 SORT updated DESC
 ```
@@ -331,23 +410,25 @@ SORT updated DESC
 
 
 def ensure_index(project) -> bool:
-    """Project Notes 里本课题那一页末尾加一节「我的理解」，用 Dataview 列出文件夹里的各条；已有就不动。"""
+    """Project Notes 里本课题那一页末尾加一节「批注」，用 Dataview 列出文件夹里的各条；已有就不动。"""
     note = pnotes.find_note(project)
     if not note:
         return False
+    _migrate_index(note)
     before = note.read_text(encoding="utf-8")
-    if INDEX_MARK in before:
+    if INDEX_MARK in before or LEGACY_INDEX_MARK in before:
         return False
     after = before.rstrip("\n") + "\n" + INDEX_BLOCK
     return pnotes._write(note, before, after)
 
 
 def ai_markdown(project, base: str) -> str:
-    """给 AI 读：每条理解一次，列出它挂的各处出处（带链接）。"""
+    """给 AI 读：每条批注一次，列出它挂的各处出处（带链接）。"""
     name = _project_name(project)
-    out = [f"# 我的理解（{name}）", "", "课题负责人读 wiki、推导时形成的物理图像，用自己的话写。每条注明出处（哪一页、哪一节、引的哪句话）；同一条可能挂在几处。", ""]
+    out = [f"# 批注（{name}）", "", "课题负责人读 wiki、推导时随手写下的批注：自己的物理图像，用自己的话写。每条注明出处（哪一页、哪一节、引的哪句话）；同一条可能挂在几处。"
+           "整理成形的内容在课题负责人自己的正文笔记（mynotes）里，标了「已收进正文」的批注以正文为准。", ""]
     for it in items(project):
-        out += [f"## {it['title']}", "", f"更新 {it['updated']}。出处：", ""]
+        out += [f"## {it['title']}", "", f"更新 {it['updated']}。" + (f"已收进正文（\\label{{{it['in_notes']}}}）。" if it.get("in_notes") else "") + "出处：", ""]
         for pl in it["places"]:
             src = f"「{pl['section']}」一节" if pl["section"] else "全文"
             out.append(f"- [{pl['page_title']}]({base}/md/{urlquote(pl['page'])}) · {src}" + (f"，引：「{pl['quote']}」" if pl["quote"] else ""))

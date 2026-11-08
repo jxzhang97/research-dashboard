@@ -19,7 +19,7 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, PlainTex
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from . import TEMPLATE_ROOT, config, cores, fm, mine, pnotes, wikimap
+from . import TEMPLATE_ROOT, config, cores, fm, mine, mynotes, pnotes, wikimap
 from .project import Project
 from .runner import Runner, new_run_id, stop_run
 from .tick import PROMPTS
@@ -269,6 +269,9 @@ def _can_write(request: Request, project: Project) -> bool:
     return False
 
 
+MYNOTES_AI = "我的笔记.tex"  # 给 AI 读的正文出口 /md/我的笔记.tex（mynotes/ 各节合并）
+
+
 def create_app(project: Project) -> FastAPI:
     app = FastAPI(title="research-dashboard")
     reaped = project.reap_stale_runs()  # 上次服务留下的排队/运行记录：进程不在了就标掉，免得挡住派发
@@ -313,7 +316,7 @@ def create_app(project: Project) -> FastAPI:
             lines += [f"> {intro}", ""]
         lines += [
             f"这是课题「{name}」的机器可读入口，所有页面都是 markdown 原文（UTF-8）。",
-            "读法：先读「课题状态」（研究问题、当前回答、正在做什么），再按需读 Wiki（我们对各概念的当前理解）、Lab（任务书、摘要、推导）、文献卡片、讨论（需要裁决的问题与回答）、问题树。",
+            "读法：先读「课题状态」（研究问题、当前回答、正在做什么），再按需读 Wiki（我们对各概念的当前理解）、Lab（任务书、摘要、推导）、文献卡片、讨论（需要裁决的问题与回答）、问题树。末尾「我的笔记」是课题负责人自己写的（正文和批注），和 agent 写的页面说法不同时以它为准。",
             f"全部内容合并成一个文件：{base}/llms-full.txt",
             "",
         ]
@@ -323,8 +326,15 @@ def create_app(project: Project) -> FastAPI:
             lines.append(f"## {sec}")
             lines += [f"- [{t['title']}]({base}/md/{quote(t['path'])})" for t in items]
             lines.append("")
-        if mine.count(project):
-            lines += ["## 我的理解（课题负责人自己的物理图像）", f"- [我的理解]({base}/md/{quote(mine.AI_PATH)})", ""]
+        if mynotes.exists(project) or mine.count(project):
+            lines += ["## 我的笔记（课题负责人自己写的，以此为准）"]
+            if mynotes.exists(project):
+                lines.append(f"- [正文（LaTeX 源，各节已合并成一个文件）]({base}/md/{quote(MYNOTES_AI)})：课题负责人按自己的逻辑和记号整理的笔记")
+                if (project.root / mynotes.DIR / "build" / "main.pdf").is_file():
+                    lines.append(f"- [正文 PDF]({base}/api/file?path={quote(mynotes.DIR + '/build/main.pdf')})")
+            if mine.count(project):
+                lines.append(f"- [批注]({base}/md/{quote(mine.AI_PATH)})：读 wiki、推导时随手写下的物理图像，挂在出处后面")
+            lines.append("")
         return "\n".join(lines)
 
     @app.get("/")
@@ -370,7 +380,7 @@ def create_app(project: Project) -> FastAPI:
             "project_md": pm.read_text(encoding="utf-8") if pm.exists() else "",
             "status": project.status_doc(),
             "notes": _notes(),
-            "mine": mine.count(project),
+            "mine": mine.count(project), "mynotes": mynotes.exists(project),
             "counts": {
                 "cards": len(project.cards()), "wiki": len(project.wiki_pages()), "labs": project.lab_count(),
                 "discussion": len(project.discussions()), "ideas": len([i for i in project.ideas() if not i.id.startswith("inbox/")]),
@@ -378,9 +388,17 @@ def create_app(project: Project) -> FastAPI:
             },
         }
 
+    @app.get("/api/mynotes")
+    def mynotes_status():
+        """「我的笔记 › 正文」：mynotes/ 的状态（PDF、目录、待看的标记、inbox、对照清单）。只读：正文只由 agent 按 rd-mynotes 写。"""
+        try:
+            return mynotes.status(project)
+        except OSError:
+            return {"exists": False, "dir": mynotes.DIR}
+
     @app.get("/api/mine")
     def mine_items():
-        """「我的理解」：只读。写入只经 rd mine（agent 在用户批准措辞后调用），网页上没有编辑入口。"""
+        """「批注」：只读。写入只经 rd mine（agent 在用户批准措辞后调用），网页上没有编辑入口。"""
         try:
             return {"items": mine.items(project)}
         except OSError:
@@ -722,14 +740,18 @@ def create_app(project: Project) -> FastAPI:
                     out += ["\n\n---\n", project.ai_markdown(t["path"], base, table)]
                 except (OSError, PermissionError):
                     continue
+        if mynotes.exists(project):
+            out += ["\n\n# ═══ 我的笔记 · 正文（LaTeX） ═══\n", f"<!-- {MYNOTES_AI} -->", "```latex", mynotes.flatten(project), "```"]
         if mine.count(project):
-            out += ["\n\n# ═══ 我的理解 ═══\n", f"<!-- {mine.AI_PATH} -->", mine.ai_markdown(project, base)]
+            out += ["\n\n# ═══ 我的笔记 · 批注 ═══\n", f"<!-- {mine.AI_PATH} -->", mine.ai_markdown(project, base)]
         return PlainTextResponse("\n".join(out), media_type="text/markdown; charset=utf-8")
 
     @app.get("/md/{path:path}")
     def md_page(path: str, request: Request):
-        if path == mine.AI_PATH:
+        if path in (mine.AI_PATH, mine.LEGACY_AI_PATH):
             return PlainTextResponse(mine.ai_markdown(project, _base(request)), media_type="text/markdown; charset=utf-8")
+        if path == MYNOTES_AI and mynotes.exists(project):
+            return PlainTextResponse(mynotes.flatten(project), media_type="text/plain; charset=utf-8")
         if not project.ai_allowed(path):
             raise HTTPException(404)
         try:

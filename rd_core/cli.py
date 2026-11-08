@@ -297,7 +297,7 @@ def cmd_next(args):
 
 
 def cmd_mine(args):
-    """「我的理解」：列出、核对出处、新增、改写、加挂一处、去掉一处、合并重复。只在用户批准了措辞之后写（见 AGENTS.md 第 6 节末）。"""
+    """「批注」：列出、核对出处、新增、改写、加挂一处、去掉一处、合并重复、标记已收进正文。只在用户批准了措辞之后写（见 AGENTS.md 第 6 节末）。"""
     from . import mine
     proj = _project(args.path)
     if args.headings:
@@ -324,10 +324,12 @@ def cmd_mine(args):
         return "；".join(f"{pl['page']} ·「{pl['section'] or '全文'}」" for pl in it["places"])
 
     def done(it, what):
-        proj.append_log("用户", f"我的理解{what}：{it['title']}（{where(it)}）")
+        proj.append_log("用户", f"批注{what}：{it['title']}（{where(it)}）")
         print(f"已写：{mine.mine_dir(proj) / (it['id'] + '.md')}")
         for k, pl in enumerate(it["places"], 1):
             print(f"  第 {k} 处 网页 {mine.route(pl['page'])}（「{pl['section'] or '全文'}」）")
+        if it.get("in_notes"):
+            print(f"  已收进正文 {it['in_notes']}")
 
     try:
         if args.merge:
@@ -340,9 +342,12 @@ def cmd_mine(args):
             return done(mine.add_place(proj, args.id, args.page, args.section or "", args.quote or ""), "（加挂一处）")
         if args.id and args.drop_place:
             return done(mine.drop_place(proj, args.id, args.drop_place), "（去掉一处）")
+        if args.id and args.in_notes is not None:
+            it = mine.set_in_notes(proj, args.id, args.in_notes)
+            return done(it, f"（已收进正文 {it['in_notes']}）" if it["in_notes"] else "（取消「已收进正文」）")
         if not (args.id or args.page):
             for it in mine.items(proj):
-                print(f"{it['id']}  {it['updated']}  {it['title']}")
+                print(f"{it['id']}  {it['updated']}  {it['title']}" + (f"  [已收进正文 {it['in_notes']}]" if it.get("in_notes") else ""))
                 for k, pl in enumerate(it["places"], 1):
                     print(f"    {k}. {pl['page']} ·「{pl['section'] or '全文'}」")
             print(f"文件夹：{mine.mine_dir(proj)}")
@@ -358,6 +363,37 @@ def cmd_mine(args):
         done(it, "（改）" if args.id else "")
     except ValueError as e:
         print(f"没有写：{e}"); sys.exit(1)
+
+
+def cmd_mynotes(args):
+    """「我的笔记」的正文（课题目录下的 mynotes/，LaTeX）：建骨架、编译、红线版、接受这一批、状态。规矩见 skills/rd-mynotes。"""
+    from . import mynotes
+    proj = _project(args.path)
+    try:
+        if args.action == "init":
+            name = str(config.load(proj.root)["project"].get("name") or "")
+            title = args.title or (name if name.isascii() else "")  # pdflatex 编不了中文标题：课题名是中文时先用 Notes，用户再改
+            d = mynotes.init(proj, title=title, author=args.author or "")
+            st = mynotes.shared_style(proj)
+            print(f"已建：{d}\n  正文骨架 main.tex、记号 notation.tex、文风 STYLE.md；手写稿放 inbox/")
+            if st:
+                print(f"  各课题共用的文风：{st}")
+            proj.append_log("agent", "建了「我的笔记」正文骨架 mynotes/（还没有内容）")
+            return
+        if args.action == "build":
+            r = mynotes.build(proj)
+        elif args.action == "redline":
+            r = mynotes.redline(proj, args.rev or "HEAD")
+        elif args.action == "accept":
+            r = mynotes.accept(proj)
+            proj.append_log("用户", f"接受了「我的笔记」这一批：去掉 {r['removed_marks']} 处橙色标记" + (f"，原稿 {len(r['moved'])} 份移到 originals/" if r["moved"] else ""))
+        else:
+            r = mynotes.status(proj)
+    except ValueError as e:
+        print(f"没有做：{e}"); sys.exit(1)
+    print(json.dumps(r, ensure_ascii=False, indent=1))
+    if isinstance(r, dict) and r.get("ok") is False:
+        sys.exit(1)
 
 
 def main(argv=None):
@@ -378,15 +414,20 @@ def main(argv=None):
     p = sub.add_parser("scheduler", help="launchd 定时任务"); p.add_argument("action", choices=["install", "uninstall", "status"]); p.add_argument("path"); p.set_defaults(fn=cmd_scheduler)
     p = sub.add_parser("doctor", help="检查断链、缺节、状态"); p.add_argument("path"); p.set_defaults(fn=cmd_doctor)
     p = sub.add_parser("finish", help="收尾门槛：核对当前版本的推导审核、薄层一致性检查与 doctor，通过才把 lab 标为 done"); p.add_argument("path"); p.add_argument("lab"); p.add_argument("--check", action="store_true", help="只检查不改状态"); p.set_defaults(fn=cmd_finish)
-    p = sub.add_parser("mine", help="用户的「我的理解」：不带参数是列出；--page/--section/--quote/--title/--text 新增；--id 改写；--id --add-place 再挂一处；--merge 合并重复；--check 核对出处")
+    p = sub.add_parser("mine", help="用户的「批注」：不带参数是列出；--page/--section/--quote/--title/--text 新增；--id 改写；--id --add-place 再挂一处；--merge 合并重复；--id --in-notes LABEL 标记已收进正文；--check 核对出处")
     p.add_argument("path"); p.add_argument("--page", help="出处页面（项目内路径，如 wiki/kondo.md、labs/03-x/notes.md）")
     p.add_argument("--section", help="出处那一节的标题（原文；说得出唯一一个标题即可）"); p.add_argument("--quote", help="引的那句话（原文里连续的一段，公式可省略；可空）")
-    p.add_argument("--title", help="短标题"); p.add_argument("--text", help="理解正文（markdown，公式用 $…$）"); p.add_argument("--text-file", help="从文件读正文；- 表示标准输入")
+    p.add_argument("--title", help="短标题"); p.add_argument("--text", help="批注正文（markdown，公式用 $…$）"); p.add_argument("--text-file", help="从文件读正文；- 表示标准输入")
     p.add_argument("--id", help="改写已有的一条（只改给出的字段；--page/--section/--quote 换的是第一处）"); p.add_argument("--check", action="store_true", help="核对每条每处出处还在不在")
-    p.add_argument("--add-place", action="store_true", help="和 --id、--page/--section/--quote 一起：同一条理解再挂到一处（不要另写一份）")
+    p.add_argument("--add-place", action="store_true", help="和 --id、--page/--section/--quote 一起：同一条批注再挂到一处（不要另写一份）")
     p.add_argument("--drop-place", type=int, metavar="N", help="和 --id 一起：去掉第 N 处出处")
-    p.add_argument("--merge", nargs="+", metavar="ID", help="把同一条理解的几份合成一份（出处合并；正文不同时要给 --text/--text-file）")
+    p.add_argument("--merge", nargs="+", metavar="ID", help="把同一条批注的几份合成一份（出处合并；正文不同时要给 --text/--text-file）")
+    p.add_argument("--in-notes", metavar="LABEL", help="和 --id 一起：这条批注已收进正文（mynotes），给正文那一节的 \\label；给空字符串则取消")
     p.add_argument("--headings", metavar="PAGE", help="列出这一页可挂的标题"); p.set_defaults(fn=cmd_mine)
+    p = sub.add_parser("mynotes", help="「我的笔记」的正文（mynotes/ 里的 LaTeX）：init 建骨架 / build 编译 / redline 和上次接受的版本比 / accept 接受这一批 / status")
+    p.add_argument("action", choices=["init", "build", "redline", "accept", "status"]); p.add_argument("path")
+    p.add_argument("--title", help="init：笔记标题（默认课题名）"); p.add_argument("--author", help="init：作者")
+    p.add_argument("--rev", help="redline：和 git 里哪一版比（默认 HEAD，即上次接受并 commit 的版本）"); p.set_defaults(fn=cmd_mynotes)
     p = sub.add_parser("next", help="用户的下一步：读或写 Project Notes 里本课题那一页的 next_step"); p.add_argument("path"); p.add_argument("text", nargs="?", help="新的下一步（一句话；传空字符串则清空）"); p.set_defaults(fn=cmd_next)
     from .codex import add_parser as _codex_parser
     _codex_parser(sub)

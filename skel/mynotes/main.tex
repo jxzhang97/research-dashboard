@@ -1,0 +1,30 @@
+% 我的笔记（正文）。以课题负责人自己的逻辑和记号为准；怎么往里加内容见 README.md。
+% 编译：rd mynotes build <课题目录>（输出在 build/，网页「我的笔记 › 正文」显示 build/main.pdf）。
+\PassOptionsToClass{nofootinbib}{revtex4-2}
+\documentclass[aps,prl,onecolumn,notitlepage,superscriptaddress]{revtex4-2}
+
+\input{preamble}
+\input{notation}
+
+\begin{document}
+
+\title{<<TITLE>>}
+\author{<<AUTHOR>>}
+\date{\today}
+\maketitle
+\setcounter{secnumdepth}{3}
+
+\tableofcontents
+
+% ---------------------------------------------------------------------------
+% 各节按顺序 \input，每节一个文件放在 sections/（如 sections/01-model.tex）。
+% 每节的 \section 后面紧跟一个 \label{sec:...}：网页目录和批注的「已收进正文」靠它定位。
+% ---------------------------------------------------------------------------
+% <<SECTIONS>>
+
+\printnotation
+
+% 有了 \cite 之后去掉下一行开头的 %
+% \bibliography{refs}
+
+\end{document}
