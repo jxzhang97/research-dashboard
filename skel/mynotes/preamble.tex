@@ -1,5 +1,5 @@
-% 版式与通用宏：沿用课题负责人自己的 LaTeX 母版（revtex4-2、颜色设置不改）。
-% 课题专用的记号宏不放这里，放 notation.tex。
+% Layout and general macros, taken from the owner's LaTeX master (revtex4-2; colors unchanged).
+% Notation macros of this project go in notation.tex, not here.
 
 % cancel automatic upper case in the section title
 \makeatletter
@@ -67,21 +67,23 @@
 \nc{\bQ}{\mathbf{Q}}
 
 % ---------------------------------------------------------------------------
-% 审阅标记（颜色沿用母版）。每一批增补：你手写的内容照常写（黑色），
-% agent 补的细节用橙色，agent 要问你的用蓝色。你批准后 rd mynotes accept
-% 去掉橙色标记（变成正文）；还有蓝色问题没答时 accept 会拒绝。
-%   \orange{...}                             agent 补的细节（句子、短公式）
-%   \begin{orangeblock} ... \end{orangeblock}  agent 补的整段，可以含行间公式；不自带分段，
-%                                            要分段照常空一行
-%   \cmt{...}                                agent 的问题或存疑
-%   \jx{...}                                 你自己的批注，accept 不动它
+% Review marks (colors as in the master). In each batch the owner's own material is black,
+% details filled in by the agent are orange, and the agent's questions are blue. After approval,
+% rd mynotes accept strips the orange marks; it refuses while any blue question is left.
+%   \orange{...}                               detail filled in by the agent (sentence, short formula)
+%   \begin{orangeblock} ... \end{orangeblock}  added passage, may contain displayed equations;
+%                                              it does not start a new paragraph by itself
+%   \cmt{...}                                  question or doubt from the agent
+%   \jx{...}                                   the owner's own remark; accept leaves it alone
+%   \tbc                                       "(to be completed)" on a line of its own
 \nc{\cmt}[1]{\textcolor{blue}{\textbf{[#1]}}}
 \DeclareRobustCommand{\orange}[1]{\textcolor{BurntOrange}{\textbf{\boldmath #1}}}
 \newenvironment{orangeblock}{\color{BurntOrange}\bfseries\boldmath\ignorespaces}{\ignorespacesafterend}
+\nc{\tbc}{\par\noindent{\color{black}\textbf{(to be completed)}}\par}
 
 % ---------------------------------------------------------------------------
-% 记号表：notation.tex 里每个 \notation{符号}{含义}{定义处} 记一行，
-% 文末 \printnotation 打成一张表（还没有记号时什么也不印）。
+% Notation table: each \notation{symbol}{meaning}{defined in} in notation.tex is one row;
+% \printnotation at the end prints the table (nothing while there are no entries).
 \makeatletter
 \newif\if@rdnotation
 \newcommand\rd@notationrows{}
