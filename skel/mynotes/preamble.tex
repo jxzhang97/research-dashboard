@@ -71,12 +71,13 @@
 % agent 补的细节用橙色，agent 要问你的用蓝色。你批准后 rd mynotes accept
 % 去掉橙色标记（变成正文）；还有蓝色问题没答时 accept 会拒绝。
 %   \orange{...}                             agent 补的细节（句子、短公式）
-%   \begin{orangeblock} ... \end{orangeblock}  agent 补的整段，可以含行间公式
+%   \begin{orangeblock} ... \end{orangeblock}  agent 补的整段，可以含行间公式；不自带分段，
+%                                            要分段照常空一行
 %   \cmt{...}                                agent 的问题或存疑
 %   \jx{...}                                 你自己的批注，accept 不动它
 \nc{\cmt}[1]{\textcolor{blue}{\textbf{[#1]}}}
 \DeclareRobustCommand{\orange}[1]{\textcolor{BurntOrange}{\textbf{\boldmath #1}}}
-\newenvironment{orangeblock}{\par\color{BurntOrange}\bfseries\boldmath}{\par}
+\newenvironment{orangeblock}{\color{BurntOrange}\bfseries\boldmath\ignorespaces}{\ignorespacesafterend}
 
 % ---------------------------------------------------------------------------
 % 记号表：notation.tex 里每个 \notation{符号}{含义}{定义处} 记一行，
