@@ -17,9 +17,10 @@ DEFAULTS: dict = {
         "data_root": "~/doc_unsyn/{name}",
     },
     "models": {
-        # 默认一律 Fable 5.1 + max；任务书 frontmatter 的 model / effort 字段或任务页的下拉可以单独指定
-        "read": "claude-fable-5-1",   # 读文献、推导、跑数值
-        "write": "claude-fable-5-1",  # 已弃用：薄层写作由 [writer] 决定
+        # 默认一律 Fable 5.2 + xhigh；任务书 frontmatter 的 model / effort 字段或任务页的下拉可以单独指定。
+        # 注意：命令行 claude 要 >= 2.1.321 才认识 claude-fable-5-2；旧版不报错，只是把上下文窗口当成 200k（lab 运行常到 400k–800k，会被提前压缩）
+        "read": "claude-fable-5-2",   # 读文献、推导、跑数值
+        "write": "claude-fable-5-2",  # 已弃用：薄层写作由 [writer] 决定
         "effort": "xhigh",            # low / medium / high / xhigh / max（用户默认 extra high，特殊要求才用 max）
         # 按工作项种类给默认模型：只凭摘要筛 arXiv、把原话挂进问题树这两类文书任务不需要最贵的模型；
         # 起草任务书、建卡、消化裁决、执行 lab 仍用 read 的模型。任务书 frontmatter 的 model/effort 仍然优先。

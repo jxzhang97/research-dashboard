@@ -119,8 +119,8 @@ def test_models_per_kind_and_frontmatter_override(project_dir: Path):
     cfg = config.load(project_dir)
     assert model_for(cfg, "arxiv_reason") == ("claude-opus-5-5", "xhigh")
     assert model_for(cfg, "triage_idea") == ("claude-opus-5-5", "xhigh")
-    assert model_for(cfg, "run_lab") == ("claude-fable-5-1", "xhigh")
-    assert model_for(cfg, "promote_idea") == ("claude-fable-5-1", "xhigh")
+    assert model_for(cfg, "run_lab") == ("claude-fable-5-2", "xhigh")
+    assert model_for(cfg, "promote_idea") == ("claude-fable-5-2", "xhigh")
     # 任务书 frontmatter 优先于种类默认
     _lab(project_dir, "approved")
     fm.update(project_dir / "labs" / "01-first-task" / "brief.md", model="claude-opus-5-5", effort="max")
@@ -130,9 +130,9 @@ def test_models_per_kind_and_frontmatter_override(project_dir: Path):
     text = (project_dir / "config.toml").read_text(encoding="utf-8")
     assert 'arxiv_reason = { model = "claude-opus-5-5", effort = "xhigh" }' in text
     (project_dir / "config.toml").write_text(text.replace('arxiv_reason = { model = "claude-opus-5-5", effort = "xhigh" }',
-                                                          'arxiv_reason = { model = "claude-fable-5-1", effort = "high" }'), encoding="utf-8")
+                                                          'arxiv_reason = { model = "claude-fable-5-2", effort = "high" }'), encoding="utf-8")
     cfg = config.load(project_dir)
-    assert model_for(cfg, "arxiv_reason") == ("claude-fable-5-1", "high")
+    assert model_for(cfg, "arxiv_reason") == ("claude-fable-5-2", "high")
     assert model_for(cfg, "triage_idea") == ("claude-opus-5-5", "xhigh")
 
 

@@ -78,7 +78,7 @@
 
 **图**：每个 lab 的图放 `labs/NN-slug/fig/`，PNG 或 SVG，`report.md` 和 `notes.md` 用 `![图注](fig/xxx.png)` 内嵌，图注写"看哪里 → 看到什么 → 说明什么"，网页上 alt 文字就是图注。图分四种角色：问题设定、主结果、机制解释、可靠性检查；首屏只放主结果和设定。wiki 概念页尽量配一张示意图（`wiki/fig/<slug>-*.svg|png`）。数据图用 matplotlib（`savefig(..., dpi=160, bbox_inches="tight")`），示意图手画 SVG 或 matplotlib；每张图坐标轴有标签和单位；原始数据和脚本留在 lab 文件夹。
 
-**模型**：`[models].read` 跑研究（默认 `claude-fable-5-1`、effort `xhigh`）；`[models.kinds]` 按工作项种类给默认（arXiv 摘要筛选、想法整理默认 `claude-opus-5-5` + `xhigh`，起草任务书、建卡、消化裁决、执行与续跑 lab 仍用 read 的模型）；`[writer]` 写薄层（默认 `backend = "codex"`、`model = "gpt-6-astra"`、`reasoning_effort = "xhigh"`，跑自动任务的机器上要先 `codex login`）。用户可以在任务书或 idea 的 frontmatter 写 `model:` / `effort:` 单独指定研究模型；用户在对话里说"写报告用 X"之类的，写进任务书 frontmatter。lab 里批量建卡的子 agent：精读卡用主模型，只为引用链建的 skim/abstract 卡用 `model: "opus"`，见 rd-reference。
+**模型**：`[models].read` 跑研究（默认 `claude-fable-5-2`、effort `xhigh`）；`[models.kinds]` 按工作项种类给默认（arXiv 摘要筛选、想法整理默认 `claude-opus-5-5` + `xhigh`，起草任务书、建卡、消化裁决、执行与续跑 lab 仍用 read 的模型）；`[writer]` 写薄层（默认 `backend = "codex"`、`model = "gpt-6-astra"`、`reasoning_effort = "xhigh"`，跑自动任务的机器上要先 `codex login`）。用户可以在任务书或 idea 的 frontmatter 写 `model:` / `effort:` 单独指定研究模型；用户在对话里说"写报告用 X"之类的，写进任务书 frontmatter。lab 里批量建卡的子 agent：精读卡用主模型，只为引用链建的 skim/abstract 卡用 `model: "opus"`，见 rd-reference。
 
 ## 3. Notation
 
