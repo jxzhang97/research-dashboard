@@ -318,7 +318,7 @@ button.small { font-size: 12px; padding: 2px 8px; }
 .mine-places li::before { content: "·"; color: var(--muted); }
 .mine-quote { color: var(--muted); }
 .mine-entry .mine { margin-top: 10px; margin-bottom: 4px; }
-/* 我的笔记：正文（PDF）与批注同一页，顶上切换 */
+/* 我的笔记：批注与正文（PDF）同一页，顶上切换 */
 .mynotes-tabs { margin-left: 14px; }
 .mynotes-status .mn-row { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; }
 .mynotes-status .mn-row .grow { flex: 1; }

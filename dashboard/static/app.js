@@ -435,18 +435,18 @@
     }
   }
 
-  // ---------- 我的笔记：正文（mynotes/ 里的 LaTeX，rd_core/mynotes.py）和批注在同一页，顶上切换 ----------
-  // #/mine/notes（正文，可带 ?label=sec:… 跳到那一节）、#/mine/annotations（批注）；不带时有正文就先看正文
+  // ---------- 我的笔记：批注和正文（mynotes/ 里的 LaTeX，rd_core/mynotes.py）在同一页，顶上切换 ----------
+  // #/mine/annotations（批注）、#/mine/notes（正文，可带 ?label=sec:… 跳到那一节）；不带时先看批注
   const fileUrl = (path, v) => `/api/file?path=${encodeURIComponent(path)}${v ? `&v=${v}` : ""}`;
   pages.mine = async (rest) => {
     const api = pageApi();  // 绑定到本页：切走后请求永不返回，不再覆盖新页
     const [tabRaw, qs] = String(rest || "").split("?");
     const [st, items] = await Promise.all([api("/api/mynotes").catch(() => ({ exists: false })), api("/api/mine").then((r) => r.items || [])]);
     MINE = items; MINE_AT = Date.now();
-    const tab = tabRaw === "notes" || tabRaw === "annotations" ? tabRaw : (st.exists ? "notes" : "annotations");
+    const tab = tabRaw === "notes" ? "notes" : "annotations";
     main.classList.toggle("full", tab === "notes" && !!st.pdf);  // PDF 用全宽
     main.innerHTML = `<div class="wiki-head"><h1>我的笔记</h1><span class="seg mynotes-tabs">
-        <button data-tab="notes" class="${tab === "notes" ? "on" : ""}">正文</button><button data-tab="annotations" class="${tab === "annotations" ? "on" : ""}">批注${items.length ? ` · ${items.length}` : ""}</button></span></div>
+        <button data-tab="annotations" class="${tab === "annotations" ? "on" : ""}">批注${items.length ? ` · ${items.length}` : ""}</button><button data-tab="notes" class="${tab === "notes" ? "on" : ""}">正文</button></span></div>
       <div id="mynotes-body"></div>`;
     main.querySelectorAll(".mynotes-tabs button").forEach((b) => { b.onclick = () => { location.hash = "#/mine/" + b.dataset.tab; }; });
     if (tab === "notes") notesTab($("#mynotes-body"), st, new URLSearchParams(qs || ""));
