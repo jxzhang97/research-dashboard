@@ -140,7 +140,9 @@ def cmd_run(args):
     from .runner import Runner
     proj = _project(args.path)
     prompt = args.prompt or sys.stdin.read()
-    meta = Runner(proj).run(prompt, kind="manual", label=args.label or "manual", model=args.model, effort=args.effort,
+    from .tick import lab_label
+    label = lab_label(args.label or "manual", prompt, [d.id for d in proj.labs()])
+    meta = Runner(proj).run(prompt, kind="manual", label=label, model=args.model, effort=args.effort,
                             on_line=lambda s: print(s, end=""))
     print(json.dumps({k: meta[k] for k in ("id", "status", "model", "started", "ended")}, ensure_ascii=False))
 

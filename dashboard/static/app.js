@@ -128,7 +128,7 @@
     });
   }
   function routeFor(kind, id) {
-    return { wiki: "#/wiki/", card: "#/refs/", lab: "#/labs/", idea: "#/ideas/", discussion: "#/discussion/", inbox: "#/inbox/" }[kind] + id;
+    return { wiki: "#/wiki/", card: "#/refs/", lab: "#/labs/", idea: "#/ideas/", discussion: "#/discussion/", inbox: "#/inbox/", cores: "#/runs" }[kind] + id;
   }
   const docRoute = (path, frag) => "#/doc/" + path.split("/").map(encodeURIComponent).join("/") + (frag ? "?h=" + encodeURIComponent(frag) : "");
   const slugId = (text) => text.trim().toLowerCase().replace(/[\s]+/g, "-").replace(/[^\p{L}\p{N}\-_]/gu, "").slice(0, 80) || "sec";
@@ -540,6 +540,7 @@
           <div class="panel ${a.total - nSoft ? "attn" : ""}"><h2 style="margin-top:0">需要你处理${attnHead}</h2><ul class="list">${items || "<li class='muted'>没有待处理的事</li>"}</ul></div>
           <div class="panel"><h2 style="margin-top:0">agent 与数值</h2><p>${cur}${q.pending.length ? `，排队 ${q.pending.length}` : ""} · <a href="#/runs">任务页</a></p>
             <p class="small">${jobsHtml}</p>
+            ${cores && cores.warnings && cores.warnings.length ? `<p class="small" style="color:var(--danger)">⚠ ${esc(cores.warnings[0])}</p>` : ""}
             ${o.digest && o.digest.answered.length ? `<p class="small"><a href="#/discussion">${o.digest.answered.length} 条回答</a>等待统一消化，预计 ${esc(o.digest.next_digest_str)}</p>` : ""}</div>
           <div class="stats small">
             <a class="stat" href="#/refs"><b>${o.counts.cards}</b><span>文献卡片</span></a>

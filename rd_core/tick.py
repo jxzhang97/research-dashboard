@@ -84,6 +84,17 @@ PROMPTS = {
     ),
 }
 
+def lab_label(label: str, prompt: str, lab_ids: list[str]) -> str:
+    """「立刻执行」没填标签（或只填了 manual）而提示词里恰好点了一个 lab 的 id：标签补成 manual:<lab id>。
+    调度器靠标签后缀认出一次运行属于哪个 lab；不补的话，这次运行期间它会以为该 lab 没人管而再派一次续跑。"""
+    label = (label or "").strip() or "manual"
+    if label != "manual":
+        return label
+    hits = [i for i in lab_ids if i and i in prompt]
+    hits = [i for i in hits if not any(i != j and i in j for j in hits)]  # 一个 id 是另一个的子串时只算长的那个
+    return f"manual:{hits[0]}" if len(hits) == 1 else label
+
+
 WRITE_KINDS = set()  # 目前所有工作项都用 read 模型启动；写报告由 skill 内部交给 write 模型的子 agent
 
 
@@ -154,7 +165,9 @@ def actionable(project: Project, cfg: dict | None = None, only: str | None = Non
         if pause:
             deferred.append({**w, "last_status": "limit", "retry_in_s": int(pause["until"] - time.time()), "reason": pause["reason"]})
             continue
-        if info and info.get("status") != "done" and time.time() - info["t"] < retry:
+        # 失败后的退避。limit 不退避（额度暂停已经在上面挡着，到了重置时刻就该立刻再试）；
+        # blocked 也不退避（它再次出现在待办里，是有人把 lab 放开了）
+        if info and info.get("status") not in ("done", "limit", "blocked") and time.time() - info["t"] < retry:
             deferred.append({**w, "last_status": info["status"], "retry_in_s": int(retry - (time.time() - info["t"]))})
             continue
         if w["kind"] == "resume_lab":
@@ -219,7 +232,11 @@ def run_pending(project: Project, only: str | None = None, dry_run: bool = False
                 continue
         if w["kind"] == "resume_lab":
             info = project.attempt_info(w["kind"], w["id"]) or {}
-            if int(info.get("fails", 0)) >= max_fail:
+            if info.get("status") == "blocked":
+                # 上次是我们把它改成 blocked 的；它又成了 running 待续跑，说明有人（用户在网页上、手动运行里的 agent）把它放开了：
+                # 重新给满次数。以前这里不清零，放开之后下一次扫描又被原地改回 blocked。
+                project.clear_attempt(w["kind"], w["id"])
+            elif int(info.get("fails", 0)) >= max_fail:
                 # 连续几次续跑都失败：不再自动试，改 blocked 让首页提醒用户
                 project.set_lab_status(w["id"], "blocked")
                 project.append_log("agent", f"lab {w['id']} 连续 {info.get('fails')} 次续跑失败，改为 blocked 等用户处理", f"labs/{w['id']}/brief.md")
@@ -227,7 +244,8 @@ def run_pending(project: Project, only: str | None = None, dry_run: bool = False
                 results.append({"kind": w["kind"], "id": w["id"], "status": "blocked", "fails": info.get("fails")})
                 continue
         meta = Runner(project).run(prompt, kind=w["kind"], label=f"{w['kind']}:{w['id']}", model=model, effort=effort)
-        project.record_attempt(w["kind"], w["id"], meta["status"])
+        # 撞了 Claude 额度的不算这一项的失败：记成 limit，何时再试由额度暂停（pause_info）决定
+        project.record_attempt(w["kind"], w["id"], "limit" if meta.get("limit") and meta["status"] != "done" else meta["status"])
         if w["kind"] in ("run_lab", "resume_lab"):
             # 这次运行结束时本 lab 登记的活作业，作为下次判断"有没有作业跑完"的基线
             project.set_lab_jobs_snapshot(w["id"], {j["id"]: str(j.get("label", "")) for j in cores.lab_jobs(project.root, w["id"])})

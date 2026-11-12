@@ -26,11 +26,58 @@ HEADLESS_RULES = """
 4. 最后一条输出用三到五行中文总结：做了什么、改了哪些文件、还有什么没做。
 5. 本次运行一结束，你用 Claude Code 后台任务（run_in_background）起的进程会一起被清掉。所以：Codex 审计/写作只用 codex-audit.sh / codex-write.sh 启动（它们自己脱离父进程），用它们的 `--wait` 在前台等（单次最多 540 秒，Bash timeout 设 600000，循环到返回 0）；数值批量用 `nohup … &` 启动并 `rd jobs claim` 登记 pid；交到集群的用 `rd cluster submit`（它自己登记作业号，排队上限与单作业核数在那里把关）。不要用 run_in_background 跑任何必须活过本次运行的东西，也不要靠"等通知"。
 6. 如果结束时 lab 的状态仍是 running（在等数值或 Codex），先更新 `labs/<id>/resume.md` 续跑单（做完了什么、还差什么、在等哪个进程、下一步具体命令和要看的文件），再结束；系统会在没有活着的运行时自动派续跑。续跑运行从续跑单、brief、report 开始，不整体重读 notes。lab 状态只能停在 done / waiting_answer / awaiting_review / blocked，或仍在等外部进程的 running。
+7. 线程：本次运行的环境已把 OMP / OPENBLAS / MKL / VECLIB / NUMEXPR 的线程数默认设为 1，你起的 Python、Julia 进程不另设就是单线程 BLAS（否则 numpy 会按逻辑核数开满线程，小矩阵下全在内核里空转）。并行靠多进程，进程数不超过 `rd free-cores` 给的核数；只有单进程的大矩阵作业才在启动命令里显式调高线程数。"自测""小检查"也算数值：前台只跑一两分钟内能结束的（先用最小的一个点量耗时），更长的一律 `nohup … &` 启动、`rd jobs claim` 登记，一两分钟后再跑 `rd free-cores` 看 system 占比和线程数，然后更新续跑单并结束运行。
 """.strip()
 
-# Claude 订阅额度用尽时的提示；看到它就暂停派发，到重置时刻再试
-LIMIT_RE = re.compile(r"(hit your (?:session|weekly|usage) limit|reached your [\w .]*limit|usage limit reached)", re.I)
+# agent 起的数值默认单线程：这些库不设就按逻辑核数开线程。setdefault，所以服务器环境或启动命令里显式给的值优先。
+THREAD_ENV = ("OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS", "VECLIB_MAXIMUM_THREADS", "NUMEXPR_NUM_THREADS")
+
+# Claude 订阅额度用尽时的提示；看到它就暂停派发，到重置时刻再试。
+# 措辞会变（session limit → 5-hour limit，2026-11 因为认不出后者，额度暂停没生效、三次空派后 lab 被标成 blocked），
+# 所以先认 Claude Code 的结构化信号（limit_from_event），提示语只作兜底，而且写得宽。
+LIMIT_RE = re.compile(r"(hit your [\w.\- ]*limit|reached your [\w.\- ]*limit|usage limit reached)", re.I)
 RESET_RE = re.compile(r"resets?\s+(?:at\s+)?(\d{1,2}(?::\d{2})?\s*(?:am|pm)?)\s*\(([^)]+)\)", re.I)
+
+
+def agent_env(project_root: Path, run_id: str, base: dict | None = None) -> dict:
+    """agent 进程（以及它起的一切子进程）的环境。"""
+    env = dict(os.environ if base is None else base)
+    env.setdefault("RD_RUN_ID", run_id)
+    env["RD_PROJECT"] = str(project_root)
+    for v in THREAD_ENV:
+        env.setdefault(v, "1")
+    # launchd 给服务的 PATH 没有 /usr/sbin、/sbin（sysctl、lsof 在那里）
+    parts = [p for p in env.get("PATH", "").split(":") if p]
+    env["PATH"] = ":".join(parts + [p for p in ("/usr/sbin", "/sbin") if p not in parts])
+    return env
+
+
+def _event_text(ev: dict) -> str:
+    if ev.get("type") == "result":
+        return str(ev.get("result") or "")
+    return "\n".join(str(b.get("text", "")) for b in (ev.get("message") or {}).get("content", []) if isinstance(b, dict) and b.get("type") == "text")
+
+
+def limit_from_event(ev: dict) -> tuple[str, float | None] | None:
+    """这条 stream-json 事件是不是"额度用尽"：是就返回 (提示语, 重置时刻 epoch 或 None)。
+    只认三种来源，不扫 agent 自己说的话（续跑的 agent 会复述上次的额度提示，那不是这次撞了额度）：
+    rate_limit_event 且 status=rejected；带 api_error=usage_limit_reached 的事件；API 错误合成的消息或 result 里匹配 LIMIT_RE 的文字。"""
+    info = None
+    if ev.get("type") == "rate_limit_event":
+        info = ev.get("rate_limit_info") or {}
+        if info.get("status") != "rejected":
+            return None
+    elif ev.get("api_error") == "usage_limit_reached":
+        info = (ev.get("api_error_params") or {}).get("rate_limit_info") or {}
+    text = _event_text(ev).strip()
+    if info is None:
+        synthetic = (ev.get("type") == "result" and ev.get("is_error")) or ev.get("is_api_error_message") or (ev.get("message") or {}).get("model") == "<synthetic>"
+        if not (synthetic and LIMIT_RE.search(text)):
+            return None
+        info = {}
+    msg = next((ln.strip() for ln in text.splitlines() if LIMIT_RE.search(ln)), "") or text or f"Claude 额度用尽（{info.get('rateLimitType') or '类型未知'}）"
+    resets = info.get("resetsAt")
+    return msg[:300], (float(resets) if isinstance(resets, (int, float)) and resets > 0 else None)
 
 
 def parse_reset(msg: str, now: float | None = None) -> float:
@@ -202,9 +249,7 @@ class Runner:
             meta["started"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             cmd = build_command(self.project, prompt, model, effort, self.cfg)
             self._log(d, f"$ {' '.join(shlex.quote(c) for c in cmd[:1])} -p … --model {model} effort={effort}")
-            env = dict(os.environ)
-            env.setdefault("RD_RUN_ID", run_id)
-            env["RD_PROJECT"] = str(self.project.root)
+            env = agent_env(self.project.root, run_id)
             timeout = int(self.cfg["agent"].get("timeout_minutes", 240)) * 60
             raw = (d / "raw.jsonl").open("a", encoding="utf-8")
             try:
@@ -229,7 +274,7 @@ class Runner:
 
                 threading.Thread(target=killer, daemon=True).start()
                 assert proc.stdout is not None
-                limit_msg = ""
+                limit_msg, limit_until = "", None
                 for line in proc.stdout:
                     raw.write(line)
                     raw.flush()
@@ -241,13 +286,17 @@ class Runner:
                     except json.JSONDecodeError:
                         self._log(d, line, on_line)
                         continue
+                    if not isinstance(ev, dict):
+                        continue
                     if ev.get("type") == "result":
                         last_result = ev
+                    hit = limit_from_event(ev)
+                    if hit:
+                        limit_msg = limit_msg if LIMIT_RE.search(limit_msg) else hit[0]  # 有原文提示语就留原文
+                        limit_until = hit[1] or limit_until
                     txt = _fmt_event(ev)
                     if txt:
                         self._log(d, txt, on_line)
-                        if not limit_msg and LIMIT_RE.search(txt):
-                            limit_msg = next((ln for ln in txt.splitlines() if LIMIT_RE.search(ln)), txt).strip()[:300]
                 proc.wait()
                 if (d / "STOP").exists():
                     meta["status"] = "stopped"
@@ -259,10 +308,9 @@ class Runner:
                 if last_result:
                     meta["result"] = str(last_result.get("result", ""))[:4000]
                     meta["cost_usd"] = last_result.get("total_cost_usd")
-                    if LIMIT_RE.search(meta["result"]):
-                        limit_msg = meta["result"][:300]
                 if limit_msg and meta["status"] != "done":
-                    until = parse_reset(limit_msg)
+                    # 重置时刻：结构化信号里的 resetsAt 优先，其次从提示语里读；至少暂停五分钟，免得时刻不准时每 15 秒撞一次
+                    until = max((limit_until + 120) if limit_until else parse_reset(limit_msg), time.time() + 300)
                     self.project.set_pause(until, limit_msg)
                     meta["limit"] = limit_msg
                     self._log(d, f"⏸ Claude 额度用尽，暂停派发到 {datetime.fromtimestamp(until).strftime('%m-%d %H:%M')}：{limit_msg}", on_line)

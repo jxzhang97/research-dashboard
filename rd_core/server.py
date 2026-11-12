@@ -22,7 +22,7 @@ from pydantic import BaseModel
 from . import TEMPLATE_ROOT, config, cores, fm, mine, mynotes, pnotes, wikimap
 from .project import Project
 from .runner import Runner, new_run_id, stop_run
-from .tick import PROMPTS
+from .tick import PROMPTS, lab_label
 
 STATIC = TEMPLATE_ROOT / "dashboard" / "static"
 
@@ -99,6 +99,43 @@ class RunQueue:
         with self._lock:
             return {"current": self.current and {k: self.current[k] for k in ("id", "kind", "label")},
                     "pending": [{k: p[k] for k in ("id", "kind", "label")} for p in self.pending]}
+
+
+def start_core_watchdog(project: Project, interval: int = 60) -> None:
+    """核打架的看守：每分钟看一次 cores.status，连续两次都在打架（线程数超过性能核，或 system 占比过高）就报警。只报警，不停任何进程。
+    在首页「需要你处理」挂一条（state.json 的 core_alert，不打架了自动撤掉）；打架的数值进程里有本课题目录下起的，再往 log.md 记一行（每次打架只记一次）。
+    2026-11-12 之前没有它：警告只有在有人跑 `rd free-cores` 时才看得到，那次是用户自己从活动监视器里发现的。"""
+    def loop():
+        import random
+        time.sleep(random.uniform(20, 80))  # 同机几个课题的服务错开采样
+        memo: dict = {}
+        while True:
+            try:
+                core_watch_step(project, cores.status(project.root, probe=True, cache_seconds=0), memo)
+            except Exception:  # noqa: BLE001
+                pass
+            time.sleep(interval)
+
+    threading.Thread(target=loop, daemon=True).start()
+
+
+def core_watch_step(project: Project, st: dict, memo: dict) -> None:
+    """看守的一步。st 是 cores.status 的结果；memo 跨采样记两件事：streak（连续几次采样在打架）、logged（这次打架记过 log 没有）。"""
+    fight = st.get("fight") or []
+    memo["streak"] = memo.get("streak", 0) + 1 if fight else 0
+    if memo["streak"] >= 2:
+        root = str(project.root)
+        busy = [p for p in st.get("procs", []) if p.get("running_threads", 1) > 1]
+        mine = [p for p in busy if (cores.proc_cwd(p["pid"]) or "").startswith(root)]
+        who = "；".join(f"pid {p['pid']}（{p['running_threads']} 线程，{p['cmd']}）" for p in (mine or busy)[:3])
+        project.set_core_alert({"text": fight[0], "procs": who, "mine": bool(mine)})
+        if mine and not memo.get("logged"):
+            project.append_log("agent", f"⚠ 本课题的数值进程在抢核：{who}。{fight[0]}")
+            memo["logged"] = True
+    elif not fight:
+        memo["logged"] = False
+        if project.core_alert():
+            project.set_core_alert(None)
 
 
 def start_watcher(project: Project, rq: RunQueue) -> None:
@@ -281,6 +318,7 @@ def create_app(project: Project) -> FastAPI:
     start_watcher(project, rq)
     start_digest_timer(project, rq)
     start_notes_mirror(project)
+    start_core_watchdog(project)
 
     @app.middleware("http")
     async def readonly_guard(request: Request, call_next):
@@ -675,8 +713,9 @@ def create_app(project: Project) -> FastAPI:
     def run_now(body: RunIn):
         if not body.prompt.strip():
             raise HTTPException(400)
-        rid = rq.submit(body.prompt, kind="manual", label=body.label, model=body.model, effort=body.effort)
-        project.append_log("用户", f"立刻执行：{body.label}", f".dashboard/runs/{rid}/log.txt")
+        label = lab_label(body.label, body.prompt, [d.id for d in project.labs()])
+        rid = rq.submit(body.prompt, kind="manual", label=label, model=body.model, effort=body.effort)
+        project.append_log("用户", f"立刻执行：{label}", f".dashboard/runs/{rid}/log.txt")
         return {"id": rid}
 
     @app.post("/api/runs/{run_id}/stop")

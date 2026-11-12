@@ -710,12 +710,19 @@ class Project:
 
     # 工作项的最近一次尝试：失败后一段时间内不重试，避免登录失效之类的问题每 15 秒撞一次
     def record_attempt(self, kind: str, id_: str, status: str) -> None:
+        """fails 是连续失败次数（续跑上限用）。done 清零；limit（撞了 Claude 额度，不是任务的错）和 blocked（调度器自己做的标记）不加，
+        其余（failed、stopped……）加一。2026-11 之前这两种也加，结果一晚上的额度用尽就把 lab 标成了 blocked。"""
         s = self.state()
         key = f"{kind}:{id_}"
         prev = s.setdefault("attempts", {}).get(key) or {}
-        fails = 0 if status == "done" else int(prev.get("fails", 0)) + 1  # 连续失败次数，续跑上限用
+        fails = 0 if status == "done" else int(prev.get("fails", 0)) + (0 if status in ("limit", "blocked") else 1)
         s["attempts"][key] = {"t": time.time(), "status": status, "fails": fails}
         self._save_state(s)
+
+    def clear_attempt(self, kind: str, id_: str) -> None:
+        s = self.state()
+        if s.get("attempts", {}).pop(f"{kind}:{id_}", None) is not None:
+            self._save_state(s)
 
     def attempt_info(self, kind: str, id_: str) -> dict | None:
         return self.state().get("attempts", {}).get(f"{kind}:{id_}")
@@ -745,12 +752,32 @@ class Project:
             return {"until": until, "reason": s.get("pause_reason", ""), "until_str": datetime.fromtimestamp(until).strftime("%m-%d %H:%M")}
         return None
 
+    # 核打架的报警：服务里的看守（server.start_core_watchdog）连续两次采样都在打架时写入，不打架了撤掉；首页「需要你处理」读它
+    def core_alert(self) -> dict | None:
+        return self.state().get("core_alert") or None
+
+    def set_core_alert(self, alert: dict | None) -> None:
+        s = self.state()
+        if alert is None:
+            if s.pop("core_alert", None) is not None:
+                self._save_state(s)
+            return
+        prev = s.get("core_alert") or {}
+        s["core_alert"] = {**alert, "t": prev.get("t") or time.time()}  # t：这次打架从什么时候开始报的
+        if s["core_alert"] != prev:
+            self._save_state(s)
+
     def is_unread(self, kind: str, id_: str, mtime: float) -> bool:
         return self.state().get("seen", {}).get(f"{kind}:{id_}", 0) < mtime
 
     def attention(self) -> dict:
         """首页"需要你处理"与导航红点的数据源。"""
         items = []
+        alert = self.core_alert()
+        if alert:
+            why = str(alert.get("text", "")) + (f" 在跑的：{alert['procs']}" if alert.get("procs") else "")
+            items.append({"kind": "cores", "id": "", "title": "核在打架" + ("（本课题的数值在其中）" if alert.get("mine") else "（本机）"),
+                          "why": why, "time": float(alert.get("t") or time.time())})
         REVIEW_WHY = "审计修正清单，过目即可，不卡任务：认可就回答“认可”，不认可指出哪一处"
         for d in self.discussions():
             st = d.meta["status"]
