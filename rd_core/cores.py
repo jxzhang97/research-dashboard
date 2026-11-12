@@ -14,10 +14,17 @@ from . import registry
 from .config import hostname
 
 
+def _sbin(name: str) -> str:
+    """sysctl、lsof 在 /usr/sbin。launchd 起的服务和它派出的 agent，PATH 里通常没有这个目录，
+    只写命令名会找不到：2026-11-12 之前 agent 里的 `rd free-cores` 因此拿不到性能核数，把 studio 的 10 性能核 + 4 能效核报成 14 个性能核。"""
+    p = f"/usr/sbin/{name}"
+    return p if os.path.exists(p) else name
+
+
 def _sysctl(key: str) -> int | None:
     try:
-        return int(subprocess.check_output(["sysctl", "-n", key], text=True, stderr=subprocess.DEVNULL).strip())
-    except (subprocess.CalledProcessError, ValueError, FileNotFoundError):
+        return int(subprocess.check_output([_sbin("sysctl"), "-n", key], text=True, stderr=subprocess.DEVNULL, timeout=5).strip())
+    except (subprocess.CalledProcessError, ValueError, FileNotFoundError, subprocess.TimeoutExpired):
         return None
 
 
@@ -58,7 +65,7 @@ def memory_pressure() -> dict | None:
         vm = subprocess.check_output(["vm_stat"], text=True, stderr=subprocess.DEVNULL, timeout=5)
         page = int(vm.splitlines()[0].split("page size of")[1].split()[0])
         comp = next(int(ln.split(":")[1].strip().rstrip(".")) for ln in vm.splitlines() if ln.startswith("Pages occupied by compressor"))
-        swap = subprocess.check_output(["sysctl", "-n", "vm.swapusage"], text=True, stderr=subprocess.DEVNULL, timeout=5)
+        swap = subprocess.check_output([_sbin("sysctl"), "-n", "vm.swapusage"], text=True, stderr=subprocess.DEVNULL, timeout=5)
         used = float(swap.split("used =")[1].split("M")[0]) / 1024
         total = (_sysctl("hw.memsize") or 0) / 2**30
         free_pct = None
@@ -73,10 +80,26 @@ def memory_pressure() -> dict | None:
 
 
 _NUMERIC = ("julia", "python", "wolframkernel", "wolframscript", "mathkernel", "matlab", "octave")
+_PCPU = re.compile(r"^\d+\.\d+$")
+
+
+def count_running_threads(rows: list[str]) -> int:
+    """`ps -M -p <pid>` 的线程行（不含表头）里状态为 R 的个数。
+    主线程行是 `USER PID TT %CPU STAT …`，子线程行前几列是空的，只剩 `PID %CPU STAT …`，所以不能按固定列号取 STAT
+    （以前子线程行取错一列，每个进程最多数到 1 个线程，14 线程打架时也只报"线程 1"）。
+    %CPU 是每行第一个带小数点的数，它后面那一列就是 STAT。"""
+    n = 0
+    for row in rows:
+        cols = row.split()
+        i = next((k for k, c in enumerate(cols) if _PCPU.match(c)), None)
+        if i is not None and i + 1 < len(cols) and cols[i + 1].startswith("R"):
+            n += 1
+    return n
 
 
 def numeric_processes(min_cpu: float = 5.0) -> list[dict]:
-    """正在算数的进程（命令含 julia/python/Mathematica 等且 CPU 占用超过 min_cpu%），以及每个进程**正在跑**的线程数（ps -M 里状态 R 的线程）。"""
+    """正在算数的进程（命令含 julia/python/Mathematica 等且 CPU 占用超过 min_cpu%），以及每个进程**正在跑**的线程数：
+    ps -M 里状态 R 的线程数与 CPU 占用折合的核数（%CPU / 100）取大的那个，哪一个量错了另一个兜底。"""
     try:
         out = subprocess.check_output(["ps", "-axo", "pid=,pcpu=,rss=,command="], text=True, stderr=subprocess.DEVNULL, timeout=5)
     except (subprocess.CalledProcessError, FileNotFoundError, subprocess.TimeoutExpired):
@@ -94,19 +117,24 @@ def numeric_processes(min_cpu: float = 5.0) -> list[dict]:
         running = 0
         try:
             th = subprocess.check_output(["ps", "-M", "-p", str(pid)], text=True, stderr=subprocess.DEVNULL, timeout=5).splitlines()[1:]
-            # ps -M：第一列 USER（主线程行）或空（子线程行），STAT 列在 %CPU 之后
-            for t in th:
-                cols = t.split()
-                stat = cols[4] if t[:1] != " " else cols[3]
-                if stat.startswith("R"):
-                    running += 1
-        except (subprocess.CalledProcessError, FileNotFoundError, subprocess.TimeoutExpired, IndexError):
-            running = max(1, int(round(pcpu / 100)))
+            running = count_running_threads(th)
+        except (subprocess.CalledProcessError, FileNotFoundError, subprocess.TimeoutExpired):
+            pass
+        running = max(running, int(round(pcpu / 100)), 1)
         short = cmd.split()[0].rsplit("/", 1)[-1]
         args = " ".join(a for a in cmd.split()[1:] if not a.startswith("--sysimage") and not a.endswith(".so"))[:60]
-        procs.append({"pid": pid, "cpu": round(pcpu, 1), "rss_gb": round(rss / 2**20, 2), "running_threads": max(running, 1), "cmd": f"{short} {args}".strip()})
+        procs.append({"pid": pid, "cpu": round(pcpu, 1), "rss_gb": round(rss / 2**20, 2), "running_threads": running, "cmd": f"{short} {args}".strip()})
     procs.sort(key=lambda x: -x["cpu"])
     return procs
+
+
+def proc_cwd(pid: int) -> str | None:
+    """进程的当前目录（lsof），看守用它判断一个打架的数值进程是不是本课题起的。拿不到返回 None。"""
+    try:
+        out = subprocess.check_output([_sbin("lsof"), "-a", "-p", str(pid), "-d", "cwd", "-Fn"], text=True, stderr=subprocess.DEVNULL, timeout=5)
+    except (subprocess.CalledProcessError, FileNotFoundError, subprocess.TimeoutExpired):
+        return None
+    return next((ln[1:] for ln in out.splitlines() if ln.startswith("n")), None)
 
 
 def _jobs_path() -> Path:
@@ -261,6 +289,7 @@ def status(project: Path | None = None, probe: bool = True, cache_seconds: float
             warn.append(f"核在打架：{len(procs)} 个数值进程共 {threads} 个线程在跑，超过 {total} 个性能核。减少并行数（WORKERS）或每个进程的线程数（Julia -t、OPENBLAS/MKL/OMP_NUM_THREADS）。")
         if cpu and cpu["sys"] >= 25 and (load >= total * 0.5 or threads >= total):
             warn.append(f"CPU 的 system 占比 {cpu['sys']:.0f}%（user {cpu['user']:.0f}%）：这么高多半是线程超额争抢（自旋、调度）或内存压缩/交换在吃 CPU，不是在算数。先查上面的线程数和下面的内存。")
+        st["fight"] = list(warn)  # 前两条才算"核在打架"（dashboard 的看守只盯它们）；内存吃紧另算
         if mem and mem["ram_gb"]:
             tight = (mem["free_pct"] is not None and mem["free_pct"] < 25) or (mem["free_pct"] is None and (mem["compressor_gb"] > 0.35 * mem["ram_gb"] or mem["swap_used_gb"] > 8))
             if tight:

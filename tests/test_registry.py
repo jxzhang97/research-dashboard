@@ -74,3 +74,27 @@ def test_free_cores_probe_fields(project_dir: Path):
         assert set(st["cpu"]) == {"user", "sys", "idle"}
     if st["mem"]:
         assert st["mem"]["ram_gb"] > 0
+
+
+def test_thread_count_reads_subthread_rows():
+    """ps -M 的子线程行没有 USER/TT 两列：以前按固定列号取状态，子线程永远数不到。样本取自 2026-11-12 studio 上打架的进程。"""
+    rows = [
+        "jiaxin 66196   ??   88.9 R    20T   0:24.18   6:34.88 /opt/anaconda3/bin/python3 scripts/su2mf.py",
+        "       66196        87.6 R    20T   4:23.49   2:39.83 ",
+        "       66196        87.2 R    20T   4:23.83   2:38.75 ",
+        "       66196         0.0 S    31T   0:00.01   0:00.00 ",
+    ]
+    assert cores.count_running_threads(rows) == 3
+    # 有的版本子线程行带 TT 列；列数变了也照样认
+    assert cores.count_running_threads(["       66196   ??   91.0 R    20T   0:01.00   0:02.00 "]) == 1
+    assert cores.count_running_threads(["jiaxin 1 s001 0.0 S 31T 0:00.01 0:00.00 zsh", ""]) == 0
+
+
+def test_perf_cores_does_not_depend_on_path(monkeypatch):
+    """launchd 起的服务 PATH 里没有 /usr/sbin；找不到 sysctl 时会退回逻辑核数，把能效核也算成性能核。"""
+    import os
+    full = cores.perf_cores()
+    monkeypatch.setenv("PATH", "/usr/bin:/bin")
+    assert cores.perf_cores() == full
+    if os.path.exists("/usr/sbin/sysctl"):
+        assert cores._sbin("sysctl") == "/usr/sbin/sysctl"
