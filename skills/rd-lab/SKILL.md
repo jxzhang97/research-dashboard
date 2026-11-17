@@ -76,7 +76,7 @@ created: 2026-10-02
    ## 未完成（按顺序）
    1. 等审计报告 → 逐条处理 → 复核到 pass → 2. handoff.md → 3. 薄层三份（--expect）→ 4. 一致性检查到 pass → 5. 卡片回写、index、log、rd finish
    ## 下一步
-   - `codex-audit.sh --wait . 2026-10-08-lab02-derivation-3 540`，报告在 audit/2026-10-08-gpt-6-astra-derivation.md
+   - `codex-audit.sh --wait . 2026-10-08-lab02-derivation-3 540`，报告在 audit/2026-10-08-gpt-6.2-astra-derivation.md
    ```
 7. **后台进程**：Codex 审计/写作只用 `codex-audit.sh` / `codex-write.sh` 启动并用 `--wait` 前台等（它们自己脱离父进程）；数值批量用 `nohup … &` 启动、`rd jobs claim <根> --cores N --label "<lab id> <说明>" --pid <pid>` 登记（标签以 lab id 开头，调度器靠它决定什么时候叫醒续跑）、留完成标记文件；集群作业用 `rd cluster submit` 提交，它自己登记。**不要用 Claude Code 的 run_in_background 跑任何必须活过本次运行的东西**，本次运行一结束它们就被清掉。
 8. 运行结束时状态只能是 `done` / `waiting_answer` / `awaiting_review` / `blocked`，或仍在等外部进程的 `running`（续跑单写清在等什么）。`running` 且没有活着的运行的 lab，系统会自动派续跑（D 节）。`done` 只能由 `rd finish` 写（C5），不要手改。

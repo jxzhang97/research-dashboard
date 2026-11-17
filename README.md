@@ -4,7 +4,7 @@
 
 - **文件是唯一真相**：所有内容是带 frontmatter 的 markdown，放在课题文件夹里；web 只是视图，加四个写入口（回答问题、审批文献、速记想法、立刻派任务）。
 - **首页是课题状态**：`STATUS.md`（研究问题与当前回答、正在进行、等你决定），agent 每次收尾重写。其余页面：文献（卡片 + arXiv 候选审批）、Wiki（概念页，互链）、Lab（任务书 → 摘要首屏 → notes）、讨论（agent 向你提问，你裁决）、问题树（卡片分支图：每张卡片是一个研究问题，标题加 frontmatter `verdict:` 的一句结论；点卡片看完整回答、证据、子问题、原话与历史；节点多时只展开选中分支；可缩放；顶部速记）、任务页（agent 运行日志）。任意项目内 markdown 都能在 `#/doc/<路径>` 站内阅读（目录、锚点、相对链接）。
-- **写给谁**：面向读者的页面假定读者是刚进组的研究生；厚层（notes、代码、数据）由做研究的 agent（Claude）写，薄层（lab 摘要、wiki 页、问题的当前回答、STATUS）单独一步交给 Codex（`config.toml` 的 `[writer]`，默认 gpt-6-astra xhigh，ChatGPT 登录）按交接单写，研究 agent 只做机械检查、不改它的文字（`rd-writer` skill）。wiki 像讲课，图注具体到面板和标记。每个事实只有一个权威位置。
+- **写给谁**：面向读者的页面假定读者是刚进组的研究生；厚层（notes、代码、数据）由做研究的 agent（Claude）写，薄层（lab 摘要、wiki 页、问题的当前回答、STATUS）单独一步交给 Codex（`config.toml` 的 `[writer]`，默认 gpt-6.2-astra xhigh，ChatGPT 登录）按交接单写，研究 agent 只做机械检查、不改它的文字（`rd-writer` skill）。wiki 像讲课，图注具体到面板和标记。每个事实只有一个权威位置。
 - **agent 规则是模板的一部分**：`AGENTS.md`（通用规则）+ `skills/rd-*`（各环节的工作流），Claude Code 和 Codex 都能读。
 - **自动化**：用户在网页上的每个动作（回答、批准、升级、速记、立刻执行）当场触发 agent；直接在编辑器里写进 `ideas/inbox/` 或改文件状态的，dashboard 每 15 秒扫一次也会当场开始。launchd 每小时的 tick 只是 dashboard 没开时的兜底。每天扫 arXiv，候选需用户审批后才入库。同一课题同一时间只跑一个 agent，后来的排队。
 
@@ -111,7 +111,7 @@ dashboard 右上角可以在本机的课题之间切换。
 
 ## 审计与收尾门槛
 
-三种审计都交给另一个模型（`[auditor]`，Codex `gpt-6-astra`）独立做：**推导审计**在厚层齐后自动做；**薄层一致性检查**在 Codex 写完 report、wiki、idea 当前回答、STATUS 之后自动做，逐句对照 notes 查夸大与丢条件；**代码审计**在 lab 页点按钮。报告在 `labs/NN/audit/`，发现只分三档：`typo`、`不严谨`、`改变结论`，并明确不吹毛求疵。
+三种审计都交给另一个模型（`[auditor]`，Codex `gpt-6.2-astra`）独立做：**推导审计**在厚层齐后自动做；**薄层一致性检查**在 Codex 写完 report、wiki、idea 当前回答、STATUS 之后自动做，逐句对照 notes 查夸大与丢条件；**代码审计**在 lab 页点按钮。报告在 `labs/NN/audit/`，发现只分三档：`typo`、`不严谨`、`改变结论`，并明确不吹毛求疵。
 
 单独维护 wiki 或 STATUS 时，核查档案放项目根的 `audit/wiki/<页面 slug>/` 或 `audit/status/`，复算附件放其 `scratch/`。Wiki 导航只收录概念页；交接单、审计和复算过程通过证据链接查看，不作为知识页，也不重复合并进正文。扫描器会排除 wiki 中任意层级的 `handoff/`、`audit/`、`scratch/`，AI 目录和全文导出同样排除；旧档案仍可由原页面地址或 `#/doc/<路径>` 打开。
 

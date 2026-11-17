@@ -40,7 +40,7 @@
 **两层内容，两种写法：**
 
 - **厚层**（`notes.md`、代码、数据、验证脚本）：由做推导或跑数值的那个 agent 在同一上下文里写，按 `rd-notes` skill（问题链、无跳步、落盘验证），可以长，可以密。
-- **薄层**（`report.md`、wiki 页、idea 节点的「当前回答」、`STATUS.md`）：**单独一步，交给 Codex 写**（`config.toml` 的 `[writer]`，默认 `gpt-6-astra`、reasoning effort xhigh、ChatGPT 账号登录），流程见 `rd-writer` skill：研究 agent 写交接单（`labs/NN-slug/handoff.md`：这次回答了什么、改变了什么认识、哪些话不能说过头、材料在哪、每张图的角色），用 `codex-write.sh` 调 Codex（每个输出用 `--expect` 声明），写完**只做机械检查**（文件在指定位置、没碰别的文件、图和链接能打开、`rd doctor` 无断链），**不核对、不改写它的文字**；然后交给审计者做一次**薄层科学一致性检查**（`rd-audit` 的 `consistency`，逐句对照 notes、交接单与图，查夸大、丢条件、记号错），发现回到交接单让写作者重写，直到通过。流程状态（审核是否通过、finish 是否执行）不写进薄层正文，只在 frontmatter 和"边界"里留一句审计结论或链接。Codex 不可用（没装、没登录）时记 log、把薄层留到下次，不用别的模型代写。
+- **薄层**（`report.md`、wiki 页、idea 节点的「当前回答」、`STATUS.md`）：**单独一步，交给 Codex 写**（`config.toml` 的 `[writer]`，默认 `gpt-6.2-astra`、reasoning effort xhigh、ChatGPT 账号登录），流程见 `rd-writer` skill：研究 agent 写交接单（`labs/NN-slug/handoff.md`：这次回答了什么、改变了什么认识、哪些话不能说过头、材料在哪、每张图的角色），用 `codex-write.sh` 调 Codex（每个输出用 `--expect` 声明），写完**只做机械检查**（文件在指定位置、没碰别的文件、图和链接能打开、`rd doctor` 无断链），**不核对、不改写它的文字**；然后交给审计者做一次**薄层科学一致性检查**（`rd-audit` 的 `consistency`，逐句对照 notes、交接单与图，查夸大、丢条件、记号错），发现回到交接单让写作者重写，直到通过。流程状态（审核是否通过、finish 是否执行）不写进薄层正文，只在 frontmatter 和"边界"里留一句审计结论或链接。Codex 不可用（没装、没登录）时记 log、把薄层留到下次，不用别的模型代写。
 
 **薄层首屏固定四段**，顺序不变：
 
@@ -78,7 +78,7 @@
 
 **图**：每个 lab 的图放 `labs/NN-slug/fig/`，PNG 或 SVG，`report.md` 和 `notes.md` 用 `![图注](fig/xxx.png)` 内嵌，图注写"看哪里 → 看到什么 → 说明什么"，网页上 alt 文字就是图注。图分四种角色：问题设定、主结果、机制解释、可靠性检查；首屏只放主结果和设定。wiki 概念页尽量配一张示意图（`wiki/fig/<slug>-*.svg|png`）。数据图用 matplotlib（`savefig(..., dpi=160, bbox_inches="tight")`），示意图手画 SVG 或 matplotlib；每张图坐标轴有标签和单位；原始数据和脚本留在 lab 文件夹。
 
-**模型**：`[models].read` 跑研究（默认 `claude-fable-5-2`、effort `xhigh`）；`[models.kinds]` 按工作项种类给默认（arXiv 摘要筛选、想法整理默认 `claude-opus-5-5` + `xhigh`，起草任务书、建卡、消化裁决、执行与续跑 lab 仍用 read 的模型）；`[writer]` 写薄层（默认 `backend = "codex"`、`model = "gpt-6-astra"`、`reasoning_effort = "xhigh"`，跑自动任务的机器上要先 `codex login`）。用户可以在任务书或 idea 的 frontmatter 写 `model:` / `effort:` 单独指定研究模型；用户在对话里说"写报告用 X"之类的，写进任务书 frontmatter。lab 里批量建卡的子 agent：精读卡用主模型，只为引用链建的 skim/abstract 卡用 `model: "opus"`，见 rd-reference。
+**模型**：`[models].read` 跑研究（默认 `claude-fable-5-2`、effort `xhigh`）；`[models.kinds]` 按工作项种类给默认（arXiv 摘要筛选、想法整理默认 `claude-opus-5-5` + `xhigh`，起草任务书、建卡、消化裁决、执行与续跑 lab 仍用 read 的模型）；`[writer]` 写薄层（默认 `backend = "codex"`、`model = "gpt-6.2-astra"`、`reasoning_effort = "xhigh"`，跑自动任务的机器上要先 `codex login`）。用户可以在任务书或 idea 的 frontmatter 写 `model:` / `effort:` 单独指定研究模型；用户在对话里说"写报告用 X"之类的，写进任务书 frontmatter。lab 里批量建卡的子 agent：精读卡用主模型，只为引用链建的 skim/abstract 卡用 `model: "opus"`，见 rd-reference。
 
 ## 3. Notation
 

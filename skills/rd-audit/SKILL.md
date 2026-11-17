@@ -5,7 +5,7 @@ description: 推导、代码与薄层的独立审计步（research-dashboard 课
 
 # rd-audit：让另一个模型挑错，并且只认当前版本
 
-**分工**：审计者是 Codex（`[auditor]`，默认 `gpt-6-astra` + xhigh），它只读、只复算、只写报告；研究 agent（Claude）组提示词、调脚本、**逐条处理发现**、让审计者复核、挂标记。审计者把 notes、代码和薄层都当成待验证的 claim，不当权威；用户自己的 notes/PDF 如果被 lab 引用，也在审计范围内。
+**分工**：审计者是 Codex（`[auditor]`，默认 `gpt-6.2-astra` + xhigh），它只读、只复算、只写报告；研究 agent（Claude）组提示词、调脚本、**逐条处理发现**、让审计者复核、挂标记。审计者把 notes、代码和薄层都当成待验证的 claim，不当权威；用户自己的 notes/PDF 如果被 lab 引用，也在审计范围内。
 
 **三种审计（kind）**：
 
@@ -37,10 +37,10 @@ description: 推导、代码与薄层的独立审计步（research-dashboard 课
 ```bash
 RD=~/doc_unsyn/research-dashboard/skills/rd-audit/codex-audit.sh
 # 推导审计：--source 列审的源文件（至少 notes.md；引用的 wiki 页、验证脚本也列），--expect 报告路径
-$RD <课题根> <提示词> <记录目录名> --source labs/NN-slug/notes.md --source labs/NN-slug/scripts/check.py --expect labs/NN-slug/audit/<日期>-gpt-6-astra-derivation.md
+$RD <课题根> <提示词> <记录目录名> --source labs/NN-slug/notes.md --source labs/NN-slug/scripts/check.py --expect labs/NN-slug/audit/<日期>-gpt-6.2-astra-derivation.md
 # 复核：同上，换新的记录目录名和报告路径（…-derivation-v2.md）
 # 薄层一致性检查：--kind consistency；--source 覆盖 notes、handoff、report、本 lab 写的每个 wiki/idea 文件、STATUS.md
-$RD <课题根> <提示词> <记录目录名> --kind consistency --source labs/NN-slug/notes.md --source labs/NN-slug/handoff.md --source labs/NN-slug/report.md --source wiki/<页>.md --source ideas/<slug>.md --source STATUS.md --expect labs/NN-slug/audit/<日期>-gpt-6-astra-consistency.md
+$RD <课题根> <提示词> <记录目录名> --kind consistency --source labs/NN-slug/notes.md --source labs/NN-slug/handoff.md --source labs/NN-slug/report.md --source wiki/<页>.md --source ideas/<slug>.md --source STATUS.md --expect labs/NN-slug/audit/<日期>-gpt-6.2-astra-consistency.md
 # 等待：前台阻塞，最多 540 秒；退出码 0 完成、7 还在跑（再调一次）、6 工具执行 fail closed、9 进程消失、10 报告没产出、11 审核期间源文件被改
 $RD --wait <课题根> <记录目录名> 540          # 一致性作业的等待/状态要带 CODEX_KIND=consistency 环境变量
 $RD --status <课题根> <记录目录名>
