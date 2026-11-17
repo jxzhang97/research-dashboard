@@ -801,6 +801,24 @@ def create_app(project: Project) -> FastAPI:
             raise HTTPException(404)
         return PlainTextResponse(project.ai_markdown(path, _base(request)), media_type="text/markdown; charset=utf-8")
 
+    @app.get("/api/docnav")
+    def docnav(path: str):
+        """文档页导航：标签、同一份笔记的各章、各节被哪些薄层（wiki、lab 摘要）引用（rd_core/basis.py）。"""
+        from . import basis
+        try:
+            return basis.docnav(project, path)
+        except PermissionError:
+            raise HTTPException(403)
+
+    @app.get("/api/basis")
+    def basis_of(path: str):
+        """一页薄层（wiki 页、lab 的 report.md）引用的推导笔记小节，按章分组。"""
+        from . import basis
+        try:
+            return {"groups": basis.basis(project, path)}
+        except PermissionError:
+            raise HTTPException(403)
+
     @app.get("/api/raw")
     def raw(path: str):
         """项目内任意 markdown（notes.md、handoff.md、STATUS.md …）的 frontmatter 与正文，给前端的通用文档页用。"""

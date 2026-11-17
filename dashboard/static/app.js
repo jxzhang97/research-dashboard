@@ -148,6 +148,7 @@
     let html = md.render(wikilinks(s1));
     html = restoreMath(html, store);
     const div = document.createElement("div"); div.className = "md"; div.innerHTML = html;
+    fixCjkBold(div);
     div.querySelectorAll('a[title^="wikilink"]').forEach((a) => { a.className = a.title === "wikilink" ? "wikilink" : "wikilink missing"; a.removeAttribute("title"); });
     // 标题锚点（目录和 notes.md#节 链接用）
     const used = {};
@@ -169,7 +170,9 @@
       const [pathPart, frag] = v.split("#");
       const full = joinPath(baseDir, pathPart.replace(/^\.\//, ""));
       if (el.tagName === "A" && /\.md$/i.test(pathPart)) {
-        el.setAttribute("href", docRoute(full, frag)); // 项目内 markdown 站内打开
+        // 项目内 markdown 站内打开；没写锚点但文字里有「§7.1」的，跳到那一节（见 scrollToFrag）
+        const sec = !frag && (el.textContent.match(/§\s*(\d+(?:\.\d+)*)/) || [])[1];
+        el.setAttribute("href", docRoute(full, frag || (sec ? "§" + sec : "")));
         return;
       }
       el.setAttribute(attr, "/api/file?path=" + encodeURIComponent(full));
@@ -219,19 +222,43 @@
     if (isTranslated) reader.decorateSources(div);
     return reader.decorate(div, translation, render, slugId, md);
   }
+  // 标题的可读文字：KaTeX 渲染后 textContent 会把公式源码和字形各算一遍，去掉源码那份
+  const headText = (h) => { const c = h.cloneNode(true); c.querySelectorAll(".katex-mathml").forEach((x) => x.remove()); return c.textContent.trim(); };
+  // markdown 的加粗规则遇到中文标点会失效：「**随机试验（random experiment）**就是」原样露出星号。
+  // 渲染后在同一段文字里把成对的 ** 补成加粗；代码里的不动，紧贴英文字母数字的（x**2）也不动
+  const CJK_BOLD = /(?<![A-Za-z0-9_*])\*\*(?=\S)((?:(?!\*\*)[\s\S])*?\S)\*\*(?![A-Za-z0-9_*])/;
+  function fixCjkBold(div) {
+    const w = document.createTreeWalker(div, NodeFilter.SHOW_TEXT, { acceptNode: (t) => t.data.includes("**") && !t.parentElement.closest("code, pre") ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_SKIP });
+    const nodes = []; for (let t; (t = w.nextNode());) nodes.push(t);
+    for (const t of nodes) {
+      const parts = t.data.split(new RegExp(CJK_BOLD.source, "g"));
+      if (parts.length < 3) continue;
+      const frag = document.createDocumentFragment();
+      parts.forEach((x, i) => { if (i % 2) { const b = document.createElement("strong"); b.textContent = x; frag.append(b); } else if (x) frag.append(x); });
+      t.replaceWith(frag);
+    }
+  }
   // 长文的目录：h2/h3 超过 3 个才显示
   function tocFor(div, min = 4) {
     const hs = [...div.querySelectorAll("h2, h3")].filter((h) => !h.closest(".translation-info"));
     if (hs.length < min) return null;
     const nav = document.createElement("nav"); nav.className = "toc";
-    nav.innerHTML = `<b>目录</b>` + hs.map((h) => `<a class="${h.tagName.toLowerCase()}" data-id="${esc(h.id)}">${esc(h.textContent)}</a>`).join("");
+    nav.innerHTML = `<b>目录</b>` + hs.map((h) => `<a class="${h.tagName.toLowerCase()}" data-id="${esc(h.id)}" title="${esc(headText(h))}">${esc(headText(h))}</a>`).join("");
     nav.querySelectorAll("a").forEach((a) => a.onclick = (e) => { e.preventDefault(); const t = div.querySelector(`[id="${CSS.escape(a.dataset.id)}"]`); if (t) t.scrollIntoView({ behavior: "smooth", block: "start" }); });
     return nav;
   }
+  // 「§7.1」→ 以「7.1」开头的那个标题（旧笔记的链接只写编号不写锚点）
+  function findFrag(div, frag) {
+    if (!frag) return null;
+    const num = frag.match(/^§\s*(\d+(?:\.\d+)*)\.?$/);
+    if (num) return [...div.querySelectorAll("h1, h2, h3, h4")].find((h) => (headText(h).match(/^§?\s*(\d+(?:\.\d+)*)\.?(?![\d.])/) || [])[1] === num[1]) || null;
+    return div.querySelector(`[id="${CSS.escape(frag)}"]`) || div.querySelector(`[id="${CSS.escape(slugId(frag))}"]`);
+  }
+  // 页头高度 → CSS 变量 --hdr：位置栏、左栏、标题跳转都贴在页头下面（页头在窄窗口会折成两行，跳转前当场量一次）
+  function setHdr() { const h = $("header"); if (h) document.documentElement.style.setProperty("--hdr", h.offsetHeight + "px"); }
   function scrollToFrag(div, frag) {
-    if (!frag) return;
-    const t = div.querySelector(`[id="${CSS.escape(frag)}"]`) || div.querySelector(`[id="${CSS.escape(slugId(frag))}"]`);
-    if (t) setTimeout(() => t.scrollIntoView({ block: "start" }), 50);
+    const t = findFrag(div, frag);
+    if (t) setTimeout(() => { setHdr(); t.scrollIntoView({ block: "start" }); }, 50);
   }
   const dirOf = (p) => p.includes("/") ? p.slice(0, p.lastIndexOf("/")) : "";
   // 列表/树里的一行预览（当前回答）：渲染 markdown 与公式；用 data-md 延迟渲染
@@ -766,6 +793,7 @@
       const body = render(d.body, dirOf(d.path), d.translation); $("#body").appendChild(body);
       const toc = tocFor(body, 5); if (toc) $("#toc-top").appendChild(toc);
       attachMine(body, d.path);
+      basisBox($("#toc-top"), d.path);
     }
   };
 
@@ -803,7 +831,7 @@
       ${d.data ? `<details class="panel"><summary>数据去向 DATA.md</summary><div id="data"></div></details>` : ""}
       <details class="panel"><summary>文件 (${(d.files || []).length})</summary><ul class="list small">${files}</ul></details>`;
     $("#brief").appendChild(render(d.body, labDir, d.translation));
-    if (d.report) { const rep = render(d.report.body, labDir, d.report.translation); $("#report").appendChild(rep); attachMine(rep, labDir + "/report.md"); }
+    if (d.report) { const rep = render(d.report.body, labDir, d.report.translation); $("#report").appendChild(rep); attachMine(rep, labDir + "/report.md"); basisBox($("#report"), labDir + "/report.md"); }
     if (d.data) $("#data").appendChild(render(d.data.body, labDir, d.data.translation));
     if ($("#approve")) $("#approve").onclick = async () => { await api(`/api/labs/${encodeURIComponent(id)}/approve`, {}); toast("已批准，agent 开始执行"); pages.lab(id); refreshOverview(); };
     if ($("#park")) $("#park").onclick = async () => { await api(`/api/labs/${encodeURIComponent(id)}/status/parked`, {}); pages.lab(id); };
@@ -815,6 +843,96 @@
     if ($("#audit-consistency")) $("#audit-consistency").onclick = auditGo("consistency");
     apiBg("/api/seen", { kind: "lab", id }).then(refreshOverview).catch(() => {});
   };
+
+  // ---------- 薄层与推导笔记的对照（rd_core/basis.py） ----------
+  const en = () => reader.english();
+  // 标题按行内文字渲染（「4. 响应顺序…」按块渲染会变成编号列表），公式照常排版
+  const inlineMath = (t) => {
+    const { src, store } = protectMath(t || ""); const span = document.createElement("span");
+    span.innerHTML = restoreMath(md.renderInline(wikilinks(src)), store);
+    if (window.renderMathInElement) renderMathInElement(span, { delimiters: [{ left: "$", right: "$", display: false }, { left: "\\(", right: "\\)", display: false }], throwOnError: false });
+    return span.innerHTML;
+  };
+  const secLink = (path, h) => `<a href="${docRoute(path, h.id)}">${inlineMath(h.text)}</a>`;
+  // wiki 页、lab 页顶上：「这一页的依据」——本页引用的推导笔记各节，按章分组；一组超过 8 节先列 6 节
+  async function basisBox(before, path) {
+    let groups = [];
+    try { groups = (await apiBg(`/api/basis?path=${encodeURIComponent(path)}`)).groups || []; } catch (e) { return; }
+    if (!groups.length || !before.isConnected) return;
+    const box = document.createElement("div"); box.className = "basis";
+    box.innerHTML = `<div class="basis-head"><b>${en() ? "Where this page's results are derived" : "这一页的依据"}</b><span class="muted">${en() ? "Full derivations; each section also notes that this page cites it." : "本页结论的完整推导在下面这些地方；那一节的标题下也注明它被本页引用"}</span></div>`;
+    for (const g of groups) {
+      const d = document.createElement("div"); d.className = "basis-doc";
+      const secs = g.sections.map((h) => `<li>${secLink(g.path, h)}</li>`);
+      const more = secs.length > 8 ? secs.length - 6 : 0;
+      d.innerHTML = `<a class="basis-name" href="${docRoute(g.path)}">${esc(g.label)}${g.whole && !secs.length ? (en() ? " (whole)" : "（整份）") : ""}</a>`
+        + (secs.length ? `<ul>${secs.slice(0, more ? 6 : secs.length).join("")}${more ? `<li class="basis-more"><button class="small">${en() ? `${more} more` : `另 ${more} 节`}</button></li>${secs.slice(6).join("").replace(/<li>/g, '<li hidden>')}` : ""}</ul>` : "");
+      const btn = d.querySelector(".basis-more button");
+      if (btn) btn.onclick = () => { d.querySelectorAll("li[hidden]").forEach((li) => { li.hidden = false; }); btn.parentElement.remove(); };
+      box.appendChild(d);
+    }
+    before.before(box);
+  }
+  // 推导笔记页：顶上一条位置栏（哪一章 › 哪一节，随滚动更新；带开合目录的按钮，目录默认收起），
+  // 左栏是同一份笔记的各章与本章目录，当前一节高亮；被 wiki、lab 摘要引用的小节，标题下注明「这一节是这些薄层的依据」，目录里带青绿小点
+  async function docNav(body, path, frag, toc) {
+    const panel = $("#body"), side = $("#toc-side"), two = $("#two");
+    if (!panel) return;
+    // 短文档（不到 3 个小节标题）没有目录，也不要位置栏；被引用的标注照样加
+    const bar = document.createElement("div"); bar.className = "where";
+    bar.innerHTML = `<span class="where-text"></span>`;
+    if (toc) { two.classList.add("docnav"); panel.prepend(bar); const btn = $("#side-toggle"); if (btn) bar.prepend(btn); }
+    let label = "";
+    const hs = [...body.querySelectorAll("h2, h3")].filter((h) => !h.closest(".translation-info"));
+    const upd = () => {
+      if (!bar.isConnected) return;
+      const top = (parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--hdr")) || 56) + bar.offsetHeight + 24;
+      let h2 = null, h3 = null;
+      for (const h of hs) { if (h.getBoundingClientRect().top > top) break; if (h.tagName === "H2") { h2 = h; h3 = null; } else h3 = h; }
+      const cut = (t) => t.split("——")[0].trim();  // 「1.1 什么是语言模型？——它只做一件事…」只留破折号前，窄窗口里也看得到当前小节
+      bar.querySelector(".where-text").innerHTML = [label && `<b>${esc(label)}</b>`, h2 && esc(h3 ? cut(headText(h2)) : headText(h2)), h3 && esc(headText(h3))].filter(Boolean).join(" › ") || `<b>${esc(label)}</b>`;
+      const cur = h3 || h2;
+      if (!toc) return;
+      toc.querySelectorAll("a").forEach((a) => a.classList.toggle("here", !!cur && a.dataset.id === cur.id));
+      const here = toc.querySelector("a.here");
+      if (here && side && !two.classList.contains("side-collapsed")) {
+        const r = here.getBoundingClientRect(), b = side.getBoundingClientRect();
+        if (r.top < b.top + 24 || r.bottom > b.bottom - 24) side.scrollTop += r.top - b.top - b.height / 3;
+      }
+    };
+    let ticking = false;
+    window._docScroll = () => { if (!ticking) { ticking = true; requestAnimationFrame(() => { ticking = false; upd(); }); } };
+    if (toc) { window.addEventListener("scroll", window._docScroll, { passive: true }); upd(); }
+    let nav = null;
+    try { nav = await apiBg(`/api/docnav?path=${encodeURIComponent(path)}`); } catch (e) { return; }
+    if (!body.isConnected) return;
+    label = nav.label || "";
+    if (side && (nav.chapters || []).length > 1) {
+      side.querySelectorAll(":scope > a, :scope > .small.muted").forEach((x) => x.remove());  // 「同文件夹」换成各章
+      const ch = document.createElement("div"); ch.className = "chapters";
+      ch.innerHTML = `<b>${esc(label.split(" · ")[0])}${en() ? "" : ` · ${nav.chapters.length - (nav.chapters[0].path.endsWith("/index.md") ? 1 : 0)} 章`}</b>` + nav.chapters.map((c) => `<a class="${c.path === path ? "cur" : ""}" href="${docRoute(c.path)}">${esc(c.title)}</a>`).join("");
+      side.prepend(ch);
+    }
+    const tag = (r) => `<a href="${r.route}"><span class="k">${r.kind === "wiki" ? "wiki" : (en() ? "lab summary" : "lab 摘要")}</span>${esc(r.title)}</a>`;
+    const intro = en() ? "Cited by: " : "这一节是这些薄层的依据：";
+    for (const [id, refs] of Object.entries(nav.ids || {})) {
+      const h = body.querySelector(`[id="${CSS.escape(id)}"]`); if (!h) continue;
+      const line = document.createElement("div"); line.className = "cited-by";
+      line.innerHTML = `<span>${intro}</span>` + refs.map(tag).join("");
+      h.after(line);
+      const a = toc && toc.querySelector(`a[data-id="${CSS.escape(id)}"]`);
+      if (a) { a.classList.add("cited"); a.title += "\n" + (en() ? "Cited by " : "被引用：") + refs.map((r) => r.title).join("、"); }
+    }
+    if ((nav.whole || []).length) {
+      const line = document.createElement("div"); line.className = "cited-by whole";
+      line.innerHTML = `<span>${en() ? "This document is cited by: " : "这份笔记是这些薄层的依据："}</span>` + nav.whole.map(tag).join("");
+      body.prepend(line);
+    }
+    if (toc) upd();
+    // 插进来的几行会把正文往下推；刚从链接跳进来（还停在目标节附近）就再对准一次
+    const t = findFrag(body, frag);
+    if (t && Math.abs(t.getBoundingClientRect().top - 120) < 400) { setHdr(); t.scrollIntoView({ block: "start" }); }
+  }
 
   // 通用文档页：项目内任意 markdown（notes.md、handoff.md、STATUS.md、writing-test/…）
   // base：相对链接按哪个目录解析（草稿、试写等"为别的位置写的" markdown 用 ?base=<目录> 或 frontmatter base: 指定）
@@ -855,6 +973,7 @@
     st.bind();  // 没有左栏（既无目录也无同文件夹）时按钮自动去掉
     scrollToFrag(body, frag);
     attachMine(body, path);
+    docNav(body, path, frag, toc);
   };
 
   pages.discussion = async (id) => {
@@ -1108,6 +1227,7 @@
     const seq = ++routeSeq;  // 让还在路上的上一页作废（见 api()）
     if (window._es) { window._es.close(); window._es = null; }
     if (MINE_HL) MINE_HL.clear();  // 上一页批注引文的划线
+    if (window._docScroll) { window.removeEventListener("scroll", window._docScroll); window._docScroll = null; }  // 文档页的位置栏
     if (window._ideasResize) { window.removeEventListener("resize", window._ideasResize); window._ideasResize = null; }  // 想法页的重绘监听随页面注销
     // 切走之后才出的错不往 main 里写
     const fail = (e) => { if (seq !== routeSeq) return; main.innerHTML = `<p class="muted">出错了：${esc(e.message)}</p>`; };
@@ -1131,6 +1251,7 @@
     try { await fn(rest ? decodeURIComponent(rest) : undefined); } catch (e) { fail(e); }
     if (seq === routeSeq) window.scrollTo(0, 0);
   }
+  if (window.ResizeObserver) new ResizeObserver(setHdr).observe($("header")); setHdr();
   window.addEventListener("hashchange", route);
   refreshOverview().then(route);
   setInterval(refreshOverview, 30000);

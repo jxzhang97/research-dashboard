@@ -335,3 +335,37 @@ button.small { font-size: 12px; padding: 2px 8px; }
 .mine-filter { display: inline-flex; gap: 6px; align-items: center; margin: 2px 0 10px; color: var(--muted); white-space: nowrap; }
 .mine-filter input { width: auto; margin: 0; }
 @media (max-width: 800px) { .mynotes-toc { position: static; max-height: none; } .mynotes-pdf iframe { height: 75vh; } }
+
+/* 推导笔记的导航（app.js docNav）：位置栏贴在页头下面，随滚动更新；左栏（默认收起）展开后跟着滚动，列各章与本章目录 */
+.md h1, .md h2, .md h3, .md h4 { scroll-margin-top: calc(var(--hdr, 56px) + 52px); }
+.where { position: sticky; top: var(--hdr, 56px); z-index: 3; display: flex; gap: 10px; align-items: baseline;
+  margin: -14px -16px 12px; padding: 8px 16px; background: var(--panel); border-bottom: 1px solid var(--line); border-radius: 10px 10px 0 0;
+  font-size: 13px; color: var(--muted); }
+.where .side-toggle { flex: none; }
+.where-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.where-text b { color: var(--text); font-weight: 600; }
+.two.docnav:not(.side-collapsed) > #toc-side { position: sticky; top: calc(var(--hdr, 56px) + 8px); align-self: start;
+  max-height: calc(100vh - var(--hdr, 56px) - 16px); overflow: auto; }
+#toc-side .toc { display: block; }  /* 目录是 <nav>，别沿用页头导航的横排 */
+.two.docnav > #toc-side .toc { position: static; max-height: none; overflow: visible; }
+.two.docnav > #toc-side a { border-bottom: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }  /* 长标题一行截断，悬停看全称 */
+#toc-side .chapters { font-size: 13px; padding-bottom: 8px; margin-bottom: 10px; border-bottom: 1px solid var(--line); }
+#toc-side .chapters b { display: block; font-family: var(--serif); color: var(--muted); font-weight: 600; margin: 2px 0 4px; }
+#toc-side .chapters a { display: block; padding: 2px 6px; border-radius: 6px; color: var(--text); }
+#toc-side .chapters a.cur { background: var(--accent-bg); color: var(--accent); font-weight: 600; }
+.toc a.here { background: var(--accent-bg); color: var(--accent); border-radius: 6px; }
+.toc a.cited::after { content: ""; display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: var(--ok); margin-left: 6px; vertical-align: middle; }
+.cited-by { display: flex; gap: 6px 10px; flex-wrap: wrap; align-items: baseline; margin: -4px 0 10px; font-size: 12.5px; color: var(--muted); }
+.cited-by .k { font-size: 11px; padding: 0 6px; margin-right: 4px; border-radius: 8px; background: var(--ok-bg); color: var(--ok); }
+.cited-by.whole { margin: 0 0 12px; }
+/* wiki 页、lab 页顶上的「这一页的依据」 */
+.basis { margin: 4px 0 14px; padding: 10px 14px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); font-size: 13px; }
+.basis-head { display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap; margin-bottom: 6px; }
+.basis-head b { font-family: var(--serif); font-size: 14px; }
+.basis-head .muted { font-size: 12px; }
+.basis-doc + .basis-doc { margin-top: 8px; }
+.basis-name { color: var(--ok); font-size: 12.5px; }
+.basis-doc ul { list-style: none; margin: 2px 0 0; padding: 0; columns: 2 320px; column-gap: 24px; }
+.basis-doc li { padding: 1px 0; break-inside: avoid; }
+.basis-doc li a::before { content: "§ "; color: var(--muted); }
+.basis-more button { font-size: 12px; padding: 0 8px; margin-top: 2px; }
