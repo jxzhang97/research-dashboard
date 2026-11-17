@@ -29,6 +29,15 @@ def no_real_claude(monkeypatch):
     monkeypatch.setattr(runner, "build_command", fake_build_command)
 
 
+@pytest.fixture(autouse=True)
+def no_real_ticktick(monkeypatch):
+    """测试里不许真的跑快捷指令往 TickTick 建任务：send 换成只记下来的假函数（tests 里用 notify_sent 看发了什么）。"""
+    from rd_core import notify
+    sent = []
+    monkeypatch.setattr(notify, "send", lambda project, title, body: (sent.append((title, body)) or (True, "")))
+    return sent
+
+
 @pytest.fixture
 def project_dir(tmp_path: Path, rd_home: Path) -> Path:
     d = tmp_path / "demo"

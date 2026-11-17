@@ -1,4 +1,4 @@
-"""`rd` 命令行。子命令：install / init / update / serve / run / tick / arxiv-scan / free-cores / jobs / scheduler / doctor / finish / next / mine / codex / cluster"""
+"""`rd` 命令行。子命令：install / init / update / serve / run / tick / arxiv-scan / free-cores / jobs / scheduler / doctor / finish / next / mine / notify / codex / cluster"""
 
 from __future__ import annotations
 
@@ -398,6 +398,28 @@ def cmd_mynotes(args):
         sys.exit(1)
 
 
+def cmd_notify(args):
+    """TickTick 提醒：--test 试发一条；--dry-run 只看这次会提醒什么；不带参数就照常看一次、有新事就发。"""
+    from . import notify
+    proj = _project(args.path)
+    if args.test:
+        ok, out = notify.test(proj)
+        cfg = notify._cfg(proj)
+        print(f"已发出测试提醒（{out}），去 TickTick 的 {cfg['list']} 清单看看" if ok else f"没有发出去：{out or '（没有输出）'}"
+              + ("" if ok or cfg["via"] == "codex" else f"\n先在「快捷指令」里建好「{cfg['shortcut']}」（见 rd_core/notify.py 开头）"))
+        sys.exit(0 if ok else 1)
+    if args.dry_run:
+        events = notify.check(proj, save=False)
+        if not events:
+            print("没有新的事要提醒" + ("（还没开始记录：第一次运行只记下现状）" if notify._load(proj) is None else ""))
+            return
+        title, body = notify.message(proj, events)
+        print(title); print(body)
+        return
+    r = notify.run_once(proj)
+    print(f"已提醒：{r['title']}" if r.get("sent") else (f"没有发出去：{r['error']}" if r.get("error") else "没有新的事要提醒"))
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(prog="rd", description="research-dashboard")
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -416,6 +438,8 @@ def main(argv=None):
     p = sub.add_parser("scheduler", help="launchd 定时任务"); p.add_argument("action", choices=["install", "uninstall", "status"]); p.add_argument("path"); p.set_defaults(fn=cmd_scheduler)
     p = sub.add_parser("doctor", help="检查断链、缺节、状态"); p.add_argument("path"); p.set_defaults(fn=cmd_doctor)
     p = sub.add_parser("finish", help="收尾门槛：核对当前版本的推导审核、薄层一致性检查与 doctor，通过才把 lab 标为 done"); p.add_argument("path"); p.add_argument("lab"); p.add_argument("--check", action="store_true", help="只检查不改状态"); p.set_defaults(fn=cmd_finish)
+    p = sub.add_parser("notify", help="TickTick 提醒：--test 试发；--dry-run 只看会提醒什么；不带参数看一次、有新事就发")
+    p.add_argument("path"); p.add_argument("--test", action="store_true"); p.add_argument("--dry-run", action="store_true"); p.set_defaults(fn=cmd_notify)
     p = sub.add_parser("mine", help="用户的「批注」：不带参数是列出；--page/--section/--quote/--title/--text 新增；--id 改写；--id --add-place 再挂一处；--merge 合并重复；--id --in-notes LABEL 标记已收进正文；--check 核对出处")
     p.add_argument("path"); p.add_argument("--page", help="出处页面（项目内路径，如 wiki/kondo.md、labs/03-x/notes.md）")
     p.add_argument("--section", help="出处那一节的标题（原文；说得出唯一一个标题即可）"); p.add_argument("--quote", help="引的那句话（原文里连续的一段，公式可省略；可空）")

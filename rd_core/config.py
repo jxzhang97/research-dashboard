@@ -91,6 +91,20 @@ DEFAULTS: dict = {
         # 访客投稿层：任何人都能留名字速记想法、向 agent 提问；投稿先进 inbox/讨论区等课题负责人放行，agent 才处理
         "guest_submissions": False,
     },
+    "notify": {
+        # 提醒：每 hours 小时看一次有没有新的「等你的事」，有就在 TickTick 的 list 清单建一条任务（标题以「(Dashboard)」开头，
+        # 每个课题每次最多一条，带准时提醒）。via = "codex"：后台跑一次 codex exec，用 Codex 里授权好的 TickTick 应用（模型 codex_model、强度 codex_effort）；
+        # via = "shortcut"：跑 macOS 快捷指令 shortcut（一个 TickTick「添加任务」动作，第一行作标题、其余作描述）。
+        # events 可选：lab_done（lab 完成）、lab_blocked（lab 受阻）、brief_review（任务书等你过目）、agent_question（agent 向你提问）
+        "enabled": True,
+        "hours": 3,
+        "via": "codex",
+        "list": "research",
+        "codex_model": "gpt-6.1-sol",
+        "codex_effort": "high",
+        "shortcut": "rd 提醒",
+        "events": ["lab_done", "lab_blocked", "brief_review", "agent_question"],
+    },
     "notes": {
         # Project Notes（Obsidian 题目库）里本课题那一页。空 = 自动找：课题目录或上一级目录里同步工具放的 *.notes.md 快捷方式；
         # 也可写绝对路径或相对课题目录的路径；"off" = 不联动。首页「我的下一步」读写它的 next_step，网页把地址与摘要写进 dashboard / rd_waiting / rd_arxiv / rd_running 字段

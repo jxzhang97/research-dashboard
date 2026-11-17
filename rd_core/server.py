@@ -9,6 +9,7 @@ import mimetypes
 import os
 import queue
 import re
+import sys
 import threading
 import time
 from pathlib import Path
@@ -174,6 +175,29 @@ def start_notes_mirror(project: Project) -> None:
     threading.Thread(target=loop, daemon=True).start()
 
 
+def start_notifier(project: Project) -> None:
+    """每 [notify].hours 小时看一次有没有新的「等你的事」，有就在 TickTick 建一条任务（rd_core/notify.py）。
+    第一次等 2 分钟，别跟刚重启时的冷启动抢；发送失败的事留着下次再发，失败原因写进 server.err。"""
+    from . import notify
+
+    def loop():
+        time.sleep(120)
+        while True:
+            hours = 3.0
+            try:
+                cfg = notify._cfg(project)
+                hours = cfg["hours"]
+                if cfg["enabled"]:
+                    r = notify.run_once(project)
+                    if r.get("error"):
+                        print(f"[notify] 没有发出去（{r.get('title')}）：{r['error'][:300]}", file=sys.stderr, flush=True)
+            except Exception as e:  # noqa: BLE001
+                print(f"[notify] 出错：{e!r}", file=sys.stderr, flush=True)
+            time.sleep(max(600.0, hours * 3600))
+
+    threading.Thread(target=loop, daemon=True).start()
+
+
 def digest_status(project: Project) -> dict:
     from .tick import answered_threads
     s = project.state()
@@ -318,6 +342,7 @@ def create_app(project: Project) -> FastAPI:
     start_watcher(project, rq)
     start_digest_timer(project, rq)
     start_notes_mirror(project)
+    start_notifier(project)
     start_core_watchdog(project)
 
     @app.middleware("http")
