@@ -99,7 +99,7 @@ def test_codex_sender_reads_task_id(project_dir: Path, monkeypatch):
     ok, out = notify._send_codex(pr, notify._cfg(pr), "(Dashboard) demo：lab 01 完成", "· lab 01 完成\n  http://x/#/labs/01")
     assert ok and out == "6a1b2c3d4e5f60718293a4b5"
     cmd = seen["cmd"]
-    assert cmd[cmd.index("-m") + 1] == "gpt-6.1-sol" and 'model_reasoning_effort="high"' in cmd and cmd[cmd.index("-s") + 1] == "read-only"
+    assert cmd[cmd.index("-m") + 1] == "gpt-6.2-sol" and 'model_reasoning_effort="high"' in cmd and cmd[cmd.index("-s") + 1] == "read-only"
     assert "「research」清单" in cmd[-1] and "(Dashboard) demo：lab 01 完成" in cmd[-1] and "http://x/#/labs/01" in cmd[-1]
     seen["reply"] = "FAILED: 找不到 research 清单"
     ok, out = notify._send_codex(pr, notify._cfg(pr), "t", "b")

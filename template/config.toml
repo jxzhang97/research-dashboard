@@ -19,14 +19,14 @@ triage_idea = { model = "claude-opus-5-5", effort = "xhigh" }
 [writer]
 # 薄层写作步（report.md、wiki 页、idea 当前回答、STATUS.md）交给 Codex（ChatGPT 账号登录，跑自动任务的机器上先 `codex login`）；见 rd-writer skill
 backend = "codex"
-model = "gpt-6-astra"
+model = "gpt-6.2-astra"
 reasoning_effort = "xhigh"
 
 [auditor]
 # 审计步交给 Codex；见 rd-audit skill。推导审计每个 lab 厚层齐后自动做，发现处理完要对当前版本复核到 pass；
 # 薄层写完后自动做科学一致性检查；代码审计在 dashboard 点按钮。`rd finish` 只认覆盖当前文件版本的通过报告
 backend = "codex"
-model = "gpt-6-astra"
+model = "gpt-6.2-astra"
 reasoning_effort = "xhigh"
 auto_derivation = true      # 厚层齐后自动做推导审计（含修改后的复核）
 auto_consistency = true     # 薄层写完后自动做科学一致性检查

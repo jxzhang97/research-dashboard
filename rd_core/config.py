@@ -32,13 +32,13 @@ DEFAULTS: dict = {
     "writer": {
         # 薄层写作步（report.md、wiki 页、idea 当前回答、STATUS.md）交给谁写；见 rd-writer skill
         "backend": "codex",
-        "model": "gpt-6-astra",
+        "model": "gpt-6.2-astra",
         "reasoning_effort": "xhigh",
     },
     "auditor": {
         # 审计步：推导审计每个 lab 收尾自动做，代码审计按钮触发；见 rd-audit skill
         "backend": "codex",
-        "model": "gpt-6-astra",
+        "model": "gpt-6.2-astra",
         "reasoning_effort": "xhigh",
         "auto_derivation": True,    # 厚层齐后自动做推导审计；发现处理完还要对当前版本复核到 pass
         "auto_consistency": True,   # 薄层写完后自动做科学一致性检查；rd finish 要求它覆盖当前版本并 pass
@@ -100,7 +100,7 @@ DEFAULTS: dict = {
         "hours": 3,
         "via": "codex",
         "list": "research",
-        "codex_model": "gpt-6.1-sol",
+        "codex_model": "gpt-6.2-sol",
         "codex_effort": "high",
         "shortcut": "rd 提醒",
         "events": ["lab_done", "lab_blocked", "brief_review", "agent_question"],

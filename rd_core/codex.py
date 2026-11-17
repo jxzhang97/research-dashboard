@@ -256,7 +256,7 @@ def start(root: Path, kind: str, prompt: Path, name: str, images: list[Path] | N
     shutil.copy(prompt, rec / "prompt.md")
     section = KINDS[kind][0]
     sec = config.load(root).get(section, {})
-    model = model or sec.get("model", "gpt-6-astra")
+    model = model or sec.get("model", "gpt-6.2-astra")
     effort = effort or sec.get("reasoning_effort", "xhigh")
     info = rec / "run_info.txt"
 
@@ -318,7 +318,7 @@ def worker(root: Path, kind: str, name: str) -> int:
     job = _job(rec)
     codex = job.get("codex") or os.environ.get("CODEX_BIN") or "codex"
     prompt_text = (rec / "prompt.filled.md").read_text(encoding="utf-8")
-    cmd = [codex, "exec", "-C", str(root), "-m", job.get("model", "gpt-6-astra"),
+    cmd = [codex, "exec", "-C", str(root), "-m", job.get("model", "gpt-6.2-astra"),
            "-c", f"model_reasoning_effort={job.get('effort', 'xhigh')}", "-s", "workspace-write"]
     for img in job.get("images") or []:
         cmd += ["-i", img]

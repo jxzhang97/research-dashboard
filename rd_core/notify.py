@@ -36,7 +36,7 @@ def _cfg(project) -> dict:
     c = config.load(Path(project.root)).get("notify") or {}
     return {"enabled": bool(c.get("enabled", True)), "hours": float(c.get("hours", 3) or 3),
             "via": str(c.get("via") or "codex"), "list": str(c.get("list") or "research"),
-            "codex_model": str(c.get("codex_model") or "gpt-6.1-sol"), "codex_effort": str(c.get("codex_effort") or "high"),
+            "codex_model": str(c.get("codex_model") or "gpt-6.2-sol"), "codex_effort": str(c.get("codex_effort") or "high"),
             "shortcut": str(c.get("shortcut") or "rd 提醒"), "events": [e for e in (c.get("events") or EVENTS) if e in EVENTS]}
 
 

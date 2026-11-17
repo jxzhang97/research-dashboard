@@ -92,9 +92,9 @@ def test_start_detaches_and_wait_sees_exit_line(project_dir: Path, tmp_path: Pat
     rec = Path(res["rec"])
     assert (rec / "pid").exists() and (rec / "job.json").exists()
     job = json.loads((rec / "job.json").read_text(encoding="utf-8"))
-    assert job["lab"] == "01-first-task" and job["model"] == "gpt-6-astra"
+    assert job["lab"] == "01-first-task" and job["model"] == "gpt-6.2-astra"
     filled = (rec / "prompt.filled.md").read_text(encoding="utf-8")
-    assert "{{" not in filled and "gpt-6-astra" in filled and "xhigh" in filled
+    assert "{{" not in filled and "gpt-6.2-astra" in filled and "xhigh" in filled
     st = codex.wait(project_dir, "audit", "t-ok", max_seconds=30, poll=1)
     assert st["state"] == "done" and st["code"] == 0, st
     assert "报告已生成" in st["last_message"]
