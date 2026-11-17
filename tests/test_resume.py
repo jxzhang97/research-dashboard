@@ -430,3 +430,71 @@ def test_core_watchdog_alerts_after_two_samples_and_clears(project_dir: Path, mo
     monkeypatch.setattr(cores, "proc_cwd", lambda pid: "/somewhere/else")
     core_watch_step(pr, fighting, memo); core_watch_step(pr, fighting, memo)
     assert pr.core_alert()["mine"] is False and log.read_text(encoding="utf-8").count("在抢核") == before + 1
+
+
+# ---------- 2026-11-14：一条 permission_denied 事件让运行器抛异常，agent 还在跑，记录却成了 failed ----------
+# 字段照抄真实记录（Claude Code 2.1.x）：这类 system 事件的 message 是一句字符串，不是字典
+DENIED_EVENT = {
+    "type": "system", "subtype": "permission_denied", "tool_name": "Bash", "tool_use_id": "toolu_x",
+    "decision_reason_type": "safetyCheck",
+    "decision_reason": 'Dangerous rm operation on possibly-empty variable path: "$S/$d" in `rm -r "$S/$d"`',
+    "message": 'Dangerous rm operation detected in `rm -r "$S/$d"`. This requires explicit approval.',
+    "uuid": "u", "session_id": "s",
+}
+
+
+def test_events_whose_message_is_not_a_dict_are_harmless():
+    from rd_core.runner import _fmt_event, limit_from_event
+    assert limit_from_event(DENIED_EVENT) is None
+    line = _fmt_event(DENIED_EVENT)
+    assert line.startswith("⛔ Bash 被安全检查拒绝") and "Dangerous rm operation" in line
+    # 别的形状：message 是字符串 / None，content 是字符串，块不是字典，input 不是字典
+    for ev in ({"type": "assistant", "message": "oops"}, {"type": "assistant", "message": None},
+               {"type": "user", "message": {"content": "一句话"}},
+               {"type": "assistant", "message": {"content": ["str", {"type": "text", "text": None}, {"type": "tool_use", "name": "Bash", "input": None}]}}):
+        assert limit_from_event(ev) is None
+        _fmt_event(ev)
+    assert _fmt_event({"type": "assistant", "message": {"content": [{"type": "tool_use", "name": "Bash", "input": None}]}}) == "▶ Bash: "
+
+
+def test_runner_survives_a_denied_command_and_unparseable_events(project_dir: Path, tmp_path: Path, monkeypatch):
+    from rd_core import runner
+    ok = {"type": "result", "subtype": "success", "is_error": False, "result": "做完了", "total_cost_usd": 0}
+    events = tmp_path / "events.jsonl"
+    events.write_text("\n".join(json.dumps(e, ensure_ascii=False) for e in (DENIED_EVENT, {"type": "weird"}, ok)) + "\n", encoding="utf-8")
+    monkeypatch.setattr(runner, "build_command", lambda *a, **k: ["/bin/sh", "-c", f'cat "{events}"'])
+    real_fmt = runner._fmt_event
+
+    def fmt(ev):  # 将来某个版本的事件让格式化函数出错：只跳过那一条
+        if ev.get("type") == "weird":
+            raise KeyError("boom")
+        return real_fmt(ev)
+
+    monkeypatch.setattr(runner, "_fmt_event", fmt)
+    meta = runner.Runner(Project(project_dir)).run("x", kind="manual", label="manual")
+    log = (project_dir / ".dashboard" / "runs" / meta["id"] / "log.txt").read_text(encoding="utf-8")
+    assert meta["status"] == "done" and meta["result"] == "做完了"
+    assert "被安全检查拒绝" in log and "跳过一条解析不了的事件 weird/None" in log and "运行器异常" not in log
+
+
+def test_runner_error_does_not_leave_the_agent_running(project_dir: Path, tmp_path: Path, monkeypatch):
+    import os
+    from rd_core import runner
+    pidfile = tmp_path / "pid"
+    line = json.dumps({"type": "assistant", "message": {"content": [{"type": "text", "text": "开始"}]}}, ensure_ascii=False)
+    monkeypatch.setattr(runner, "build_command", lambda *a, **k: ["/bin/sh", "-c", f"echo $$ > '{pidfile}'; printf '%s\\n' '{line}'; sleep 60"])
+
+    def on_line(block):  # 运行器自己在读取循环里出错（这里是推送日志的回调）
+        raise RuntimeError("stream closed")
+
+    t0 = time.time()
+    meta = runner.Runner(Project(project_dir)).run("x", kind="manual", label="manual", on_line=on_line)
+    log = (project_dir / ".dashboard" / "runs" / meta["id"] / "log.txt").read_text(encoding="utf-8")
+    assert meta["status"] == "failed" and "运行器异常" in log and "已结束仍在运行的 agent" in log
+    assert time.time() - t0 < 30  # 没有等那个 sleep 60
+    try:
+        os.kill(int(pidfile.read_text()), 0)
+        alive = True
+    except ProcessLookupError:
+        alive = False
+    assert not alive  # failed 的记录不再对应一个活着的 agent

@@ -52,10 +52,24 @@ def agent_env(project_root: Path, run_id: str, base: dict | None = None) -> dict
     return env
 
 
+def _message(ev: dict) -> dict:
+    """事件的 message 字段，不是字典就当作没有。assistant / user 事件里它是字典；
+    有的 system 事件给的是一句字符串（Claude Code 2.1.x 的 permission_denied：安全检查拒绝了一条命令）。
+    2026-11-14 运行器在这样一条事件上抛了 AttributeError，把一个还在跑的 agent 记成 failed 并放掉了锁。"""
+    m = ev.get("message")
+    return m if isinstance(m, dict) else {}
+
+
+def _blocks(ev: dict) -> list[dict]:
+    """message.content 里的内容块（只留字典；content 也可能是一句字符串）。"""
+    c = _message(ev).get("content")
+    return [b for b in c if isinstance(b, dict)] if isinstance(c, list) else []
+
+
 def _event_text(ev: dict) -> str:
     if ev.get("type") == "result":
         return str(ev.get("result") or "")
-    return "\n".join(str(b.get("text", "")) for b in (ev.get("message") or {}).get("content", []) if isinstance(b, dict) and b.get("type") == "text")
+    return "\n".join(str(b.get("text", "")) for b in _blocks(ev) if b.get("type") == "text")
 
 
 def limit_from_event(ev: dict) -> tuple[str, float | None] | None:
@@ -71,7 +85,7 @@ def limit_from_event(ev: dict) -> tuple[str, float | None] | None:
         info = (ev.get("api_error_params") or {}).get("rate_limit_info") or {}
     text = _event_text(ev).strip()
     if info is None:
-        synthetic = (ev.get("type") == "result" and ev.get("is_error")) or ev.get("is_api_error_message") or (ev.get("message") or {}).get("model") == "<synthetic>"
+        synthetic = (ev.get("type") == "result" and ev.get("is_error")) or ev.get("is_api_error_message") or _message(ev).get("model") == "<synthetic>"
         if not (synthetic and LIMIT_RE.search(text)):
             return None
         info = {}
@@ -175,12 +189,13 @@ def _fmt_event(ev: dict) -> str:
     t = ev.get("type")
     out = []
     if t == "assistant":
-        for blk in ev.get("message", {}).get("content", []):
+        for blk in _blocks(ev):
             bt = blk.get("type")
-            if bt == "text" and blk.get("text", "").strip():
-                out.append(blk["text"].rstrip())
+            if bt == "text" and str(blk.get("text") or "").strip():
+                out.append(str(blk["text"]).rstrip())
             elif bt == "tool_use":
-                inp = blk.get("input", {})
+                inp = blk.get("input")
+                inp = inp if isinstance(inp, dict) else {}
                 name = blk.get("name", "?")
                 if name == "Bash":
                     desc = inp.get("description") or inp.get("command", "")
@@ -205,6 +220,10 @@ def _fmt_event(ev: dict) -> str:
         out.append(s)
     elif t == "system" and ev.get("subtype") == "init":
         out.append(f"● 会话开始 model={ev.get('model', '?')}")
+    elif t == "system" and ev.get("subtype") == "permission_denied":
+        # 安全检查拒绝了一条命令（agent 会收到原因并自己改写）：记一行，读日志的人知道上面那一步没有执行
+        why = " ".join(str(ev.get("decision_reason") or ev.get("message") or "").split())
+        out.append(f"⛔ {ev.get('tool_name') or '?'} 被安全检查拒绝：{why[:200]}")
     return "\n".join(out)
 
 
@@ -252,6 +271,7 @@ class Runner:
             env = agent_env(self.project.root, run_id)
             timeout = int(self.cfg["agent"].get("timeout_minutes", 240)) * 60
             raw = (d / "raw.jsonl").open("a", encoding="utf-8")
+            proc = None
             try:
                 proc = subprocess.Popen(
                     cmd, cwd=self.project.root, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
@@ -290,11 +310,17 @@ class Runner:
                         continue
                     if ev.get("type") == "result":
                         last_result = ev
-                    hit = limit_from_event(ev)
+                    try:
+                        hit = limit_from_event(ev)
+                        txt = _fmt_event(ev)
+                    except Exception as e:  # noqa: BLE001
+                        # 事件格式随 Claude Code 版本变。看不懂的一条只是少一行日志（原文已经在 raw.jsonl 里），
+                        # 不能让它打断读取：读取一断，agent 还在跑，这条运行却要被记成 failed
+                        self._log(d, f"（跳过一条解析不了的事件 {ev.get('type')}/{ev.get('subtype')}：{e!r}）", on_line)
+                        continue
                     if hit:
                         limit_msg = limit_msg if LIMIT_RE.search(limit_msg) else hit[0]  # 有原文提示语就留原文
                         limit_until = hit[1] or limit_until
-                    txt = _fmt_event(ev)
                     if txt:
                         self._log(d, txt, on_line)
                 proc.wait()
@@ -316,7 +342,23 @@ class Runner:
                     self._log(d, f"⏸ Claude 额度用尽，暂停派发到 {datetime.fromtimestamp(until).strftime('%m-%d %H:%M')}：{limit_msg}", on_line)
             except Exception as e:  # noqa: BLE001
                 meta["status"] = "failed"
-                self._log(d, f"运行器异常: {e!r}", on_line)
+                note = f"运行器异常: {e!r}"
+                # 运行器自己出错时 agent 可能还活着。下面要把记录写成 failed 并放锁，所以先结束它：
+                # 否则调度器以为这个课题没人在跑，会再派一个 agent 来写同样的文件
+                if proc is not None and proc.poll() is None:
+                    try:
+                        os.killpg(proc.pid, signal.SIGTERM)
+                    except ProcessLookupError:
+                        pass
+                    try:
+                        proc.wait(timeout=30)
+                        note += f"\n已结束仍在运行的 agent（pid {proc.pid}）"
+                    except subprocess.TimeoutExpired:
+                        note += f"\nagent（pid {proc.pid}）收到 SIGTERM 后 30 秒内没有退出，需要手动处理"
+                try:
+                    self._log(d, note, on_line)
+                except Exception:  # noqa: BLE001  出错的可能正是 on_line；这一行已经先写进 log.txt 了
+                    pass
             finally:
                 raw.close()
                 meta["ended"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
